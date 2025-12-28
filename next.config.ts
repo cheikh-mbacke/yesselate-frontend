@@ -61,9 +61,17 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Support PWA et optimisations
+  // Activation du mode React strict
+  reactStrictMode: true,
+
+  // Configuration Turbopack (Next.js 16+)
+  turbopack: {
+    // Root directory explicite pour éviter le warning
+    root: process.cwd(),
+  },
+
+  // Fallback webpack pour compatibilité (si besoin de revenir à webpack)
   webpack: (config, { isServer }) => {
-    // Fixes pour certaines librairies (PDF, Leaflet, etc.)
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -75,12 +83,6 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
-
-  // Activation du mode React strict
-  reactStrictMode: true,
-
-  // Optimisation de la compilation
-  swcMinify: true,
 
   // Configuration i18n si nécessaire (français par défaut)
   // i18n: {

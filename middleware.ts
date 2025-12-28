@@ -19,6 +19,10 @@ const roleBasePaths: Record<string, string> = {
 };
 
 export function middleware(request: NextRequest) {
+  // 🔓 AUTHENTIFICATION DÉSACTIVÉE TEMPORAIREMENT
+  // Pour réactiver l'authentification, décommentez le code ci-dessous
+
+  /*
   const { pathname } = request.nextUrl;
 
   // Récupérer le token et le rôle depuis les cookies
@@ -66,7 +70,9 @@ export function middleware(request: NextRequest) {
       }
     }
   }
+  */
 
+  // Laisser passer toutes les requêtes sans vérification
   return NextResponse.next();
 }
 

@@ -126,65 +126,65 @@ export const navSections: NavSection[] = [
     items: [
       { id: 'dashboard', icon: '📊', label: 'Tableau de bord' },
       { id: 'demandes', icon: '📋', label: 'Demandes', badge: 14, badgeType: 'urgent' },
-      { id: 'projets', icon: '🏗️', label: 'Projets', badge: 8, badgeType: 'gold' },
+      { id: 'projets', icon: '🏗️', label: 'Projets', badge: 8, badgeType: 'gray' },
       { id: 'calendrier', icon: '📅', label: 'Calendrier' },
     ],
   },
   {
     title: 'Ressources Humaines',
     items: [
-      { id: 'employes', icon: '👤', label: 'Employés', badge: 24, badgeType: 'info' },
-      { id: 'missions', icon: '🎯', label: 'Missions', badge: 5, badgeType: 'gold' },
-      { id: 'evaluations', icon: '⭐', label: 'Évaluations', badge: 3, badgeType: 'default' },
+      { id: 'employes', icon: '👤', label: 'Employés', badge: 24, badgeType: 'gray' },
+      { id: 'missions', icon: '🎯', label: 'Missions', badge: 5, badgeType: 'gray' },
+      { id: 'evaluations', icon: '⭐', label: 'Évaluations', badge: 3, badgeType: 'gray' },
     ],
   },
   {
     title: 'Organisation',
     items: [
-      { id: 'bureaux', icon: '🏢', label: 'Bureaux', badge: 8, badgeType: 'success' },
-      { id: 'delegations', icon: '🔑', label: 'Délégations', badge: 3, badgeType: 'warning' },
+      { id: 'bureaux', icon: '🏢', label: 'Bureaux', badge: 8, badgeType: 'gray' },
+      { id: 'delegations', icon: '🔑', label: 'Délégations', badge: 3, badgeType: 'gray' },
       { id: 'organigramme', icon: '📐', label: 'Organigramme' },
     ],
   },
   {
     title: 'Demandes RH',
     items: [
-      { id: 'demandes-rh', icon: '📝', label: 'Toutes + Recrutement', badge: 14, badgeType: 'warning' },
-      { id: 'conges', icon: '🏖️', label: 'Congés/Vacances', badge: 3, badgeType: 'default' },
-      { id: 'depenses', icon: '💸', label: 'Dépenses', badge: 3, badgeType: 'default' },
-      { id: 'deplacements', icon: '✈️', label: 'Déplacements', badge: 2, badgeType: 'default' },
-      { id: 'paie-avances', icon: '💰', label: 'Paie/Avances', badge: 1, badgeType: 'urgent' },
+      { id: 'demandes-rh', icon: '📝', label: 'Toutes + Recrutement', badge: 14, badgeType: 'gray' },
+      { id: 'conges', icon: '🏖️', label: 'Congés/Vacances', badge: 3, badgeType: 'gray' },
+      { id: 'depenses', icon: '💸', label: 'Dépenses', badge: 3, badgeType: 'gray' },
+      { id: 'deplacements', icon: '✈️', label: 'Déplacements', badge: 2, badgeType: 'gray' },
+      { id: 'paie-avances', icon: '💰', label: 'Paie/Avances', badge: 1, badgeType: 'gray' },
     ],
   },
   {
     title: 'Communication',
     items: [
-      { id: 'echanges', icon: '💬', label: 'Échanges Bureaux', badge: 8, badgeType: 'info' },
-      { id: 'arbitrages', icon: '⚖️', label: 'Arbitrages', badge: 3, badgeType: 'urgent' },
-      { id: 'messages-externes', icon: '📨', label: 'Messages Externes', badge: 8, badgeType: 'warning' },
+      { id: 'echanges', icon: '💬', label: 'Échanges Bureaux', badge: 8, badgeType: 'gray' },
+      { id: 'arbitrages', icon: '⚖️', label: 'Arbitrages', badge: 3, badgeType: 'gray' },
+      { id: 'messages-externes', icon: '📨', label: 'Messages Externes', badge: 8, badgeType: 'gray' },
     ],
   },
   {
     title: 'Validation',
     items: [
-      { id: 'validation-bc', icon: '✅', label: 'BC/Factures/Avenants', badge: 13, badgeType: 'warning' },
-      { id: 'validation-contrats', icon: '📜', label: 'Contrats', badge: 3, badgeType: 'gold' },
-      { id: 'validation-paiements', icon: '💳', label: 'Paiements N+1', badge: 5, badgeType: 'info' },
+      { id: 'validation-bc', icon: '✅', label: 'BC/Factures/Avenants', badge: 13, badgeType: 'gray' },
+      { id: 'validation-contrats', icon: '📜', label: 'Contrats', badge: 3, badgeType: 'gray' },
+      { id: 'validation-paiements', icon: '💳', label: 'Paiements N+1', badge: 5, badgeType: 'gray' },
     ],
   },
   {
     title: 'Supervision',
     items: [
-      { id: 'blocked', icon: '🚨', label: 'Dossiers bloqués', badge: 4, badgeType: 'urgent' },
-      { id: 'substitution', icon: '🔄', label: 'Substitution', badge: 4, badgeType: 'warning' },
-      { id: 'alerts', icon: '⚠️', label: 'Alertes et Consignes', badge: 7, badgeType: 'default' },
+      { id: 'blocked', icon: '🚨', label: 'Dossiers bloqués', badge: 4, badgeType: 'gray' },
+      { id: 'substitution', icon: '🔄', label: 'Substitution', badge: 4, badgeType: 'gray' },
+      { id: 'alerts', icon: '⚠️', label: 'Alertes et Consignes', badge: 7, badgeType: 'gray' },
     ],
   },
   {
     title: 'Finances et Contentieux',
     items: [
-      { id: 'recouvrements', icon: '📜', label: 'Recouvrements', badge: 4, badgeType: 'urgent' },
-      { id: 'litiges', icon: '⚖️', label: 'Litiges', badge: 3, badgeType: 'warning' },
+      { id: 'recouvrements', icon: '📜', label: 'Recouvrements', badge: 4, badgeType: 'gray' },
+      { id: 'litiges', icon: '⚖️', label: 'Litiges', badge: 3, badgeType: 'gray' },
       { id: 'finances', icon: '💰', label: 'Gains/Pertes' },
     ],
   },
@@ -200,8 +200,8 @@ export const navSections: NavSection[] = [
     title: 'Tech et IA',
     items: [
       { id: 'analytics', icon: '📈', label: 'Tableaux BI' },
-      { id: 'api', icon: '🔗', label: 'API et Intégrations', badge: 8, badgeType: 'success' },
-      { id: 'ia', icon: '🤖', label: 'Intelligence Artificielle', badgeType: 'gold' },
+      { id: 'api', icon: '🔗', label: 'API et Intégrations', badge: 8, badgeType: 'gray' },
+      { id: 'ia', icon: '🤖', label: 'Intelligence Artificielle', badgeType: 'gray' },
     ],
   },
 ];

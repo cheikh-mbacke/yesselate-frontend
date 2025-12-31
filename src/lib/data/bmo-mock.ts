@@ -43,7 +43,7 @@ export const bureaux: Bureau[] = [
   { code: 'BFC', name: 'Bureau Finance et Comptabilité', icon: '🏦', color: '#3B82F6', head: 'F. DIOP', agents: 3, tasks: 12, completion: 80, budget: '8M', desc: 'Gestion financière et Comptabilité' },
   { code: 'BMCM', name: 'Bureau Marché Communication et Marketing', icon: '🏪', color: '#10B981', head: 'M. BA', agents: 2, tasks: 10, completion: 85, budget: '5M', desc: "Appels d'offres, contrats" },
   { code: 'BAA', name: 'Bureau Achats et Approvisionnement', icon: '🛒', color: '#06B6D4', head: 'A. SECK', agents: 4, tasks: 18, completion: 78, budget: '12M', desc: 'Achats, logistique' },
-  { code: 'BCT', name: 'Bureau Contrôle Technique', icon: '📍', color: '#EF4444', head: 'C. GUEYE', agents: 3, tasks: 8, completion: 62, budget: '6M', desc: 'Supervision chantiers' },
+  { code: 'BCT', name: 'Bureau Contrôle Technique', icon: '📍', color: '#EF4444', head: 'C. GUEYE', agents: 3, tasks: 8, completion: 62, budget: '6M', desc: 'Contrôle technique des chantiers' },
   { code: 'BACQ', name: 'Bureau Audit et Contrôle Qualité', icon: '🔬', color: '#EC4899', head: 'S. MBAYE', agents: 2, tasks: 6, completion: 95, budget: '3M', desc: 'Tests, certifications' },
   { code: 'BJ', name: 'Bureau Juridique', icon: '⚖️', color: '#8B5CF6', head: 'N. FAYE', agents: 2, tasks: 6, completion: 100, budget: '4M', desc: 'Rédaction des contrats, Assistance juridique, Conformité juridique, Gestion des litiges' },
   { code: 'BEX', name: 'Bureau Exécution', icon: '🔧', color: '#6366F1', head: 'A. DIENG', agents: 5, tasks: 15, completion: 75, budget: '10M', desc: 'Exécution des projets et suivi des chantiers' },

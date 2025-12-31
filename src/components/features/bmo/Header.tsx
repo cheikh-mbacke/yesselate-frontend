@@ -129,7 +129,7 @@ export function BMOToolbar() {
         >
           {t.icon} {t.label}
           {t.badge && (
-            <Badge variant="warning" className="ml-1">
+            <Badge variant="gray" className="ml-1">
               {t.badge}
             </Badge>
           )}

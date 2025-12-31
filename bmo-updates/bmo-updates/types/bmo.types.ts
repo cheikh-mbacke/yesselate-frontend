@@ -27,6 +27,47 @@ export interface Bureau {
   desc: string;
 }
 
+// --- Détails Bureau (NOUVEAU) ---
+export interface BureauDetails {
+  code: string;
+  platforms: BureauPlatform[];
+  organigramme: BureauOrgMember[];
+  stats: {
+    projectsActive: number;
+    projectsCompleted: number;
+    budgetTotal: string;
+    budgetUsed: string;
+    validationsMonth: number;
+    avgResponseTime: string;
+  };
+  recentActivities: {
+    id: string;
+    action: string;
+    date: string;
+    agent: string;
+  }[];
+}
+
+export interface BureauPlatform {
+  id: string;
+  name: string;
+  url: string;
+  icon: string;
+  description: string;
+  status: 'active' | 'maintenance' | 'inactive';
+}
+
+export interface BureauOrgMember {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+  email: string;
+  phone: string;
+  status: EmployeeStatus;
+  isHead: boolean;
+}
+
 // --- Employé ---
 export interface Employee {
   id: string;
@@ -64,6 +105,44 @@ export interface Project {
   status: ProjectStatus;
   bureau: string;
   team: number;
+}
+
+// --- Projet avec Budget détaillé (NOUVEAU) ---
+export interface ProjectBudget {
+  projectId: string;
+  budgetEstimatif: number;      // Budget initial estimé
+  budgetPrevisionnel: number;   // Budget réel + 5% (plafond autorisé)
+  budgetReel: number;           // Budget actuellement dépensé
+  seuilAlerte: number;          // Seuil à partir duquel on alerte (généralement budgetReel)
+  depassementAutorise: boolean; // Si le BMO a donné son accord
+  dateAccordDepassement?: string;
+  motifDepassement?: string;
+  historique: BudgetHistoryItem[];
+}
+
+export interface BudgetHistoryItem {
+  date: string;
+  type: 'depense' | 'ajustement' | 'accord_depassement';
+  montant: number;
+  description: string;
+  validatedBy?: string;
+}
+
+// --- Alerte Budget (NOUVEAU) ---
+export interface BudgetAlert {
+  id: string;
+  projectId: string;
+  projectName: string;
+  bureau: string;
+  budgetPrevisionnel: number;
+  budgetActuel: number;
+  depassement: number;          // Montant du dépassement
+  depassementPourcent: number;  // % de dépassement
+  date: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedBy: string;
+  approvedBy?: string;
+  motif: string;
 }
 
 // --- Demande ---
@@ -461,6 +540,34 @@ export interface Substitution {
   reason: string;
 }
 
+// --- Action de Substitution (NOUVEAU) ---
+export type SubstitutionActionType = 
+  | 'instruire'           // Instruire le dossier
+  | 'valider'             // Valider à la place
+  | 'rejeter'             // Rejeter la demande
+  | 'annuler'             // Annuler la demande
+  | 'deleguer'            // Déléguer à un autre agent
+  | 'demander_info';      // Demander des informations complémentaires
+
+export interface SubstitutionAction {
+  id: string;
+  dossierRef: string;
+  dossierType: string;
+  dossierSubject: string;
+  dossierAmount: string;
+  dossierBureau: string;
+  dossierResponsible: string;
+  dossierReason: string;
+  actionType: SubstitutionActionType;
+  traitant: string;           // Agent désigné pour traiter
+  traitantId: string;
+  deadline: string;
+  instructions?: string;
+  createdAt: string;
+  createdBy: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+}
+
 // --- Timeline ---
 export interface TimelineItem {
   type: 'validated' | 'substitution' | 'delegation' | 'alert' | 'payment' | 'contract';
@@ -484,4 +591,168 @@ export interface SearchableItem {
   subtitle: string;
   icon: string;
   page: string;
+}
+
+// ============================================
+// NOUVEAUX TYPES - Journalisation, Paramètres, Stats
+// ============================================
+
+// --- Log d'action (Journalisation) ---
+export type ActionLogType = 
+  | 'validation'
+  | 'rejection' 
+  | 'substitution'
+  | 'delegation'
+  | 'creation'
+  | 'modification'
+  | 'suppression'
+  | 'connexion'
+  | 'deconnexion'
+  | 'export'
+  | 'import'
+  | 'budget_alert'
+  | 'budget_approval';
+
+export interface ActionLog {
+  id: string;
+  timestamp: string;          // ISO date string
+  userId: string;
+  userName: string;
+  userRole: string;
+  action: ActionLogType;
+  module: string;             // Ex: 'validation-bc', 'substitution', 'employes'
+  targetId?: string;          // ID de l'élément concerné
+  targetType?: string;        // Type de l'élément (BC, Paiement, Employé, etc.)
+  targetLabel?: string;       // Libellé lisible
+  details?: string;           // Détails supplémentaires
+  ipAddress?: string;
+  userAgent?: string;
+  previousValue?: string;     // Pour les modifications
+  newValue?: string;          // Pour les modifications
+  bureau?: string;
+}
+
+// --- Paramètres utilisateur ---
+export interface UserSettings {
+  userId: string;
+  profile: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    avatar?: string;
+    role: string;
+    bureau: string;
+  };
+  preferences: {
+    language: 'fr' | 'en';
+    timezone: string;
+    dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+    currency: 'FCFA' | 'EUR' | 'USD';
+    theme: 'dark' | 'light' | 'system';
+    sidebarCollapsed: boolean;
+    compactMode: boolean;
+  };
+  notifications: {
+    email: boolean;
+    push: boolean;
+    sms: boolean;
+    urgentOnly: boolean;
+    digest: 'realtime' | 'hourly' | 'daily' | 'weekly';
+    categories: {
+      validations: boolean;
+      blocages: boolean;
+      budgets: boolean;
+      rh: boolean;
+      litiges: boolean;
+    };
+  };
+  security: {
+    twoFactorEnabled: boolean;
+    lastPasswordChange: string;
+    sessionTimeout: number;    // en minutes
+    trustedDevices: string[];
+  };
+}
+
+// --- Statistiques Clients ---
+export interface Client {
+  id: string;
+  type: 'particulier' | 'entreprise' | 'institution';
+  name: string;
+  contact: string;
+  email: string;
+  phone: string;
+  address?: string;
+  registrationDate: string;
+  status: 'active' | 'inactive' | 'prospect';
+}
+
+export interface ClientStats {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientType: 'particulier' | 'entreprise' | 'institution';
+  
+  // Projets
+  projectsTotal: number;
+  projectsActive: number;
+  projectsCompleted: number;
+  projectsCancelled: number;
+  
+  // Financier
+  chiffreAffairesTotal: number;
+  chiffreAffairesAnnee: number;
+  paiementsEnCours: number;
+  paiementsEnRetard: number;
+  montantImpaye: number;
+  
+  // Satisfaction & Relation
+  scoreQualite: number;        // 0-100
+  nbReclamations: number;
+  nbLitiges: number;
+  anciennete: number;          // en mois
+  dernierContact: string;
+  
+  // Historique projets
+  projects: ClientProjectSummary[];
+}
+
+export interface ClientProjectSummary {
+  projectId: string;
+  projectName: string;
+  startDate: string;
+  endDate?: string;
+  status: ProjectStatus;
+  budget: number;
+  paid: number;
+  remaining: number;
+}
+
+// --- Stats globales clients (pour dashboard) ---
+export interface ClientsGlobalStats {
+  totalClients: number;
+  clientsActifs: number;
+  clientsParticuliers: number;
+  clientsEntreprises: number;
+  clientsInstitutions: number;
+  nouveauxClientsMois: number;
+  chiffreAffairesTotalAnnee: number;
+  tauxFidelisation: number;
+  scoreSatisfactionMoyen: number;
+  topClients: {
+    clientId: string;
+    clientName: string;
+    chiffreAffaires: number;
+  }[];
+  repartitionParType: {
+    type: string;
+    count: number;
+    percentage: number;
+  }[];
+  evolutionMensuelle: {
+    month: string;
+    nouveaux: number;
+    chiffreAffaires: number;
+  }[];
 }

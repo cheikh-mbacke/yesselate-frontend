@@ -136,3 +136,26 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Scrollbar discrète pour la sidebar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(249, 115, 22, 0.3) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(249, 115, 22, 0.3);
+  border-radius: 10px;
+}
+
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(249, 115, 22, 0.5);
+}

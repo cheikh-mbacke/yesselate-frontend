@@ -55,7 +55,7 @@ export function SearchModal() {
         title: p.name,
         subtitle: `${p.client} • ${p.budget}`,
         icon: '🏗️',
-        route: '/maitre-ouvrage/projets',
+        route: '/maitre-ouvrage/projets-en-cours',
       });
     });
 
@@ -79,7 +79,7 @@ export function SearchModal() {
         title: b.name,
         subtitle: `${b.agents} agents • ${b.head}`,
         icon: b.icon,
-        route: '/maitre-ouvrage/bureaux',
+        route: '/maitre-ouvrage/arbitrages-vivants',
       });
     });
 
@@ -115,7 +115,7 @@ export function SearchModal() {
         title: a.subject,
         subtitle: a.parties.join(' vs '),
         icon: '⚖️',
-        route: '/maitre-ouvrage/arbitrages',
+        route: '/maitre-ouvrage/arbitrages-vivants',
       });
     });
 
@@ -123,16 +123,16 @@ export function SearchModal() {
     const pages = [
       { id: 'dashboard', title: 'Tableau de bord', icon: '📊', route: '/maitre-ouvrage' },
       { id: 'demandes', title: 'Demandes', icon: '📋', route: '/maitre-ouvrage/demandes' },
-      { id: 'projets', title: 'Projets', icon: '🏗️', route: '/maitre-ouvrage/projets' },
+      { id: 'projets-en-cours', title: 'Projets en cours', icon: '🏗️', route: '/maitre-ouvrage/projets-en-cours' },
       { id: 'employes', title: 'Employés', icon: '👤', route: '/maitre-ouvrage/employes' },
-      { id: 'bureaux', title: 'Bureaux', icon: '🏢', route: '/maitre-ouvrage/bureaux' },
+      { id: 'arbitrages-vivants', title: 'Gouvernance & Décisions', icon: '🎯', route: '/maitre-ouvrage/arbitrages-vivants' },
       { id: 'calendrier', title: 'Calendrier', icon: '📅', route: '/maitre-ouvrage/calendrier' },
       { id: 'delegations', title: 'Délégations', icon: '🔑', route: '/maitre-ouvrage/delegations' },
       { id: 'validation-bc', title: 'Validation BC', icon: '✅', route: '/maitre-ouvrage/validation-bc' },
       { id: 'validation-contrats', title: 'Contrats', icon: '📜', route: '/maitre-ouvrage/validation-contrats' },
       { id: 'validation-paiements', title: 'Paiements', icon: '💳', route: '/maitre-ouvrage/validation-paiements' },
-      { id: 'echanges', title: 'Échanges', icon: '💬', route: '/maitre-ouvrage/echanges' },
-      { id: 'arbitrages', title: 'Arbitrages', icon: '⚖️', route: '/maitre-ouvrage/arbitrages' },
+      { id: 'echanges-bureaux', title: 'Échanges Inter-Bureaux', icon: '💬', route: '/maitre-ouvrage/echanges-bureaux' },
+      { id: 'arbitrages-vivants', title: 'Arbitrages Vivants', icon: '⚖️', route: '/maitre-ouvrage/arbitrages-vivants' },
       { id: 'decisions', title: 'Décisions', icon: '⚖️', route: '/maitre-ouvrage/decisions' },
       { id: 'recouvrements', title: 'Recouvrements', icon: '📜', route: '/maitre-ouvrage/recouvrements' },
     ];

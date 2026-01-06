@@ -1,6 +1,7 @@
 // ============================================
 // Données mockées BMO - Partie 3
 // Calendrier, Navigation, Performance, RACI, Audit
+// + NOUVEAUX: Stats Clients, Paramètres, Détails Bureaux
 // ============================================
 
 import type {
@@ -11,6 +12,13 @@ import type {
   Consigne,
   NavSection,
   Organigramme,
+  ClientStats,
+  ClientsGlobalStats,
+  UserSettings,
+  BureauDetails,
+  ActionLog,
+  BudgetAlert,
+  ProjectBudget,
 } from '@/lib/types/bmo.types';
 
 // --- Événements calendrier ---
@@ -27,6 +35,13 @@ export const agendaEvents: CalendarEvent[] = [
   { id: 'e10', title: 'Contrôle qualité béton', time: '09:00', type: 'inspection', date: '2025-12-26', priority: 'high', project: 'PRJ-0018' },
   { id: 'e11', title: 'Formation OHADA', time: '09:00', type: 'training', date: '2026-01-15', endDate: '2026-01-17', priority: 'normal' },
   { id: 'e12', title: 'Entretien annuel I. FALL', time: '14:00', type: 'hr', date: '2025-12-24', priority: 'normal', employee: 'EMP-001' },
+];
+
+// --- Absences planifiées (NOUVEAU - pour heatmap risques) ---
+export const plannedAbsences = [
+  { id: 'ABS-001', employeeId: 'EMP-004', employeeName: 'F. DIOP', bureau: 'BF', startDate: '2025-12-23', endDate: '2026-01-02', type: 'congé', impact: 'high' },
+  { id: 'ABS-002', employeeId: 'EMP-007', employeeName: 'C. GUEYE', bureau: 'BCT', startDate: '2025-12-26', endDate: '2025-12-28', type: 'mission', impact: 'medium' },
+  { id: 'ABS-003', employeeId: 'EMP-008', employeeName: 'N. FAYE', bureau: 'BJ', startDate: '2026-01-02', endDate: '2026-01-04', type: 'mission', impact: 'high' },
 ];
 
 // --- Données de performance ---
@@ -119,73 +134,67 @@ export const organigramme: Organigramme = {
   ],
 };
 
-// --- Navigation sidebar ---
+// --- Navigation sidebar (RÉORGANISÉE selon chaîne de valeur DG) ---
+// Ordre logique : Pilotage → Exécution → Projets & Clients → Finance & Contentieux → RH & Ressources → Gouvernance & Système
 export const navSections: NavSection[] = [
   {
     title: 'Pilotage',
     items: [
       { id: 'dashboard', icon: '📊', label: 'Tableau de bord' },
-      { id: 'demandes', icon: '📋', label: 'Demandes', badge: 14, badgeType: 'urgent' },
-      { id: 'projets', icon: '🏗️', label: 'Projets', badge: 8, badgeType: 'gray' },
+      { id: 'alerts', icon: '⚠️', label: 'Alertes & Risques', badge: 7, badgeType: 'warning' },
       { id: 'calendrier', icon: '📅', label: 'Calendrier' },
+      { id: 'analytics', icon: '📈', label: 'Analytics & Rapports' },
     ],
   },
   {
-    title: 'Ressources Humaines',
+    title: 'Exécution',
     items: [
-      { id: 'employes', icon: '👤', label: 'Employés', badge: 24, badgeType: 'gray' },
-      { id: 'missions', icon: '🎯', label: 'Missions', badge: 5, badgeType: 'gray' },
-      { id: 'evaluations', icon: '⭐', label: 'Évaluations', badge: 3, badgeType: 'gray' },
+      { id: 'demandes', icon: '📋', label: 'Demandes', badge: 14, badgeType: 'urgent' },
+      { id: 'validation-bc', icon: '✅', label: 'Validation BC/Factu...', badge: 13, badgeType: 'gray' },
+      { id: 'validation-contrats', icon: '📜', label: 'Validation Contrats', badge: 3, badgeType: 'gray' },
+      { id: 'validation-paiements', icon: '💳', label: 'Validation Paiements...', badge: 5, badgeType: 'gray' },
+      { id: 'blocked', icon: '🚨', label: 'Dossiers bloqués', badge: 4, badgeType: 'urgent' },
+      { id: 'substitution', icon: '🔄', label: 'Substitution', badge: 4, badgeType: 'warning' },
     ],
   },
   {
-    title: 'Organisation',
+    title: 'Projets & Clients',
     items: [
-      { id: 'bureaux', icon: '🏢', label: 'Bureaux', badge: 8, badgeType: 'gray' },
-      { id: 'delegations', icon: '🔑', label: 'Délégations', badge: 3, badgeType: 'gray' },
+      { id: 'projets-en-cours', icon: '🏗️', label: 'Projets en cours', badge: 8, badgeType: 'gray' },
+      { id: 'clients', icon: '👥', label: 'Clients' },
+      { id: 'tickets-clients', icon: '📋', label: 'Tickets clients' },
+    ],
+  },
+  {
+    title: 'Finance & Contentieux',
+    items: [
+      { id: 'finances', icon: '💰', label: 'Gains et Pertes' },
+      { id: 'recouvrements', icon: '📜', label: 'Recouvrements', badge: 4, badgeType: 'gray' },
+      { id: 'litiges', icon: '⚖️', label: 'Litiges', badge: 3, badgeType: 'gray' },
+    ],
+  },
+  {
+    title: 'RH & Ressources',
+    items: [
+      { id: 'employes', icon: '👤', label: 'Employés & Agents', badge: 8, badgeType: 'gray' },
+      { id: 'missions', icon: '🎯', label: 'Missions', badge: 2, badgeType: 'warning' },
+      { id: 'evaluations', icon: '📊', label: 'Évaluations', badge: 2, badgeType: 'info' },
+      { id: 'demandes-rh', icon: '📝', label: 'Demandes RH', badge: 10, badgeType: 'warning' },
+      { id: 'depenses', icon: '💸', label: 'Demandes Dépenses', badge: 2, badgeType: 'gray' },
+      { id: 'deplacements', icon: '✈️', label: 'Déplacements', badge: 1, badgeType: 'urgent' },
+      { id: 'paie-avances', icon: '💰', label: 'Paie & Avances', badge: 1, badgeType: 'urgent' },
+      { id: 'delegations', icon: '🔑', label: 'Délégations' },
       { id: 'organigramme', icon: '📐', label: 'Organigramme' },
-    ],
-  },
-  {
-    title: 'Demandes RH',
-    items: [
-      { id: 'demandes-rh', icon: '📝', label: 'Toutes + Recrutement', badge: 14, badgeType: 'gray' },
-      { id: 'conges', icon: '🏖️', label: 'Congés/Vacances', badge: 3, badgeType: 'gray' },
-      { id: 'depenses', icon: '💸', label: 'Dépenses', badge: 3, badgeType: 'gray' },
-      { id: 'deplacements', icon: '✈️', label: 'Déplacements', badge: 2, badgeType: 'gray' },
-      { id: 'paie-avances', icon: '💰', label: 'Paie/Avances', badge: 1, badgeType: 'gray' },
     ],
   },
   {
     title: 'Communication',
     items: [
-      { id: 'echanges', icon: '💬', label: 'Échanges Bureaux', badge: 8, badgeType: 'gray' },
-      { id: 'arbitrages', icon: '⚖️', label: 'Arbitrages', badge: 3, badgeType: 'gray' },
-      { id: 'messages-externes', icon: '📨', label: 'Messages Externes', badge: 8, badgeType: 'gray' },
-    ],
-  },
-  {
-    title: 'Validation',
-    items: [
-      { id: 'validation-bc', icon: '✅', label: 'BC/Factures/Avenants', badge: 13, badgeType: 'gray' },
-      { id: 'validation-contrats', icon: '📜', label: 'Contrats', badge: 3, badgeType: 'gray' },
-      { id: 'validation-paiements', icon: '💳', label: 'Paiements N+1', badge: 5, badgeType: 'gray' },
-    ],
-  },
-  {
-    title: 'Supervision',
-    items: [
-      { id: 'blocked', icon: '🚨', label: 'Dossiers bloqués', badge: 4, badgeType: 'gray' },
-      { id: 'substitution', icon: '🔄', label: 'Substitution', badge: 4, badgeType: 'gray' },
-      { id: 'alerts', icon: '⚠️', label: 'Alertes et Consignes', badge: 7, badgeType: 'gray' },
-    ],
-  },
-  {
-    title: 'Finances et Contentieux',
-    items: [
-      { id: 'recouvrements', icon: '📜', label: 'Recouvrements', badge: 4, badgeType: 'gray' },
-      { id: 'litiges', icon: '⚖️', label: 'Litiges', badge: 3, badgeType: 'gray' },
-      { id: 'finances', icon: '💰', label: 'Gains/Pertes' },
+      { id: 'echanges-bureaux', icon: '💬', label: 'Échanges Inter-Bureaux', badge: 5, badgeType: 'gray' },
+      { id: 'echanges-structures', icon: '🏛️', label: 'Échanges Structures' },
+      { id: 'arbitrages-vivants', icon: '🎯', label: 'Gouvernance & Décisions', badge: 3, badgeType: 'warning' },
+      { id: 'conferences', icon: '📹', label: 'Conférences Décisionnelles' },
+      { id: 'messages-externes', icon: '📨', label: 'Messages Externes' },
     ],
   },
   {
@@ -194,49 +203,898 @@ export const navSections: NavSection[] = [
       { id: 'decisions', icon: '⚖️', label: 'Décisions' },
       { id: 'raci', icon: '📐', label: 'Matrice RACI' },
       { id: 'audit', icon: '🔍', label: 'Audit' },
+      { id: 'logs', icon: '📜', label: 'Journal des Actions' },
+      { id: 'system-logs', icon: '🔧', label: 'Logs Système' },
+      { id: 'ia', icon: '🤖', label: 'Intelligence Artificielle' },
+      { id: 'api', icon: '🔌', label: 'API & Intégrations' },
+      { id: 'parametres', icon: '⚙️', label: 'Paramètres' },
+    ],
+  },
+];
+
+// --- Données financières (enrichies avec gains, pertes, trésorerie) ---
+import type {
+  Financials,
+  FinancialGain,
+  FinancialLoss,
+  TreasuryEntry,
+} from '@/lib/types/bmo.types';
+
+// Gains détaillés
+export const financialGains: FinancialGain[] = [
+  {
+    id: 'GAIN-2025-0045',
+    date: '20/12/2025',
+    category: 'paiement_client',
+    categoryLabel: 'Paiement client',
+    description: 'Paiement situation n°3 - Villa Diamniadio',
+    montant: 8500000,
+    projet: 'PRJ-0018',
+    projetName: 'Villa Diamniadio',
+    client: 'CLI-001',
+    clientName: 'M. Ibrahima DIALLO',
+    reference: 'FAC-2025-0187',
+    validatedBy: 'F. DIOP',
+    validatedAt: '20/12/2025 14:30',
+    hash: 'SHA3-256:8f4a2b3c...',
+  },
+  {
+    id: 'GAIN-2025-0044',
+    date: '18/12/2025',
+    category: 'paiement_client',
+    categoryLabel: 'Paiement client',
+    description: 'Acompte travaux Route Zone B',
+    montant: 25000000,
+    projet: 'PRJ-0017',
+    projetName: 'Route Zone B',
+    client: 'CLI-002',
+    clientName: 'Mairie de Rufisque',
+    reference: 'FAC-2025-0182',
+    validatedBy: 'F. DIOP',
+    validatedAt: '18/12/2025 10:15',
+    hash: 'SHA3-256:9c7e1d4a...',
+  },
+  {
+    id: 'GAIN-2025-0043',
+    date: '15/12/2025',
+    category: 'retenue_garantie',
+    categoryLabel: 'Libération retenue garantie',
+    description: 'Libération RG - École Pikine (réception définitive)',
+    montant: 1800000,
+    projet: 'PRJ-0015',
+    projetName: 'Rénovation École Pikine',
+    client: 'CLI-005',
+    clientName: 'IEF Pikine',
+    reference: 'RG-PRJ0015',
+    validatedBy: 'F. DIOP',
+    validatedAt: '15/12/2025 16:00',
+    hash: 'SHA3-256:3b2f5c8d...',
+  },
+  {
+    id: 'GAIN-2025-0042',
+    date: '10/12/2025',
+    category: 'penalite_recue',
+    categoryLabel: 'Pénalité fournisseur',
+    description: 'Pénalité retard livraison MATFORCE',
+    montant: 450000,
+    projet: 'PRJ-0017',
+    projetName: 'Route Zone B',
+    reference: 'PEN-2025-0012',
+    validatedBy: 'M. BA',
+    validatedAt: '10/12/2025 11:30',
+    hash: 'SHA3-256:7a9f3e2b...',
+  },
+  {
+    id: 'GAIN-2025-0041',
+    date: '05/12/2025',
+    category: 'paiement_client',
+    categoryLabel: 'Paiement client',
+    description: 'Solde final Immeuble R+4 Almadies',
+    montant: 12000000,
+    projet: 'PRJ-0016',
+    projetName: 'Immeuble R+4 Almadies',
+    client: 'CLI-004',
+    clientName: 'SCI Teranga',
+    reference: 'FAC-2025-0175',
+    validatedBy: 'F. DIOP',
+    validatedAt: '05/12/2025 09:45',
+    hash: 'SHA3-256:5c4d8e1f...',
+  },
+];
+
+// Pertes détaillées
+export const financialLosses: FinancialLoss[] = [
+  {
+    id: 'LOSS-2025-0018',
+    date: '22/12/2025',
+    category: 'frais_contentieux',
+    categoryLabel: 'Frais contentieux',
+    description: 'Honoraires Me SALL - Dossier SUNEOR',
+    montant: 2500000,
+    projet: 'PRJ-0014',
+    projetName: 'Extension usine SUNEOR',
+    incident: 'LIT-2025-0012',
+    reference: 'FAC-AVO-2025-089',
+    validatedBy: 'A. DIALLO',
+    validatedAt: '22/12/2025 15:00',
+    hash: 'SHA3-256:2e7c9a4b...',
+  },
+  {
+    id: 'LOSS-2025-0017',
+    date: '18/12/2025',
+    category: 'penalite_retard',
+    categoryLabel: 'Pénalité retard',
+    description: 'Pénalité retard livraison client - Route Zone B',
+    montant: 1250000,
+    projet: 'PRJ-0017',
+    projetName: 'Route Zone B',
+    reference: 'PEN-CLI-2025-003',
+    decision: 'DEC-2025-0082',
+    decisionDate: '15/12/2025',
+    validatedBy: 'A. DIALLO',
+    validatedAt: '18/12/2025 11:00',
+    hash: 'SHA3-256:8f3a2d5c...',
+  },
+  {
+    id: 'LOSS-2025-0016',
+    date: '15/12/2025',
+    category: 'provision_litige',
+    categoryLabel: 'Provision litige',
+    description: 'Provision litige DIENG (prud\'hommes)',
+    montant: 3500000,
+    incident: 'LIT-2025-0011',
+    reference: 'PROV-2025-0005',
+    validatedBy: 'F. DIOP',
+    validatedAt: '15/12/2025 14:00',
+    hash: 'SHA3-256:1d9e4f2a...',
+  },
+  {
+    id: 'LOSS-2025-0015',
+    date: '10/12/2025',
+    category: 'malfacon',
+    categoryLabel: 'Reprise malfaçon',
+    description: 'Coût reprise étanchéité terrasse',
+    montant: 850000,
+    projet: 'PRJ-0018',
+    projetName: 'Villa Diamniadio',
+    fournisseur: 'SENFER',
+    reference: 'REP-2025-0008',
+    validatedBy: 'C. GUEYE',
+    validatedAt: '10/12/2025 16:30',
+    hash: 'SHA3-256:6b8c3e7d...',
+  },
+];
+
+// Entrées de trésorerie
+export const treasuryEntries: TreasuryEntry[] = [
+  { id: 'TRS-001', date: '22/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'PAY-2025-0095', description: 'Encaissement SENELEC', montant: 850000, soldeApres: 45250000, validatedBy: 'F. DIOP' },
+  { id: 'TRS-002', date: '20/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'GAIN-2025-0045', description: 'Paiement client DIALLO', montant: 8500000, soldeApres: 44400000, projet: 'PRJ-0018', projetName: 'Villa Diamniadio', tiers: 'M. Ibrahima DIALLO', validatedBy: 'F. DIOP' },
+  { id: 'TRS-003', date: '18/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'GAIN-2025-0044', description: 'Acompte Mairie Rufisque', montant: 25000000, soldeApres: 35900000, projet: 'PRJ-0017', projetName: 'Route Zone B', tiers: 'Mairie de Rufisque', validatedBy: 'F. DIOP' },
+  { id: 'TRS-004', date: '18/12/2025', type: 'decaissement', source: 'exploitation', description: 'Règlement fournisseur SOCOCIM', montant: -4250000, soldeApres: 10900000, tiers: 'SOCOCIM Industries', validatedBy: 'F. DIOP' },
+  { id: 'TRS-005', date: '15/12/2025', type: 'encaissement', source: 'recouvrement', sourceRef: 'REC-2025-0031', description: 'Paiement partiel Mme DIOP', montant: 350000, soldeApres: 15150000, tiers: 'Mme Aïda DIOP', validatedBy: 'F. DIOP' },
+  { id: 'TRS-006', date: '15/12/2025', type: 'provision', source: 'litige', sourceRef: 'LIT-2025-0011', description: 'Provision litige DIENG', montant: -3500000, soldeApres: 14800000, validatedBy: 'F. DIOP' },
+];
+
+// Structure Financials enrichie
+export const financials: Financials = {
+  // Résumé global
+  totalGains: 245000000,
+  totalPertes: 198000000,
+  resultatNet: 47000000,
+  tauxMarge: 19.2,
+  
+  // Détails
+  gains: financialGains,
+  pertes: financialLosses,
+  
+  // Trésorerie
+  tresorerieActuelle: 45250000,
+  tresoreriePrevisionnelle: 52000000, // +paiements attendus -échéances
+  treasury: treasuryEntries,
+  
+  // Évolution mensuelle
+  evolution: [
+    { month: 'Jan', gains: 18000000, pertes: 15000000, solde: 3000000 },
+    { month: 'Fév', gains: 22000000, pertes: 18000000, solde: 4000000 },
+    { month: 'Mar', gains: 19000000, pertes: 16000000, solde: 3000000 },
+    { month: 'Avr', gains: 25000000, pertes: 20000000, solde: 5000000 },
+    { month: 'Mai', gains: 21000000, pertes: 17000000, solde: 4000000 },
+    { month: 'Jun', gains: 28000000, pertes: 22000000, solde: 6000000 },
+    { month: 'Jul', gains: 32000000, pertes: 25000000, solde: 7000000 },
+    { month: 'Aoû', gains: 24000000, pertes: 20000000, solde: 4000000 },
+    { month: 'Sep', gains: 30000000, pertes: 24000000, solde: 6000000 },
+    { month: 'Oct', gains: 35000000, pertes: 28000000, solde: 7000000 },
+    { month: 'Nov', gains: 29000000, pertes: 23000000, solde: 6000000 },
+    { month: 'Déc', gains: 47750000, pertes: 8100000, solde: 39650000 },
+  ],
+  
+  // Répartition par catégorie
+  gainsParCategorie: [
+    { category: 'paiement_client', label: 'Paiements clients', montant: 185000000, percentage: 75.5 },
+    { category: 'retenue_garantie', label: 'Retenues garantie', montant: 35000000, percentage: 14.3 },
+    { category: 'penalite_recue', label: 'Pénalités reçues', montant: 12000000, percentage: 4.9 },
+    { category: 'remboursement', label: 'Remboursements', montant: 8000000, percentage: 3.3 },
+    { category: 'autre', label: 'Autres', montant: 5000000, percentage: 2.0 },
+  ],
+  pertesParCategorie: [
+    { category: 'penalite_retard', label: 'Pénalités retard', montant: 15000000, percentage: 7.6 },
+    { category: 'malfacon', label: 'Reprises malfaçons', montant: 25000000, percentage: 12.6 },
+    { category: 'frais_contentieux', label: 'Frais contentieux', montant: 8000000, percentage: 4.0 },
+    { category: 'provision_litige', label: 'Provisions litiges', montant: 12000000, percentage: 6.1 },
+    { category: 'autre', label: 'Charges exploitation', montant: 138000000, percentage: 69.7 },
+  ],
+  
+  // Indicateurs
+  kpis: {
+    margeNette: 19.2,
+    ratioRecouvrement: 72.5, // % des créances recouvrées
+    expositionLitiges: 65400000, // Total exposure des 3 litiges
+    provisionContentieux: 12000000,
+  },
+};
+
+// --- Données PieChart bureaux ---
+export const bureauPieData = [
+  { name: 'BMO', value: 15, color: '#F97316' },
+  { name: 'BF', value: 12, color: '#3B82F6' },
+  { name: 'BM', value: 10, color: '#10B981' },
+  { name: 'BA', value: 18, color: '#06B6D4' },
+  { name: 'BCT', value: 8, color: '#EF4444' },
+  { name: 'BQC', value: 6, color: '#EC4899' },
+  { name: 'BJ', value: 6, color: '#8B5CF6' },
+];
+
+// --- Données PieChart statut projets ---
+export const projectStatusData = [
+  { name: 'En cours', value: 5, fill: '#10B981' },
+  { name: 'Bloqués', value: 1, fill: '#EF4444' },
+  { name: 'Terminés', value: 2, fill: '#3B82F6' },
+];
+
+// --- Statistiques clients (NOUVEAU) ---
+export const clientsStats: ClientStats[] = [
+  {
+    id: 'CS-001',
+    clientId: 'CLI-001',
+    clientName: 'M. Ibrahima DIALLO',
+    clientType: 'particulier',
+    projectsTotal: 2,
+    projectsActive: 1,
+    projectsCompleted: 1,
+    projectsCancelled: 0,
+    chiffreAffairesTotal: 54400000,
+    chiffreAffairesAnnee: 36400000,
+    paiementsEnCours: 12000000,
+    paiementsEnRetard: 0,
+    montantImpaye: 0,
+    scoreQualite: 92,
+    nbReclamations: 1,
+    nbLitiges: 0,
+    anciennete: 18,
+    dernierContact: '22/12/2025',
+    projects: [
+      { projectId: 'PRJ-0018', projectName: 'Villa Diamniadio', startDate: '01/06/2025', status: 'active', budget: 36400000, paid: 24400000, remaining: 12000000 },
+      { projectId: 'PRJ-0012', projectName: 'Rénovation appartement', startDate: '01/01/2024', endDate: '15/06/2024', status: 'completed', budget: 18000000, paid: 18000000, remaining: 0 },
     ],
   },
   {
-    title: 'Tech et IA',
-    items: [
-      { id: 'analytics', icon: '📈', label: 'Tableaux BI' },
-      { id: 'api', icon: '🔗', label: 'API et Intégrations', badge: 8, badgeType: 'gray' },
-      { id: 'ia', icon: '🤖', label: 'Intelligence Artificielle', badgeType: 'gray' },
+    id: 'CS-002',
+    clientId: 'CLI-002',
+    clientName: 'Mairie de Rufisque',
+    clientType: 'institution',
+    projectsTotal: 3,
+    projectsActive: 1,
+    projectsCompleted: 2,
+    projectsCancelled: 0,
+    chiffreAffairesTotal: 185000000,
+    chiffreAffairesAnnee: 125000000,
+    paiementsEnCours: 68800000,
+    paiementsEnRetard: 12500000,
+    montantImpaye: 12500000,
+    scoreQualite: 78,
+    nbReclamations: 3,
+    nbLitiges: 0,
+    anciennete: 36,
+    dernierContact: '20/12/2025',
+    projects: [
+      { projectId: 'PRJ-0017', projectName: 'Route Zone B', startDate: '01/03/2025', status: 'active', budget: 125000000, paid: 56200000, remaining: 68800000 },
+    ],
+  },
+  {
+    id: 'CS-003',
+    clientId: 'CLI-003',
+    clientName: 'SUNEOR SA',
+    clientType: 'entreprise',
+    projectsTotal: 1,
+    projectsActive: 0,
+    projectsCompleted: 0,
+    projectsCancelled: 0,
+    chiffreAffairesTotal: 245000000,
+    chiffreAffairesAnnee: 0,
+    paiementsEnCours: 0,
+    paiementsEnRetard: 45000000,
+    montantImpaye: 45000000,
+    scoreQualite: 35,
+    nbReclamations: 0,
+    nbLitiges: 1,
+    anciennete: 24,
+    dernierContact: '15/12/2025',
+    projects: [
+      { projectId: 'PRJ-0014', projectName: 'Extension usine SUNEOR', startDate: '01/01/2025', status: 'blocked', budget: 245000000, paid: 56400000, remaining: 188600000 },
     ],
   },
 ];
 
-// --- Données financières ---
-export const financials = {
-  summary: {
-    totalGains: '125.4M',
-    totalPertes: '18.2M',
-    netResult: '+107.2M',
-    marginRate: '23.5%',
-  },
-  gains: [
-    { description: 'Paiement final PRJ-0015', type: 'Projet', category: 'Encaissement', montant: '18,000,000', date: '20/12/2025', project: 'PRJ-0015' },
-    { description: 'Situation n°3 PRJ-0017', type: 'Situation', category: 'Encaissement', montant: '15,500,000', date: '18/12/2025', project: 'PRJ-0017' },
-    { description: 'Acompte client TERANGA', type: 'Acompte', category: 'Encaissement', montant: '8,900,000', date: '15/12/2025', project: 'PRJ-0016' },
+// --- Stats globales clients (NOUVEAU) ---
+export const clientsGlobalStats: ClientsGlobalStats = {
+  totalClients: 42,
+  clientsActifs: 28,
+  clientsParticuliers: 24,
+  clientsEntreprises: 12,
+  clientsInstitutions: 6,
+  nouveauxClientsMois: 3,
+  chiffreAffairesTotalAnnee: 513400000,
+  tauxFidelisation: 76,
+  scoreSatisfactionMoyen: 82,
+  topClients: [
+    { clientId: 'CLI-003', clientName: 'SUNEOR SA', chiffreAffaires: 245000000 },
+    { clientId: 'CLI-002', clientName: 'Mairie de Rufisque', chiffreAffaires: 125000000 },
+    { clientId: 'CLI-004', clientName: 'SCI Teranga', chiffreAffaires: 89000000 },
   ],
-  pertes: [
-    { description: 'Pénalité retard PRJ-0014', type: 'Pénalité', category: 'Charge', montant: '2,500,000', date: '19/12/2025', cause: 'Retard livraison' },
-    { description: 'Matériaux défectueux', type: 'Perte', category: 'Charge', montant: '850,000', date: '17/12/2025', preventionAction: 'Renforcer contrôle réception' },
+  repartitionParType: [
+    { type: 'Particuliers', count: 24, percentage: 57 },
+    { type: 'Entreprises', count: 12, percentage: 29 },
+    { type: 'Institutions', count: 6, percentage: 14 },
+  ],
+  evolutionMensuelle: [
+    { month: 'Jan', nouveaux: 2, chiffreAffaires: 35000000 },
+    { month: 'Fév', nouveaux: 1, chiffreAffaires: 42000000 },
+    { month: 'Mar', nouveaux: 3, chiffreAffaires: 38000000 },
+    { month: 'Avr', nouveaux: 2, chiffreAffaires: 55000000 },
+    { month: 'Mai', nouveaux: 1, chiffreAffaires: 41000000 },
+    { month: 'Jun', nouveaux: 4, chiffreAffaires: 62000000 },
+    { month: 'Jul', nouveaux: 2, chiffreAffaires: 48000000 },
+    { month: 'Aoû', nouveaux: 1, chiffreAffaires: 35000000 },
+    { month: 'Sep', nouveaux: 2, chiffreAffaires: 48000000 },
+    { month: 'Oct', nouveaux: 2, chiffreAffaires: 52000000 },
+    { month: 'Nov', nouveaux: 1, chiffreAffaires: 45000000 },
+    { month: 'Déc', nouveaux: 3, chiffreAffaires: 58000000 },
   ],
 };
 
-// --- Données pour les graphiques circulaires ---
-export const bureauPieData = [
-  { name: 'Finance', value: 28, color: '#3B82F6' },
-  { name: 'Marché', value: 22, color: '#10B981' },
-  { name: 'Achats', value: 18, color: '#06B6D4' },
-  { name: 'Terrain', value: 15, color: '#EF4444' },
-  { name: 'Juridique', value: 12, color: '#8B5CF6' },
+// --- Paramètres utilisateur par défaut (NOUVEAU) ---
+export const defaultUserSettings: UserSettings = {
+  userId: 'USR-001',
+  profile: {
+    firstName: 'Abdoulaye',
+    lastName: 'DIALLO',
+    email: 'a.diallo@yessalate.sn',
+    phone: '+221 77 123 45 67',
+    role: 'Directeur Général',
+    bureau: 'BMO',
+  },
+  preferences: {
+    language: 'fr',
+    timezone: 'Africa/Dakar',
+    dateFormat: 'DD/MM/YYYY',
+    currency: 'FCFA',
+    theme: 'dark',
+    sidebarCollapsed: false,
+    compactMode: false,
+  },
+  notifications: {
+    email: true,
+    push: true,
+    sms: false,
+    urgentOnly: false,
+    digest: 'realtime',
+    categories: {
+      validations: true,
+      blocages: true,
+      budgets: true,
+      rh: true,
+      litiges: true,
+    },
+  },
+  security: {
+    twoFactorEnabled: false,
+    lastPasswordChange: '01/10/2025',
+    sessionTimeout: 30,
+    trustedDevices: ['Chrome - Windows', 'Safari - iPhone'],
+  },
+};
+
+// --- Détails des bureaux (NOUVEAU) ---
+export const bureauxDetails: Record<string, BureauDetails> = {
+  BMO: {
+    code: 'BMO',
+    platforms: [
+      { id: 'plt-1', name: 'Portail Validation', url: '/maitre-ouvrage/validation-bc', icon: '✅', description: 'Gestion des validations BC, factures et avenants', status: 'active' },
+      { id: 'plt-2', name: 'Tableau de bord', url: '/maitre-ouvrage', icon: '📊', description: 'Vue globale et KPIs', status: 'active' },
+      { id: 'plt-3', name: 'Gestion RH', url: '/maitre-ouvrage/employes', icon: '👥', description: 'Suivi des employés et demandes RH', status: 'active' },
+    ],
+    organigramme: [
+      { id: 'EMP-001', name: 'Ibrahim FALL', initials: 'IF', role: 'Assistant DG - Coordination', email: 'i.fall@yessalate.sn', phone: '+221 77 123 45 67', status: 'active', isHead: true },
+      { id: 'EMP-002', name: 'Mariama SARR', initials: 'MS', role: 'Responsable Validation', email: 'm.sarr@yessalate.sn', phone: '+221 77 234 56 78', status: 'active', isHead: false },
+      { id: 'EMP-003', name: 'Ousmane NDIAYE', initials: 'ON', role: 'Chargé RH & Administration', email: 'o.ndiaye@yessalate.sn', phone: '+221 77 345 67 89', status: 'active', isHead: false },
+    ],
+    stats: {
+      projectsActive: 5,
+      projectsCompleted: 12,
+      budgetTotal: '15M',
+      budgetUsed: '12.8M',
+      validationsMonth: 47,
+      avgResponseTime: '2.4h',
+    },
+    recentActivities: [
+      { id: 'act-1', action: 'Validation BC-2025-0048', date: '22/12/2025 14:23', agent: 'M. SARR' },
+      { id: 'act-2', action: 'Substitution PAY-2025-0039', date: '22/12/2025 13:15', agent: 'A. DIALLO' },
+      { id: 'act-3', action: 'Création délégation DEL-003', date: '22/12/2025 11:30', agent: 'I. FALL' },
+    ],
+  },
+  BF: {
+    code: 'BF',
+    platforms: [
+      { id: 'plt-1', name: 'Comptabilité', url: '/comptable', icon: '🧮', description: 'Gestion comptable et financière', status: 'active' },
+      { id: 'plt-2', name: 'Paiements', url: '/maitre-ouvrage/validation-paiements', icon: '💳', description: 'Suivi des paiements', status: 'active' },
+      { id: 'plt-3', name: 'Trésorerie', url: '#', icon: '🏦', description: 'Gestion de trésorerie', status: 'maintenance' },
+    ],
+    organigramme: [
+      { id: 'EMP-004', name: 'Fatou DIOP', initials: 'FD', role: 'Chef Bureau Finance', email: 'f.diop@yessalate.sn', phone: '+221 77 456 78 90', status: 'active', isHead: true },
+      { id: 'EMP-009', name: 'Abdou KANE', initials: 'AK', role: 'Comptable', email: 'a.kane@yessalate.sn', phone: '+221 77 567 89 01', status: 'active', isHead: false },
+      { id: 'EMP-010', name: 'Rama SY', initials: 'RS', role: 'Trésorière', email: 'r.sy@yessalate.sn', phone: '+221 77 678 90 12', status: 'conge', isHead: false },
+    ],
+    stats: {
+      projectsActive: 5,
+      projectsCompleted: 15,
+      budgetTotal: '8M',
+      budgetUsed: '6.4M',
+      validationsMonth: 32,
+      avgResponseTime: '3.1h',
+    },
+    recentActivities: [
+      { id: 'act-1', action: 'Validation paiement EIFFAGE', date: '22/12/2025 15:00', agent: 'F. DIOP' },
+      { id: 'act-2', action: 'Rapport budget mensuel', date: '21/12/2025 17:00', agent: 'A. KANE' },
+    ],
+  },
+};
+
+// --- Alertes de dépassement budgétaire (NOUVEAU) ---
+export const budgetAlerts: BudgetAlert[] = [
+  {
+    id: 'BA-001',
+    projectId: 'PRJ-INFRA',
+    projectName: 'Projet Infrastructure 2025',
+    bureau: 'BCT',
+    budgetPrevisionnel: 50000000,
+    budgetActuel: 56000000,
+    depassement: 6000000,
+    depassementPourcent: 12,
+    date: '22/12/2025',
+    status: 'pending',
+    requestedBy: 'C. GUEYE',
+    motif: 'Hausse des prix des matériaux + travaux supplémentaires imprévus',
+  },
+  {
+    id: 'BA-002',
+    projectId: 'PRJ-0017',
+    projectName: 'Route Zone B',
+    bureau: 'BM',
+    budgetPrevisionnel: 125000000,
+    budgetActuel: 128500000,
+    depassement: 3500000,
+    depassementPourcent: 2.8,
+    date: '20/12/2025',
+    status: 'approved',
+    requestedBy: 'M. BA',
+    approvedBy: 'A. DIALLO',
+    motif: 'Extension du périmètre suite demande Mairie',
+  },
 ];
 
-export const projectStatusData = [
-  { name: 'En cours', value: 5, fill: '#F97316' },
-  { name: 'Attente', value: 2, fill: '#D4AF37' },
-  { name: 'Terminés', value: 8, fill: '#10B981' },
-  { name: 'Bloqués', value: 1, fill: '#EF4444' },
+// --- Budgets projets détaillés (NOUVEAU) ---
+export const projectBudgets: ProjectBudget[] = [
+  {
+    projectId: 'PRJ-0018',
+    budgetEstimatif: 34700000,
+    budgetPrevisionnel: 36435000,
+    budgetReel: 24700000,
+    seuilAlerte: 34700000,
+    depassementAutorise: false,
+    historique: [
+      { date: '01/06/2025', type: 'depense', montant: 5000000, description: 'Fondations', validatedBy: 'F. DIOP' },
+      { date: '15/06/2025', type: 'depense', montant: 8000000, description: 'Gros œuvre RDC', validatedBy: 'F. DIOP' },
+      { date: '01/07/2025', type: 'depense', montant: 6500000, description: 'Gros œuvre R+1', validatedBy: 'F. DIOP' },
+      { date: '15/08/2025', type: 'depense', montant: 5200000, description: 'Toiture + étanchéité', validatedBy: 'F. DIOP' },
+    ],
+  },
+  {
+    projectId: 'PRJ-INFRA',
+    budgetEstimatif: 47600000,
+    budgetPrevisionnel: 49980000,
+    budgetReel: 56000000,
+    seuilAlerte: 47600000,
+    depassementAutorise: false,
+    historique: [
+      { date: '01/03/2025', type: 'depense', montant: 15000000, description: 'Travaux préparatoires', validatedBy: 'F. DIOP' },
+      { date: '01/05/2025', type: 'depense', montant: 20000000, description: 'Infrastructure principale', validatedBy: 'F. DIOP' },
+      { date: '01/08/2025', type: 'depense', montant: 15000000, description: 'Équipements', validatedBy: 'F. DIOP' },
+      { date: '15/12/2025', type: 'depense', montant: 6000000, description: 'Travaux supplémentaires (dépassement)', validatedBy: null },
+    ],
+  },
+];
+
+// ============================================
+// NOUVELLES DONNÉES RH PROACTIF
+// ============================================
+
+import type { 
+  Mission, 
+  Evaluation, 
+  CriticalSkill 
+} from '@/lib/types/bmo.types';
+
+// --- Missions ---
+export const missions: Mission[] = [
+  {
+    id: 'MIS-2025-0012',
+    title: 'Supervision finale Villa Diamniadio',
+    description: 'Contrôle qualité final et réception des travaux gros œuvre avant finitions',
+    bureaux: ['BCT', 'BQC'],
+    participants: [
+      { employeeId: 'EMP-007', employeeName: 'Cheikh GUEYE', role: 'responsable' },
+      { employeeId: 'EMP-011', employeeName: 'Pape NDIAYE', role: 'participant' },
+    ],
+    startDate: '23/12/2025',
+    endDate: '28/12/2025',
+    progress: 45,
+    status: 'in_progress',
+    priority: 'urgent',
+    objectives: [
+      { id: 'OBJ-001', title: 'Contrôle fondations', status: 'completed', completedAt: '23/12/2025', completedBy: 'C. GUEYE' },
+      { id: 'OBJ-002', title: 'Vérification structure béton', status: 'in_progress' },
+      { id: 'OBJ-003', title: 'Test étanchéité toiture', status: 'pending' },
+      { id: 'OBJ-004', title: 'Rapport final réception', status: 'pending' },
+    ],
+    proofs: [
+      { id: 'PRF-001', type: 'photo', title: 'Photos fondations', date: '23/12/2025', uploadedBy: 'C. GUEYE' },
+      { id: 'PRF-002', type: 'document', title: 'PV contrôle béton', date: '24/12/2025', uploadedBy: 'P. NDIAYE' },
+    ],
+    linkedProject: 'PRJ-0018',
+    budget: '150,000',
+    budgetUsed: '85,000',
+    createdBy: 'I. FALL',
+    createdAt: '20/12/2025',
+  },
+  {
+    id: 'MIS-2025-0011',
+    title: 'Négociation contrat SOGEA SATOM',
+    description: 'Renégociation des clauses litigieuses du contrat cadre',
+    bureaux: ['BJ', 'BM'],
+    participants: [
+      { employeeId: 'EMP-008', employeeName: 'Ndèye FAYE', role: 'responsable' },
+      { employeeId: 'EMP-005', employeeName: 'Moussa BA', role: 'participant' },
+    ],
+    startDate: '15/12/2025',
+    endDate: '30/12/2025',
+    progress: 70,
+    status: 'in_progress',
+    priority: 'high',
+    objectives: [
+      { id: 'OBJ-005', title: 'Analyse clauses actuelles', status: 'completed', completedAt: '16/12/2025', completedBy: 'N. FAYE' },
+      { id: 'OBJ-006', title: 'Rédaction contre-propositions', status: 'completed', completedAt: '18/12/2025', completedBy: 'N. FAYE' },
+      { id: 'OBJ-007', title: 'Réunion négociation', status: 'in_progress' },
+      { id: 'OBJ-008', title: 'Validation juridique finale', status: 'pending' },
+    ],
+    proofs: [
+      { id: 'PRF-003', type: 'document', title: 'Analyse juridique', date: '16/12/2025', uploadedBy: 'N. FAYE' },
+      { id: 'PRF-004', type: 'compte_rendu', title: 'CR réunion 18/12', date: '18/12/2025', uploadedBy: 'M. BA' },
+    ],
+    impactFinancier: 'Économie potentielle de 2.5M FCFA sur pénalités',
+    impactJuridique: 'Réduction du risque contentieux',
+    createdBy: 'I. FALL',
+    createdAt: '14/12/2025',
+  },
+  {
+    id: 'MIS-2025-0010',
+    title: 'Audit fournisseurs Q4',
+    description: 'Évaluation annuelle des fournisseurs récurrents',
+    bureaux: ['BA', 'BQC'],
+    participants: [
+      { employeeId: 'EMP-006', employeeName: 'Aïssatou SECK', role: 'responsable' },
+    ],
+    startDate: '01/12/2025',
+    endDate: '31/12/2025',
+    progress: 100,
+    status: 'completed',
+    priority: 'normal',
+    objectives: [
+      { id: 'OBJ-009', title: 'Collecte données fournisseurs', status: 'completed', completedAt: '10/12/2025', completedBy: 'A. SECK' },
+      { id: 'OBJ-010', title: 'Analyse qualité/prix', status: 'completed', completedAt: '15/12/2025', completedBy: 'A. SECK' },
+      { id: 'OBJ-011', title: 'Rapport recommandations', status: 'completed', completedAt: '20/12/2025', completedBy: 'A. SECK' },
+    ],
+    proofs: [
+      { id: 'PRF-005', type: 'compte_rendu', title: 'Rapport audit fournisseurs', date: '20/12/2025', uploadedBy: 'A. SECK' },
+    ],
+    createdBy: 'I. FALL',
+    createdAt: '28/11/2025',
+  },
+  {
+    id: 'MIS-2025-0009',
+    title: 'Audience TGI Ziguinchor - SUNEOR',
+    description: 'Représentation juridique pour le litige commercial',
+    bureaux: ['BJ'],
+    participants: [
+      { employeeId: 'EMP-008', employeeName: 'Ndèye FAYE', role: 'responsable' },
+    ],
+    startDate: '02/01/2026',
+    endDate: '04/01/2026',
+    progress: 0,
+    status: 'planned',
+    priority: 'urgent',
+    objectives: [
+      { id: 'OBJ-012', title: 'Préparation dossier plaidoirie', status: 'in_progress' },
+      { id: 'OBJ-013', title: 'Audience TGI', status: 'pending' },
+      { id: 'OBJ-014', title: 'CR audience et suivi', status: 'pending' },
+    ],
+    proofs: [],
+    linkedProject: 'PRJ-0014',
+    linkedLitigation: 'LIT-2025-0012',
+    impactFinancier: 'Enjeu: 45M FCFA',
+    impactJuridique: 'Issue déterminante pour recouvrement',
+    decisions: ['DEC-2025-0086'],
+    createdBy: 'I. FALL',
+    createdAt: '21/12/2025',
+  },
+  {
+    id: 'MIS-2025-0008',
+    title: 'Formation OHADA équipe juridique',
+    description: 'Mise à niveau sur les évolutions réglementaires',
+    bureaux: ['BJ', 'BMO'],
+    participants: [
+      { employeeId: 'EMP-008', employeeName: 'Ndèye FAYE', role: 'participant' },
+      { employeeId: 'EMP-002', employeeName: 'Mariama SARR', role: 'participant' },
+    ],
+    startDate: '15/01/2026',
+    endDate: '17/01/2026',
+    progress: 0,
+    status: 'planned',
+    priority: 'normal',
+    objectives: [
+      { id: 'OBJ-015', title: 'Module droit des sociétés', status: 'pending' },
+      { id: 'OBJ-016', title: 'Module comptabilité SYSCOHADA', status: 'pending' },
+      { id: 'OBJ-017', title: 'Certification', status: 'pending' },
+    ],
+    proofs: [],
+    budget: '500,000',
+    budgetUsed: '0',
+    createdBy: 'O. NDIAYE',
+    createdAt: '10/12/2025',
+  },
+];
+
+// --- Évaluations ---
+export const evaluations: Evaluation[] = [
+  {
+    id: 'EVAL-2025-0015',
+    employeeId: 'EMP-001',
+    employeeName: 'Ibrahim FALL',
+    employeeRole: 'Assistant DG - Coordination',
+    bureau: 'BMO',
+    evaluatorId: 'DG',
+    evaluatorName: 'Abdoulaye DIALLO',
+    date: '15/01/2025',
+    period: '2024-Annuel',
+    status: 'completed',
+    scoreGlobal: 92,
+    criteria: [
+      { id: 'CRI-001', name: 'Performance', score: 5, weight: 30, comment: 'Excellent pilotage des bureaux' },
+      { id: 'CRI-002', name: 'Leadership', score: 4, weight: 25, comment: 'Bonne gestion d\'équipe' },
+      { id: 'CRI-003', name: 'Communication', score: 5, weight: 20, comment: 'Communication fluide' },
+      { id: 'CRI-004', name: 'Initiative', score: 4, weight: 15, comment: 'Proactif' },
+      { id: 'CRI-005', name: 'Ponctualité', score: 5, weight: 10, comment: 'Irréprochable' },
+    ],
+    strengths: ['Coordination inter-bureaux', 'Gestion de crise', 'Diplomatie'],
+    improvements: ['Délégation plus importante', 'Formation management'],
+    recommendations: [
+      { id: 'REC-001', type: 'formation', title: 'Formation Management Agile', description: 'Stage de 3 jours', status: 'implemented', implementedAt: '15/06/2025' },
+      { id: 'REC-002', type: 'augmentation', title: 'Révision salariale +8%', description: 'Mérite performance', status: 'approved', approvedBy: 'A. DIALLO', approvedAt: '01/02/2025' },
+    ],
+    nextEvaluation: '15/01/2026',
+    documents: [
+      { id: 'DOC-EV-001', type: 'compte_rendu', name: 'CR Entretien annuel 2024', date: '15/01/2025' },
+    ],
+    hash: 'SHA3-256:eval001a2b3c4d...',
+  },
+  {
+    id: 'EVAL-2025-0014',
+    employeeId: 'EMP-004',
+    employeeName: 'Fatou DIOP',
+    employeeRole: 'Chef Bureau Finance',
+    bureau: 'BF',
+    evaluatorId: 'DG',
+    evaluatorName: 'Abdoulaye DIALLO',
+    date: '01/03/2025',
+    period: '2024-Annuel',
+    status: 'completed',
+    scoreGlobal: 95,
+    criteria: [
+      { id: 'CRI-006', name: 'Expertise technique', score: 5, weight: 35, comment: 'Maîtrise parfaite SYSCOHADA' },
+      { id: 'CRI-007', name: 'Rigueur', score: 5, weight: 30, comment: 'Aucune erreur comptable' },
+      { id: 'CRI-008', name: 'Proactivité', score: 4, weight: 20, comment: 'Anticipation des risques' },
+      { id: 'CRI-009', name: 'Collaboration', score: 5, weight: 15, comment: 'Excellente avec tous bureaux' },
+    ],
+    strengths: ['Comptabilité SYSCOHADA', 'Gestion trésorerie', 'Audit interne'],
+    improvements: ['Digitalisation processus'],
+    recommendations: [
+      { id: 'REC-003', type: 'promotion', title: 'Confirmation poste Chef Bureau', description: 'Suite période probatoire', status: 'implemented', implementedAt: '01/01/2024' },
+    ],
+    nextEvaluation: '01/03/2026',
+    hash: 'SHA3-256:eval002e5f6g7h...',
+  },
+  {
+    id: 'EVAL-2025-0013',
+    employeeId: 'EMP-003',
+    employeeName: 'Ousmane NDIAYE',
+    employeeRole: 'Chargé RH & Administration',
+    bureau: 'BMO',
+    evaluatorId: 'EMP-001',
+    evaluatorName: 'Ibrahim FALL',
+    date: '10/01/2025',
+    period: '2024-Annuel',
+    status: 'completed',
+    scoreGlobal: 78,
+    criteria: [
+      { id: 'CRI-010', name: 'Gestion administrative', score: 4, weight: 30, comment: 'Bonne organisation' },
+      { id: 'CRI-011', name: 'Gestion paie', score: 4, weight: 30, comment: 'Paie toujours à temps' },
+      { id: 'CRI-012', name: 'Ponctualité', score: 3, weight: 20, comment: 'Quelques retards notés' },
+      { id: 'CRI-013', name: 'Réactivité', score: 3, weight: 20, comment: 'Peut être améliorée' },
+    ],
+    strengths: ['Connaissance droit du travail', 'Gestion paie'],
+    improvements: ['Ponctualité', 'Réactivité aux demandes', 'Digitalisation RH'],
+    recommendations: [
+      { id: 'REC-004', type: 'recadrage', title: 'Entretien recadrage ponctualité', description: 'Suite retards répétés', status: 'implemented', implementedAt: '15/01/2025' },
+      { id: 'REC-005', type: 'formation', title: 'Formation logiciel SIRH', description: 'Digitalisation processus RH', status: 'pending' },
+    ],
+    nextEvaluation: '10/01/2026',
+    hash: 'SHA3-256:eval003i8j9k0l...',
+  },
+  {
+    id: 'EVAL-2025-0012',
+    employeeId: 'EMP-006',
+    employeeName: 'Aïssatou SECK',
+    employeeRole: 'Responsable Achats',
+    bureau: 'BA',
+    evaluatorId: 'EMP-001',
+    evaluatorName: 'Ibrahim FALL',
+    date: '01/07/2025',
+    period: '2025-S1',
+    status: 'completed',
+    scoreGlobal: 72,
+    criteria: [
+      { id: 'CRI-014', name: 'Négociation', score: 4, weight: 30 },
+      { id: 'CRI-015', name: 'Suivi fournisseurs', score: 3, weight: 25 },
+      { id: 'CRI-016', name: 'Respect procédures', score: 3, weight: 25 },
+      { id: 'CRI-017', name: 'Assiduité', score: 3, weight: 20, comment: 'Absences et retards' },
+    ],
+    strengths: ['Négociation prix'],
+    improvements: ['Assiduité', 'Respect des procédures', 'Documentation achats'],
+    recommendations: [
+      { id: 'REC-006', type: 'recadrage', title: 'Avertissement formel', description: 'Absences non justifiées répétées', status: 'implemented', implementedAt: '01/10/2025' },
+    ],
+    employeeComment: 'Je m\'engage à améliorer mon assiduité',
+    nextEvaluation: '01/01/2026',
+    hash: 'SHA3-256:eval004m1n2o3p...',
+  },
+  // Évaluations à venir
+  {
+    id: 'EVAL-2026-0001',
+    employeeId: 'EMP-003',
+    employeeName: 'Ousmane NDIAYE',
+    employeeRole: 'Chargé RH & Administration',
+    bureau: 'BMO',
+    evaluatorId: 'EMP-001',
+    evaluatorName: 'Ibrahim FALL',
+    date: '10/01/2026',
+    period: '2025-Annuel',
+    status: 'scheduled',
+    scoreGlobal: 0,
+    criteria: [],
+    strengths: [],
+    improvements: [],
+    recommendations: [],
+  },
+  {
+    id: 'EVAL-2026-0002',
+    employeeId: 'EMP-006',
+    employeeName: 'Aïssatou SECK',
+    employeeRole: 'Responsable Achats',
+    bureau: 'BA',
+    evaluatorId: 'EMP-001',
+    evaluatorName: 'Ibrahim FALL',
+    date: '01/01/2026',
+    period: '2025-S2',
+    status: 'scheduled',
+    scoreGlobal: 0,
+    criteria: [],
+    strengths: [],
+    improvements: [],
+    recommendations: [],
+  },
+];
+
+// --- Compétences critiques (analyse mono-compétence) ---
+export const criticalSkills: CriticalSkill[] = [
+  {
+    id: 'SKILL-001',
+    name: 'Coordination inter-bureaux',
+    description: 'Capacité à coordonner les actions entre tous les bureaux et assurer le lien avec la DG',
+    holders: ['EMP-001'],
+    isAtRisk: true,
+    bureau: 'BMO',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-002',
+    name: 'Validation BC/Contrats OHADA',
+    description: 'Connaissance approfondie des normes OHADA pour validation des documents',
+    holders: ['EMP-002'],
+    isAtRisk: true,
+    bureau: 'BMO',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-003',
+    name: 'Gestion Paie',
+    description: 'Maîtrise du processus de paie, déclarations sociales et fiscales',
+    holders: ['EMP-003'],
+    isAtRisk: true,
+    bureau: 'BMO',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-004',
+    name: 'Comptabilité SYSCOHADA',
+    description: 'Expertise comptable selon le référentiel SYSCOHADA révisé',
+    holders: ['EMP-004'],
+    isAtRisk: true,
+    bureau: 'BF',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-005',
+    name: 'Marchés publics',
+    description: 'Connaissance de la réglementation des marchés publics au Sénégal',
+    holders: ['EMP-005'],
+    isAtRisk: true,
+    bureau: 'BM',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-006',
+    name: 'Supervision chantiers BTP',
+    description: 'Contrôle qualité et supervision technique des chantiers',
+    holders: ['EMP-007'],
+    isAtRisk: true,
+    bureau: 'BCT',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-007',
+    name: 'Droit OHADA & Contentieux',
+    description: 'Expertise juridique en droit des affaires OHADA et gestion des litiges',
+    holders: ['EMP-008'],
+    isAtRisk: true,
+    bureau: 'BJ',
+    importance: 'critical',
+  },
+  {
+    id: 'SKILL-008',
+    name: 'Négociation fournisseurs',
+    description: 'Capacité de négociation pour optimiser les achats',
+    holders: ['EMP-005', 'EMP-006'],
+    isAtRisk: false,
+    bureau: 'BA',
+    importance: 'high',
+  },
 ];

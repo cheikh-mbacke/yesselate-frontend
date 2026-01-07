@@ -3,7 +3,7 @@
 // ============================================
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { useNavigationStore } from '@/lib/stores';
 import { routeMapping, generateNavParams, parseNavParams, createCrossPageLink, getActivePageId } from '@/lib/services/navigation.service';
 
@@ -21,28 +21,42 @@ export function usePageNavigation(pageId: string) {
     addToHistory 
   } = useNavigationStore();
 
-  // Récupérer les filtres persistants
-  const savedFilters = getPageFilter(pageId);
+  // Utiliser useRef pour éviter les boucles infinies lors de la restauration des filtres
+  const hasRestoredFilters = useRef(false);
+  
+  // Mémoriser les filtres sauvegardés avec une clé stable
+  const savedFilters = useMemo(() => getPageFilter(pageId), [pageId, getPageFilter]);
   
   // Appliquer les filtres depuis l'URL au chargement
   useEffect(() => {
     try {
       const urlFilters = parseNavParams(searchParams);
+      const urlParamsString = searchParams.toString();
+      
       if (Object.keys(urlFilters).length > 0) {
+        // Si on a des filtres dans l'URL, les sauvegarder
         setPageFilter(pageId, urlFilters);
-      } else if (Object.keys(savedFilters).length > 0) {
-        // Restaurer les filtres sauvegardés si pas de filtres dans l'URL
+        hasRestoredFilters.current = false; // Réinitialiser le flag
+      } else if (Object.keys(savedFilters).length > 0 && !hasRestoredFilters.current) {
+        // Restaurer les filtres sauvegardés UNE SEULE FOIS si pas de filtres dans l'URL
         const params = new URLSearchParams();
         Object.entries(savedFilters).forEach(([key, value]) => {
           params.append(key, String(value));
         });
-        router.replace(`${routeMapping[pageId]}?${params.toString()}`);
+        const newParamsString = params.toString();
+        
+        // Vérifier que les paramètres sont différents pour éviter la boucle
+        if (newParamsString !== urlParamsString) {
+          hasRestoredFilters.current = true; // Marquer comme restauré
+          router.replace(`${routeMapping[pageId]}?${newParamsString}`);
+        }
       }
     } catch (error) {
       // Ignorer les erreurs d'hydratation
       console.warn('Erreur lors de la lecture des paramètres URL:', error);
     }
-  }, [searchParams, pageId, router, setPageFilter, savedFilters]); // Dépendances correctes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.toString(), pageId]); // Utiliser searchParams.toString() pour une comparaison stable
 
   /**
    * Naviguer vers une autre page avec contexte

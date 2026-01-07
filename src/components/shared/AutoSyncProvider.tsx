@@ -70,7 +70,8 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(interval);
     };
-  }, [updatePageCounts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // updatePageCounts est stable (fonction Zustand), pas besoin de la mettre dans les dépendances
 
   return <>{children}</>;
 }

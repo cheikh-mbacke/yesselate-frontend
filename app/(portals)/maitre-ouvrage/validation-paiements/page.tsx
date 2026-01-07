@@ -7,8 +7,38 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { paymentsN1, employees, projects } from '@/lib/data';
+import { paymentsN1, employees, projects, facturesRecues } from '@/lib/data';
 import type { Payment } from '@/lib/types/bmo.types';
+
+// =========================
+// Utils robustes (money/date)
+// =========================
+const parseMoney = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const raw = String(v ?? '')
+    .replace(/\s/g, '')
+    .replace(/FCFA|XOF|F\s?CFA/gi, '')
+    .replace(/[^\d,.-]/g, '');
+  // On retire les séparateurs de milliers, on garde le signe et les chiffres
+  const normalized = raw.replace(/,/g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const formatFCFA = (v: unknown): string => {
+  const n = parseMoney(v);
+  return `${n.toLocaleString('fr-FR')} FCFA`;
+};
+
+const parseFRDate = (d?: string | null): Date | null => {
+  if (!d || d === '—') return null;
+  const parts = d.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yy] = parts.map((x) => Number(x));
+  if (!dd || !mm || !yy) return null;
+  // IMPORTANT: neutraliser l'heure pour éviter les écarts de J- selon l'heure locale
+  return new Date(yy, mm - 1, dd, 0, 0, 0, 0);
+};
 
 // Utilitaire pour générer un hash SHA3-256 simulé
 const generateSHA3Hash = (data: string): string => {
@@ -26,27 +56,25 @@ const generateSHA3Hash = (data: string): string => {
 
 // Calculer les jours avant échéance
 const getDaysToDue = (dueDateStr: string): number => {
-  const [day, month, year] = dueDateStr.split('/').map(Number);
-  const dueDate = new Date(year, month - 1, day);
-  const today = new Date();
+  const dueDate = parseFRDate(dueDateStr);
+  if (!dueDate) return 0;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const diffTime = dueDate.getTime() - today.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
-
-// Parser le montant string en number
-const parseAmount = (amountStr: string): number => {
-  return parseFloat(amountStr.replace(/[,\s]/g, '')) || 0;
 };
 
 // Seuil critique pour double validation
 const DOUBLE_VALIDATION_THRESHOLD = 5000000; // 5M FCFA
 
 type ViewMode = 'all' | '7days' | 'late' | 'critical';
+type FactureFilterMode = 'all' | 'pending' | 'validated' | 'corrected';
 
 export default function ValidationPaiementsPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
   const [viewMode, setViewMode] = useState<ViewMode>('7days');
+  const [factureFilter, setFactureFilter] = useState<FactureFilterMode>('all');
   const [selectedPayment, setSelectedPayment] = useState<(Payment & { daysToDue: number; amountNum: number; requiresDoubleValidation: boolean }) | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [bfValidation, setBfValidation] = useState(false);
@@ -68,8 +96,8 @@ export default function ValidationPaiementsPage() {
     return paymentsN1.map((p) => ({
       ...p,
       daysToDue: getDaysToDue(p.dueDate),
-      amountNum: parseAmount(p.amount),
-      requiresDoubleValidation: parseAmount(p.amount) >= DOUBLE_VALIDATION_THRESHOLD,
+      amountNum: parseMoney(p.amount),
+      requiresDoubleValidation: parseMoney(p.amount) >= DOUBLE_VALIDATION_THRESHOLD,
     }));
   }, []);
 
@@ -118,13 +146,15 @@ export default function ValidationPaiementsPage() {
       targetId: payment.id,
       targetType: 'Paiement',
       targetLabel: `${payment.type} - ${payment.beneficiary}`,
-      details: `Paiement autorisé - Montant: ${payment.amount} FCFA - Ref: ${payment.ref} - Hash: ${hash} - Timestamp: ${timestamp}${payment.requiresDoubleValidation ? ' - DOUBLE VALIDATION' : ''}`,
+      details: `Paiement autorisé - Montant: ${formatFCFA(payment.amount)} - Ref: ${payment.ref} - Hash: ${hash} - Timestamp: ${timestamp}${payment.requiresDoubleValidation ? ' - DOUBLE VALIDATION' : ''}`,
       bureau: payment.bureau,
     });
 
-    addToast(`✓ ${payment.id} autorisé - ${payment.amount} FCFA`, 'success');
+    addToast(`✓ ${payment.id} autorisé - ${formatFCFA(payment.amount)}`, 'success');
     setShowValidationModal(false);
+    setSelectedPayment(null);
     setBfValidation(false);
+    setBlockReason('');
   };
 
   // Bloquer un paiement
@@ -145,6 +175,11 @@ export default function ValidationPaiementsPage() {
     });
 
     addToast(`🛑 ${payment.id} bloqué - ${reason}`, 'warning');
+    // Reset UI si bloqué depuis la modale
+    setShowValidationModal(false);
+    setSelectedPayment(null);
+    setBfValidation(false);
+    setBlockReason('');
   };
 
   // Demander justificatif
@@ -171,26 +206,46 @@ export default function ValidationPaiementsPage() {
     addToast('✓ Validation BF confirmée', 'success');
   };
 
+  // Filtrer les factures selon le mode
+  const filteredFactures = useMemo(() => {
+    switch (factureFilter) {
+      case 'pending':
+        // En attente = sans decisionBMO ou statut 'à_vérifier'
+        return facturesRecues.filter((f) => !f.decisionBMO || f.statut === 'à_vérifier');
+      case 'validated':
+        // Validé = avec decisionBMO et statut 'payée' ou 'conforme'
+        return facturesRecues.filter(
+          (f) => f.decisionBMO && (f.statut === 'payée' || f.statut === 'conforme')
+        );
+      case 'corrected':
+        // Corrigés = avec decisionBMO et statut 'non_conforme' (corrigé ensuite)
+        return facturesRecues.filter((f) => f.decisionBMO && f.statut === 'non_conforme');
+      default:
+        return facturesRecues;
+    }
+  }, [factureFilter]);
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            💳 Validation Paiements N+1
-            <Badge variant="warning">{stats.total}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Double validation si &gt;{(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA • Traçabilité complète
-          </p>
+      <div className="flex-shrink-0 space-y-4 border-b border-slate-700/30 bg-slate-900/40 backdrop-blur-sm p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              💳 Validation Paiements N+1
+              <Badge variant="warning">{stats.total}</Badge>
+            </h1>
+            <p className="text-sm text-slate-400">
+              Double validation si &gt;{(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA • Traçabilité complète
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-slate-400">Montant total en attente</p>
+            <p className="font-mono font-bold text-lg text-amber-400">
+              {(stats.totalAmount / 1000000).toFixed(1)}M FCFA
+            </p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-slate-400">Montant total en attente</p>
-          <p className="font-mono font-bold text-lg text-amber-400">
-            {(stats.totalAmount / 1000000).toFixed(1)}M FCFA
-          </p>
-        </div>
-      </div>
 
       {/* Alerte paiements en retard */}
       {stats.late > 0 && (
@@ -260,9 +315,12 @@ export default function ValidationPaiementsPage() {
           </CardContent>
         </Card>
       </div>
+      </div>
 
-      {/* Table des paiements */}
-      <Card>
+      {/* Zone scrollable */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-gutter-stable p-4 space-y-4">
+        {/* Table des paiements */}
+        <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             {viewMode === '7days' && '⏰ Paiements à 7 jours'}
@@ -291,6 +349,7 @@ export default function ValidationPaiementsPage() {
                 {filteredPayments.map((payment) => {
                   const isLate = payment.daysToDue < 0;
                   const isUrgent = payment.daysToDue >= 0 && payment.daysToDue <= 3;
+                  const projectMeta = projects.find((p) => p.id === payment.project);
 
                   return (
                     <tr
@@ -317,7 +376,9 @@ export default function ValidationPaiementsPage() {
                       <td className="px-3 py-2.5">
                         <div>
                           <p className="font-semibold">{payment.beneficiary}</p>
-                          <p className="text-[10px] text-orange-400">{payment.project}</p>
+                          <p className="text-[10px] text-orange-400" title={projectMeta?.name || payment.project}>
+                            {payment.project}{projectMeta?.name ? ` • ${projectMeta.name}` : ''}
+                          </p>
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
@@ -326,7 +387,7 @@ export default function ValidationPaiementsPage() {
                             'font-mono font-bold',
                             payment.requiresDoubleValidation ? 'text-purple-400' : 'text-amber-400'
                           )}>
-                            {payment.amount}
+                            {formatFCFA(payment.amount)}
                           </span>
                           {payment.requiresDoubleValidation && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400">
@@ -343,7 +404,7 @@ export default function ValidationPaiementsPage() {
                             {payment.dueDate}
                           </span>
                           {isLate && (
-                            <Badge variant="urgent" pulse>J{payment.daysToDue}</Badge>
+                            <Badge variant="urgent" pulse>J+{Math.abs(payment.daysToDue)}</Badge>
                           )}
                           {isUrgent && !isLate && (
                             <Badge variant="warning">J-{payment.daysToDue}</Badge>
@@ -358,7 +419,19 @@ export default function ValidationPaiementsPage() {
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1">
                           <Button size="xs" variant="success" onClick={() => handleAuthorize(payment)}>✓</Button>
-                          <Button size="xs" variant="info" onClick={() => { setSelectedPayment(payment); setShowValidationModal(true); }}>👁</Button>
+                          <Button
+                            size="xs"
+                            variant="info"
+                            onClick={() => {
+                              setSelectedPayment(payment);
+                              setShowValidationModal(true);
+                              setBfValidation(false);
+                              setBlockReason('');
+                            }}
+                            title="Voir détails"
+                          >
+                            👁
+                          </Button>
                           <Button size="xs" variant="warning" onClick={() => handleRequestJustificatif(payment)}>📎</Button>
                           <Button size="xs" variant="destructive" onClick={() => handleBlock(payment, 'Justificatif insuffisant')}>🛑</Button>
                         </div>
@@ -380,10 +453,142 @@ export default function ValidationPaiementsPage() {
         </Card>
       )}
 
+      {/* Table des factures reçues */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              📄 Factures reçues
+              <Badge variant="info">{filteredFactures.length}</Badge>
+            </CardTitle>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setFactureFilter('all')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  factureFilter === 'all'
+                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                    : 'text-slate-400 hover:bg-slate-700/50'
+                )}
+              >
+                Tous
+              </button>
+              <button
+                onClick={() => setFactureFilter('pending')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  factureFilter === 'pending'
+                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                    : 'text-slate-400 hover:bg-slate-700/50'
+                )}
+              >
+                ⏳ En attente (R)
+              </button>
+              <button
+                onClick={() => setFactureFilter('validated')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  factureFilter === 'validated'
+                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                    : 'text-slate-400 hover:bg-slate-700/50'
+                )}
+              >
+                ✅ Validé (A)
+              </button>
+              <button
+                onClick={() => setFactureFilter('corrected')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  factureFilter === 'corrected'
+                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                    : 'text-slate-400 hover:bg-slate-700/50'
+                )}
+              >
+                🛠️ Corrigés (R)
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">ID Facture</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Fournisseur</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Chantier</th>
+                  <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase text-amber-500">Montant TTC</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Statut BMO</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Décision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFactures.map((facture) => (
+                  <tr
+                    key={facture.id}
+                    className={cn(
+                      'border-t',
+                      darkMode
+                        ? 'border-slate-700/50 hover:bg-blue-500/5'
+                        : 'border-gray-100 hover:bg-gray-50'
+                    )}
+                  >
+                    <td className="px-3 py-2.5">
+                      <span className="font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">
+                        {facture.id}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-medium">{facture.fournisseur}</td>
+                    <td className="px-3 py-2.5">
+                      <div>
+                        <p className="font-medium">{facture.chantier}</p>
+                        <p className="text-[10px] text-slate-400">BC: {facture.referenceBC}</p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-amber-400">
+                      {facture.montantTTC.toLocaleString('fr-FR')} FCFA
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {facture.decisionBMO ? (
+                        <Badge variant="success">✅ Validé</Badge>
+                      ) : (
+                        <Badge variant="warning">⏳ En attente</Badge>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {facture.decisionBMO?.decisionId ? (
+                        <Button
+                          size="xs"
+                          variant="link"
+                          className="p-0 h-auto text-blue-400"
+                          onClick={() => window.open(`/decisions?id=${facture.decisionBMO?.decisionId}`, '_blank')}
+                        >
+                          📄 Voir décision
+                        </Button>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {filteredFactures.length === 0 && (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-slate-400">Aucune facture dans cette catégorie</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Modal double validation */}
       {showValidationModal && selectedPayment && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg">
+          <Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 {selectedPayment.requiresDoubleValidation ? '🔐 Double validation requise' : '💳 Détails paiement'}
@@ -401,13 +606,21 @@ export default function ValidationPaiementsPage() {
                     'font-mono font-bold text-lg',
                     selectedPayment.requiresDoubleValidation ? 'text-purple-400' : 'text-amber-400'
                   )}>
-                    {selectedPayment.amount} FCFA
+                    {formatFCFA(selectedPayment.amount)}
                   </span>
                 </div>
                 <p className="font-bold text-sm">{selectedPayment.beneficiary}</p>
                 <p className="text-xs text-slate-400">Ref: {selectedPayment.ref}</p>
                 <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                  <div><span className="text-slate-400">Projet:</span> <span className="text-orange-400">{selectedPayment.project}</span></div>
+                  <div>
+                    <span className="text-slate-400">Projet:</span>{' '}
+                    <span className="text-orange-400" title={projects.find(p => p.id === selectedPayment.project)?.name || selectedPayment.project}>
+                      {selectedPayment.project}
+                      {projects.find(p => p.id === selectedPayment.project)?.name
+                        ? ` • ${projects.find(p => p.id === selectedPayment.project)!.name}`
+                        : ''}
+                    </span>
+                  </div>
                   <div><span className="text-slate-400">Échéance:</span> {selectedPayment.dueDate}</div>
                   <div><span className="text-slate-400">Validé par:</span> {selectedPayment.validatedBy}</div>
                   <div><span className="text-slate-400">Bureau:</span> <BureauTag bureau={selectedPayment.bureau} /></div>
@@ -467,8 +680,7 @@ export default function ValidationPaiementsPage() {
               {/* Zone blocage */}
               <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
                 <p className="text-xs font-bold mb-2">Motif de blocage (optionnel)</p>
-                <input
-                  type="text"
+                <textarea
                   placeholder="Ex: Justificatif manquant, montant incorrect..."
                   value={blockReason}
                   onChange={(e) => setBlockReason(e.target.value)}
@@ -476,6 +688,7 @@ export default function ValidationPaiementsPage() {
                     'w-full px-3 py-2 rounded text-xs',
                     darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
                   )}
+                  rows={2}
                 />
               </div>
 
@@ -492,7 +705,6 @@ export default function ValidationPaiementsPage() {
                   variant="destructive"
                   onClick={() => {
                     handleBlock(selectedPayment, blockReason || 'Non spécifié');
-                    setShowValidationModal(false);
                   }}
                 >
                   🛑 Bloquer
@@ -501,6 +713,7 @@ export default function ValidationPaiementsPage() {
                   variant="secondary"
                   onClick={() => {
                     setShowValidationModal(false);
+                    setSelectedPayment(null);
                     setBfValidation(false);
                     setBlockReason('');
                   }}
@@ -536,6 +749,7 @@ export default function ValidationPaiementsPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

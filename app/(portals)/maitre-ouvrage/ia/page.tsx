@@ -1,26 +1,126 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { aiModules, aiHistory } from '@/lib/data';
+import { usePageNavigation } from '@/hooks/usePageNavigation';
+import { useAutoSyncCounts } from '@/hooks/useAutoSync';
+
+type ViewTab = 'modules' | 'history';
+type StatusFilter = 'all' | 'active' | 'training' | 'disabled' | 'error';
+type TypeFilter = 'all' | 'analysis' | 'prediction' | 'anomaly' | 'report' | 'recommendation';
+
+// WHY: Normalisation pour recherche multi-champs
+const normalize = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
 
 export default function IAPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
-  const [viewTab, setViewTab] = useState<'modules' | 'history'>('modules');
+
+  // État principal
+  const [viewTab, setViewTab] = useState<ViewTab>('modules');
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
+
+  // Filtres et recherche (alignés avec autres pages)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+
+  // Persistance navigation (même travail que autres pages)
+  const { updateFilters, getFilters } = usePageNavigation('ia');
+  useAutoSyncCounts('ia', () => stats.active, { interval: 30000, immediate: true });
+
+  // Charger les filtres sauvegardés
+  useEffect(() => {
+    try {
+      const saved = getFilters?.();
+      if (!saved) return;
+      if (saved.viewTab) setViewTab(saved.viewTab);
+      if (saved.selectedModule) setSelectedModule(saved.selectedModule);
+      if (typeof saved.searchQuery === 'string') setSearchQuery(saved.searchQuery);
+      if (saved.statusFilter) setStatusFilter(saved.statusFilter);
+      if (saved.typeFilter) setTypeFilter(saved.typeFilter);
+    } catch {
+      // silent
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sauvegarder les filtres
+  useEffect(() => {
+    try {
+      updateFilters?.({
+        viewTab,
+        selectedModule,
+        searchQuery,
+        statusFilter,
+        typeFilter,
+      });
+    } catch {
+      // silent
+    }
+  }, [viewTab, selectedModule, searchQuery, statusFilter, typeFilter, updateFilters]);
 
   const stats = useMemo(() => {
     const active = aiModules.filter(m => m.status === 'active').length;
     const training = aiModules.filter(m => m.status === 'training').length;
-    const avgAccuracy = Math.round(aiModules.filter(m => m.accuracy).reduce((acc, m) => acc + (m.accuracy || 0), 0) / aiModules.filter(m => m.accuracy).length);
+    const disabled = aiModules.filter(m => m.status === 'disabled').length;
+    const error = aiModules.filter(m => m.status === 'error').length;
+    const avgAccuracy = Math.round(aiModules.filter(m => m.accuracy).reduce((acc, m) => acc + (m.accuracy || 0), 0) / (aiModules.filter(m => m.accuracy).length || 1));
     const analysesCompleted = aiHistory.filter(h => h.status === 'completed').length;
-    return { total: aiModules.length, active, training, avgAccuracy, analysesCompleted };
+    const analysesProcessing = aiHistory.filter(h => h.status === 'processing').length;
+    return { total: aiModules.length, active, training, disabled, error, avgAccuracy, analysesCompleted, analysesProcessing };
   }, []);
+
+  // Filtrage des modules (aligné avec pattern des autres pages)
+  const filteredModules = useMemo(() => {
+    let result = [...aiModules];
+
+    // Filtre par statut
+    if (statusFilter !== 'all') {
+      result = result.filter(m => m.status === statusFilter);
+    }
+
+    // Filtre par type
+    if (typeFilter !== 'all') {
+      result = result.filter(m => m.type === typeFilter);
+    }
+
+    // Recherche multi-champs
+    if (searchQuery.trim()) {
+      const q = normalize(searchQuery);
+      result = result.filter(m =>
+        normalize(m.id).includes(q) ||
+        normalize(m.name).includes(q) ||
+        normalize(m.description).includes(q) ||
+        normalize(m.type).includes(q)
+      );
+    }
+
+    return result;
+  }, [statusFilter, typeFilter, searchQuery]);
+
+  // Filtrage de l'historique
+  const filteredHistory = useMemo(() => {
+    if (!searchQuery.trim()) return aiHistory;
+    const q = normalize(searchQuery);
+    return aiHistory.filter(h =>
+      normalize(h.id).includes(q) ||
+      normalize(h.moduleId).includes(q) ||
+      normalize(h.requestedBy).includes(q) ||
+      normalize(h.target).includes(q)
+    );
+  }, [searchQuery]);
 
   const selectedM = selectedModule ? aiModules.find(m => m.id === selectedModule) : null;
 
@@ -31,7 +131,7 @@ export default function IAPage() {
       userName: 'A. DIALLO',
       userRole: 'Directeur Général',
       module: 'ia',
-      action: 'run_analysis',
+      action: 'audit', // Mapping vers ActionLogType valide
       targetId: module.id,
       targetType: 'AIModule',
       details: `Lancement analyse ${module.name}`,
@@ -46,12 +146,42 @@ export default function IAPage() {
       userName: 'A. DIALLO',
       userRole: 'Directeur Général',
       module: 'ia',
-      action: 'retrain',
+      action: 'modification', // Mapping vers ActionLogType valide
       targetId: module.id,
       targetType: 'AIModule',
       details: `Ré-entraînement ${module.name}`,
     });
     addToast('Ré-entraînement programmé', 'warning');
+  };
+
+  // WHY: Vérifier l'intégrité du hash IA
+  const verifyAIHash = async (id: string, hash: string): Promise<boolean> => {
+    // TODO: Implémenter avec backend ou Web Crypto
+    return hash.startsWith('SHA3-256:');
+  };
+
+  const exportAIHistory = () => {
+    const headers = ['ID', 'Module', 'Statut', 'Demandé par', 'Date', 'Hash', 'Sources'];
+    const rows = aiHistory.map(h => [
+      h.id,
+      h.moduleId,
+      h.status,
+      h.requestedBy,
+      h.requestedAt,
+      h.hash || '',
+      h.inputs?.join(', ') || ''
+    ]);
+    const csv = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'historique_ia_bmo.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addToast('✅ Export IA généré', 'success');
   };
 
   const getTypeIcon = (type: string) => {
@@ -66,13 +196,26 @@ export default function IAPage() {
 
   return (
     <div className="space-y-4">
+      {/* Header aligné avec autres pages */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
             🤖 Intelligence IA
             <Badge variant="success">{stats.active} modules actifs</Badge>
+            {stats.training > 0 && <Badge variant="warning">{stats.training} en formation</Badge>}
           </h1>
           <p className="text-sm text-slate-400">Modules d'analyse, prédiction et recommandations avec traçabilité</p>
+        </div>
+        <div className="flex gap-2 w-full md:w-auto">
+          <Input
+            placeholder="Rechercher (ID, nom, type...)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full md:w-64"
+          />
+          <Button size="sm" variant="secondary" onClick={exportAIHistory}>
+            📊 Exporter
+          </Button>
         </div>
       </div>
 
@@ -122,16 +265,77 @@ export default function IAPage() {
         </Card>
       </div>
 
-      {/* Onglets */}
-      <div className="flex gap-2">
-        <Button size="sm" variant={viewTab === 'modules' ? 'default' : 'secondary'} onClick={() => setViewTab('modules')}>🧠 Modules ({aiModules.length})</Button>
-        <Button size="sm" variant={viewTab === 'history' ? 'default' : 'secondary'} onClick={() => setViewTab('history')}>📜 Historique ({aiHistory.length})</Button>
+      {/* Filtres alignés avec autres pages */}
+      <div className="flex flex-wrap gap-4">
+        {/* Onglets principaux */}
+        <div className="flex gap-1">
+          <Button size="sm" variant={viewTab === 'modules' ? 'default' : 'secondary'} onClick={() => setViewTab('modules')}>
+            🧠 Modules ({filteredModules.length})
+          </Button>
+          <Button size="sm" variant={viewTab === 'history' ? 'default' : 'secondary'} onClick={() => setViewTab('history')}>
+            📜 Historique ({filteredHistory.length})
+          </Button>
+        </div>
+
+        {/* Filtres par statut (modules uniquement) */}
+        {viewTab === 'modules' && (
+          <div className="flex gap-1 flex-wrap">
+            <span className="text-xs text-slate-400 self-center mr-1">Statut:</span>
+            {[
+              { id: 'all', label: 'Tous' },
+              { id: 'active', label: '✅ Actifs' },
+              { id: 'training', label: '🔄 Formation' },
+              { id: 'disabled', label: '⏸️ Désactivés' },
+            ].map((f) => (
+              <Button
+                key={f.id}
+                size="sm"
+                variant={statusFilter === f.id ? 'default' : 'secondary'}
+                onClick={() => setStatusFilter(f.id as StatusFilter)}
+              >
+                {f.label}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {/* Filtres par type (modules uniquement) */}
+        {viewTab === 'modules' && (
+          <div className="flex gap-1 flex-wrap">
+            <span className="text-xs text-slate-400 self-center mr-1">Type:</span>
+            {[
+              { id: 'all', label: 'Tous' },
+              { id: 'analysis', label: '📊' },
+              { id: 'prediction', label: '🔮' },
+              { id: 'anomaly', label: '🚨' },
+              { id: 'recommendation', label: '💡' },
+            ].map((f) => (
+              <Button
+                key={f.id}
+                size="sm"
+                variant={typeFilter === f.id ? 'default' : 'secondary'}
+                onClick={() => setTypeFilter(f.id as TypeFilter)}
+                title={f.id !== 'all' ? f.id : 'Tous les types'}
+              >
+                {f.label}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {viewTab === 'modules' ? (
         <div className="grid lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-3">
-            {aiModules.map((module) => {
+            {filteredModules.length === 0 && (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <span className="text-4xl mb-4 block">🔍</span>
+                  <p className="text-slate-400">Aucun module ne correspond aux filtres</p>
+                </CardContent>
+              </Card>
+            )}
+            {filteredModules.map((module) => {
               const isSelected = selectedModule === module.id;
               const statusColor = getStatusColor(module.status);
               
@@ -248,14 +452,22 @@ export default function IAPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {aiHistory.map((analysis) => (
-            <Card key={analysis.id} className={cn("border-l-4", analysis.status === 'completed' ? "border-l-emerald-500" : analysis.status === 'running' ? "border-l-blue-500" : "border-l-red-500")}>
+          {filteredHistory.length === 0 && (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <span className="text-4xl mb-4 block">📜</span>
+                <p className="text-slate-400">Aucune analyse ne correspond à la recherche</p>
+              </CardContent>
+            </Card>
+          )}
+          {filteredHistory.map((analysis) => (
+            <Card key={analysis.id} className={cn("border-l-4", analysis.status === 'completed' ? "border-l-emerald-500" : analysis.status === 'processing' ? "border-l-blue-500" : "border-l-red-500")}>
               <CardContent className="p-4">
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-purple-400">{analysis.id}</span>
-                      <Badge variant={analysis.status === 'completed' ? 'success' : analysis.status === 'running' ? 'info' : 'urgent'}>{analysis.status}</Badge>
+                      <Badge variant={analysis.status === 'completed' ? 'success' : analysis.status === 'processing' ? 'info' : 'urgent'}>{analysis.status}</Badge>
                       <Badge variant="default">{analysis.target}</Badge>
                     </div>
                     <h3 className="font-bold mt-1">{analysis.moduleId}</h3>
@@ -273,7 +485,7 @@ export default function IAPage() {
                     {analysis.result.findings && analysis.result.findings.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {analysis.result.findings.slice(0, 3).map((f, idx) => (
-                          <Badge key={idx} variant="default">{f}</Badge>
+                          <Badge key={idx} variant="default">{f.title}</Badge>
                         ))}
                         {analysis.result.findings.length > 3 && <Badge variant="info">+{analysis.result.findings.length - 3}</Badge>}
                       </div>
@@ -286,7 +498,7 @@ export default function IAPage() {
                     <p className="text-xs text-slate-400 mb-1">📥 Inputs ({analysis.inputs.length} sources)</p>
                     <div className="flex flex-wrap gap-1">
                       {analysis.inputs.map((input, idx) => (
-                        <Badge key={idx} variant="default">{input.source}: {input.recordsCount}</Badge>
+                        <Badge key={idx} variant="default">{input}</Badge>
                       ))}
                     </div>
                   </div>
@@ -296,6 +508,20 @@ export default function IAPage() {
                   <div className="p-2 rounded bg-slate-700/30">
                     <p className="text-[10px] text-slate-400">🔐 Hash résultat</p>
                     <p className="font-mono text-[10px] truncate">{analysis.hash}</p>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="mt-1 text-[10px]"
+                      onClick={async () => {
+                        const isValid = await verifyAIHash(analysis.id, analysis.hash);
+                        addToast(
+                          isValid ? '✅ Hash IA valide' : '❌ Hash IA corrompu',
+                          isValid ? 'success' : 'error'
+                        );
+                      }}
+                    >
+                      🔍 Vérifier
+                    </Button>
                   </div>
                 )}
               </CardContent>

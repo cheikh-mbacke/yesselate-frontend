@@ -159,3 +159,8 @@ body {
 .scrollbar-thin:hover::-webkit-scrollbar-thumb {
   background-color: rgba(249, 115, 22, 0.5);
 }
+
+/* Scrollbar gutter stable - évite les sauts de layout quand la scrollbar apparaît */
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}

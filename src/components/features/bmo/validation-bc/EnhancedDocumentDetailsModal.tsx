@@ -32,6 +32,7 @@ import { DocumentDetailsTabs } from './DocumentDetailsTabs';
 import { BMOValidatorPanel } from './BMOValidatorPanel';
 import { BCModalTabs } from './BCModalTabs';
 import type { SignatoryProfile } from '@/lib/types/document-validation.types';
+import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
 
 interface EnhancedDocumentDetailsModalProps {
   isOpen: boolean;
@@ -66,6 +67,19 @@ export function EnhancedDocumentDetailsModal({
   const [verificationResult, setVerificationResult] = useState<any>(null);
   const [signature, setSignature] = useState<DocumentSignature | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null); // WHY: Reset scroll au changement de document
+
+  // WHY: Bloquer le scroll du body quand la modal est ouverte (vérification SSR)
+  useEffect(() => {
+    if (isOpen && typeof document !== 'undefined' && document.body) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.style.overflow = prev;
+        }
+      };
+    }
+  }, [isOpen]);
 
   // Reset activeTab et scroll au changement de document (WHY: éviter tab/scroll persistence entre documents différents)
   useEffect(() => {
@@ -195,28 +209,9 @@ export function EnhancedDocumentDetailsModal({
     }
   };
 
+  // WHY: Utiliser la fonction centralisée pour cohérence UI
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, any> = {
-      // Statuts classiques
-      pending: { variant: 'info' as const, label: 'En attente' },
-      anomaly_detected: { variant: 'warning' as const, label: 'Anomalie' },
-      correction_requested: { variant: 'warning' as const, label: 'Correction demandée' },
-      correction_in_progress: { variant: 'warning' as const, label: 'Correction en cours' },
-      corrected: { variant: 'info' as const, label: 'Corrigé' },
-      validated: { variant: 'success' as const, label: 'Validé' },
-      rejected: { variant: 'destructive' as const, label: 'Refusé' },
-      // Workflow CIRIL
-      draft_ba: { variant: 'default' as const, label: 'Brouillon BA' },
-      pending_bmo: { variant: 'info' as const, label: 'En attente BMO' },
-      audit_required: { variant: 'warning' as const, label: 'Audit requis' },
-      in_audit: { variant: 'warning' as const, label: 'Audit en cours' },
-      approved_bmo: { variant: 'success' as const, label: 'Approuvé BMO' },
-      rejected_bmo: { variant: 'destructive' as const, label: 'Refusé BMO' },
-      sent_supplier: { variant: 'success' as const, label: 'Envoyé fournisseur' },
-      needs_complement: { variant: 'warning' as const, label: 'Complément requis' },
-    };
-    // Toujours mapper vers un label UI, ne jamais afficher le statut brut
-    const config = variants[status] || { variant: 'default' as const, label: 'Inconnu' };
+    const config = getStatusBadgeConfig(status);
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
@@ -274,7 +269,7 @@ export function EnhancedDocumentDetailsModal({
 
           {/* Pour les BCs, utiliser BCModalTabs qui gère ses propres onglets */}
           {documentType === 'bc' ? (
-            <div className="flex-1 overflow-hidden flex flex-col min-h-0" style={{ scrollbarGutter: 'stable' }}>
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col" style={{ scrollbarGutter: 'stable' }}>
               <BCModalTabs
                 key={document.id} // Force reset au changement de BC
                 bc={document as EnrichedBC}

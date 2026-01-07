@@ -34,6 +34,7 @@ import {
   projectsEnriched,
 } from '@/lib/data/bmo-mock-4';
 import type { Client, ClientHistoryEvent } from '@/lib/data/bmo-mock-4';
+import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
 
 type ViewMode = 'all' | 'active' | 'litige' | 'termine' | 'prospect';
 type DetailTab = 'info' | 'historique' | 'projets' | 'demandes';
@@ -380,8 +381,8 @@ export default function ClientsPage() {
                       borderRadius: '8px',
                       fontSize: '12px',
                     }}
-                    formatter={(value: number, name: string) => [
-                      name === 'chiffreAffaires' ? formatMontant(value) + ' FCFA' : value,
+                    formatter={(value: number | undefined, name: string | undefined) => [
+                      name === 'chiffreAffaires' ? formatMontant(value ?? 0) + ' FCFA' : (value ?? 0),
                       name === 'chiffreAffaires' ? 'CA' : 'Nouveaux clients'
                     ]}
                   />
@@ -588,11 +589,13 @@ export default function ClientsPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <Badge variant={getStatusBadge(client.status) as any}>
-                          {client.status === 'active' ? 'Actif' :
-                           client.status === 'litige' ? 'Litige' :
-                           client.status === 'termine' ? 'Terminé' : 'Prospect'}
-                        </Badge>
+                        {(() => {
+                          // WHY: Utiliser la fonction centralisée pour cohérence UI (remplace double mapping)
+                          const statusConfig = getStatusBadgeConfig(client.status);
+                          return (
+                            <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                          );
+                        })()}
                         {clientLitigeCount > 0 && (
                           <Badge variant="urgent" className="ml-1">🚨</Badge>
                         )}

@@ -34,7 +34,9 @@ export type DocumentStatus =
   | 'draft_ba'                  // Brouillon créé par BA
   | 'pending_bmo'               // En attente de validation BMO
   | 'audit_required'            // Audit requis
+  | 'in_audit'                  // Audit en cours
   | 'approved_bmo'              // Approuvé par BMO
+  | 'rejected_bmo'              // Refusé par BMO
   | 'sent_supplier'             // Envoyé au fournisseur
   | 'needs_complement';         // Nécessite des compléments
 
@@ -202,6 +204,7 @@ export interface EnrichedBC {
   paymentMethod?: string;       // Mode de paiement
   deliveryAddress?: string;     // Adresse de livraison
   vatRate?: number;             // Taux de TVA (ex: 0.20)
+  decisionBMO?: import('./bmo.types').DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 export interface EnrichedFacture {
@@ -219,6 +222,7 @@ export interface EnrichedFacture {
   anomalies?: DocumentAnomaly[];
   annotations?: DocumentAnnotation[];
   verification?: DocumentVerificationResult;
+  decisionBMO?: import('./bmo.types').DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 export interface EnrichedAvenant {
@@ -235,6 +239,7 @@ export interface EnrichedAvenant {
   anomalies?: DocumentAnomaly[];
   annotations?: DocumentAnnotation[];
   verification?: DocumentVerificationResult;
+  decisionBMO?: import('./bmo.types').DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // Demande de complément

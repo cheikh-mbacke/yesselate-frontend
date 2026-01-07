@@ -22,10 +22,12 @@ export { EnhancedStatsBanner } from './EnhancedStatsBanner';
 export { BCLignesTable } from './BCLignesTable';
 export { BCDetailsExpanded } from './BCDetailsExpanded';
 export { BCDocumentView } from './BCDocumentView';
+export { PdfPreview } from './PdfPreview';
 export { DocumentDetailsTabs } from './DocumentDetailsTabs';
 export { BonDeCommandePreview, BonDeCommandePrintButton } from './BonDeCommandePreview';
 export { BCModalTabs } from './BCModalTabs';
 export { BCRowActions } from './BCRowActions';
+export { DecisionCell } from './DecisionCell';
 export type { PurchaseOrderData, PurchaseOrderLine, PurchaseOrderParty, PurchaseOrderMeta } from './BonDeCommandePreview';
 export type { TabType } from './types';
 

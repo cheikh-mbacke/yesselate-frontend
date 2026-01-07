@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { EnrichedBC } from '@/lib/types/document-validation.types';
 import { BCDocumentView } from './BCDocumentView';
+import { PdfPreview } from './PdfPreview';
 import { analyzeBCForBMO, generateBMODecisionRecommendation } from '@/lib/utils/validation-logic';
 import type { PurchaseOrder } from '@/lib/types/bmo.types';
 import { runBCAudit, isAuditRequiredForValidation } from '@/lib/services/bc-audit.service';
@@ -19,6 +20,7 @@ import type { BCAuditReport, BCAuditContext } from '@/lib/types/bc-workflow.type
 import { useBMOStore } from '@/lib/stores';
 import { convertEnrichedBCToBonCommande } from '@/lib/utils/bc-converter';
 import { useBcAudit } from '@/ui/hooks/useBcAudit';
+import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
 
 type TabKey = "analyse" | "details" | "documents" | "historique" | "risques";
 
@@ -66,7 +68,7 @@ interface BCModalTabsProps {
   onAuditComplete?: (bcId: string, report: BCAuditReport) => void; // WHY: Propager le rapport d'audit au parent
 }
 
-export function BCModalTabs({ bc, onDecision }: BCModalTabsProps) {
+export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProps) {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
   const [tab, setTab] = useState<TabKey>("analyse");
@@ -77,38 +79,20 @@ export function BCModalTabs({ bc, onDecision }: BCModalTabsProps) {
   // Hook pour l'audit BC
   const bcAudit = useBcAudit();
   
-  // Reset l'onglet actif et le scroll au changement de BC
+  // Reset l'onglet actif et le scroll au changement de BC (WHY: éviter tab/scroll persistence entre BCs)
   useEffect(() => {
     setTab("analyse"); // Reset vers l'onglet Analyse
-    // Reset le scroll
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo(0, 0);
-    }
     // Reset le rapport d'audit si le BC change
     setAuditReport(bc.auditReport || null);
+    // WHY: Reset scroll avec setTimeout pour s'assurer que le ref est prêt
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo(0, 0);
+      }
+    }, 0);
   }, [bc.id]); // Se déclenche uniquement quand l'ID change
 
-  // Fonction de mapping des statuts (WHY: éviter affichage brut "anomaly_detected")
-  const getStatusLabel = (status: string): string => {
-    const statusMap: Record<string, string> = {
-      pending: 'En attente',
-      anomaly_detected: 'Anomalie détectée',
-      correction_requested: 'Correction demandée',
-      correction_in_progress: 'Correction en cours',
-      corrected: 'Corrigé',
-      validated: 'Validé',
-      rejected: 'Refusé',
-      draft_ba: 'Brouillon BA',
-      pending_bmo: 'En attente BMO',
-      audit_required: 'Audit requis',
-      in_audit: 'Audit en cours',
-      approved_bmo: 'Approuvé BMO',
-      rejected_bmo: 'Refusé BMO',
-      sent_supplier: 'Envoyé fournisseur',
-      needs_complement: 'Complément requis',
-    };
-    return statusMap[status] || status;
-  };
+  // WHY: Utiliser la fonction centralisée pour cohérence UI (remplace getStatusLabel locale)
 
   // Helper pour formater une date de manière sûre (WHY: éviter erreur si date invalide)
   const safeFormatDate = (dateStr: string | undefined | null): string => {
@@ -372,7 +356,7 @@ export function BCModalTabs({ bc, onDecision }: BCModalTabsProps) {
       {/* Contenu avec ref pour reset scroll */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-6 py-5" 
+        className="flex-1 min-h-0 overflow-y-auto px-6 py-5 scrollbar-gutter-stable" 
         style={{ scrollbarWidth: 'thin', scrollbarGutter: 'stable' }}
       >
         {tab === "analyse" && (
@@ -817,24 +801,9 @@ function DetailsTab({
             <Info 
               label="Statut" 
               value={(() => {
-                const statusMap: Record<string, string> = {
-                  pending: 'En attente',
-                  anomaly_detected: 'Anomalie détectée',
-                  correction_requested: 'Correction demandée',
-                  correction_in_progress: 'Correction en cours',
-                  corrected: 'Corrigé',
-                  validated: 'Validé',
-                  rejected: 'Refusé',
-                  draft_ba: 'Brouillon BA',
-                  pending_bmo: 'En attente BMO',
-                  audit_required: 'Audit requis',
-                  in_audit: 'Audit en cours',
-                  approved_bmo: 'Approuvé BMO',
-                  rejected_bmo: 'Refusé BMO',
-                  sent_supplier: 'Envoyé fournisseur',
-                  needs_complement: 'Complément requis',
-                };
-                return statusMap[bc.status] || bc.status;
+                // WHY: Utiliser la fonction centralisée pour cohérence UI (remplace mapping manuel dupliqué)
+                const statusConfig = getStatusBadgeConfig(bc.status);
+                return statusConfig.label;
               })()} 
               darkMode={darkMode} 
             />
@@ -931,12 +900,17 @@ function DetailsTab({
 function DocumentsTab({ 
   documents, 
   bc,
-  darkMode 
+  darkMode,
+  scrollContainerRef
 }: { 
   documents: BCDoc[]; 
   bc: EnrichedBC;
   darkMode: boolean;
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
 }) {
+  // WHY: Construire l'URL du PDF depuis l'ID du BC
+  const pdfUrl = `/api/bc/${bc.id}/pdf`;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -980,6 +954,13 @@ function DocumentsTab({
         </CardContent>
       </Card>
 
+      {/* Aperçu PDF avec gestion du scroll intégrée */}
+      <PdfPreview 
+        pdfUrl={pdfUrl} 
+        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement>}
+      />
+
+      {/* Aperçu HTML alternatif (format papier) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Aperçu Bon de commande (format papier)</CardTitle>

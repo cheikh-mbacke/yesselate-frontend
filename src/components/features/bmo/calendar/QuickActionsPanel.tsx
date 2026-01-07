@@ -75,6 +75,7 @@ export function QuickActionsPanel({ onQuickAction, stats }: QuickActionsPanelPro
       icon: Download,
       color: 'text-emerald-400',
       bgColor: 'bg-emerald-500/10',
+      disabled: true, // WHY: Fonctionnalité non implémentée (TODO: Implémenter export)
       action: () => {
         addToast('Export du planning en cours...', 'info');
         // TODO: Implémenter export
@@ -87,6 +88,7 @@ export function QuickActionsPanel({ onQuickAction, stats }: QuickActionsPanelPro
       color: 'text-purple-400',
       bgColor: 'bg-purple-500/10',
       count: stats.criticalAlerts,
+      disabled: true, // WHY: Fonctionnalité non implémentée (affiche seulement un toast)
       action: () => {
         addToast(`${stats.criticalAlerts} alerte(s) critique(s)`, 'warning');
       },
@@ -132,10 +134,15 @@ export function QuickActionsPanel({ onQuickAction, stats }: QuickActionsPanelPro
                 <button
                   key={action.id}
                   onClick={action.action}
+                  disabled={action.disabled} // WHY: Désactiver les boutons non fonctionnels
+                  title={action.disabled ? 'Fonctionnalité non implémentée' : undefined} // WHY: Indiquer pourquoi le bouton est désactivé
                   className={cn(
-                    'p-3 rounded-lg border transition-all hover:scale-105 group',
+                    'p-3 rounded-lg border transition-all group',
                     'flex flex-col items-center gap-2',
                     action.bgColor,
+                    action.disabled 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : 'hover:scale-105 cursor-pointer',
                     darkMode ? 'border-slate-600 hover:border-slate-500' : 'border-gray-200 hover:border-gray-300'
                   )}
                 >

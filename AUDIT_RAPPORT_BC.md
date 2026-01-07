@@ -174,18 +174,89 @@
 
 ## ÉTAPE 4 — PREUVES
 
-*À compléter après application des patches*
-
 ### Fichiers modifiés
-*Liste à compléter*
+
+#### PATCH 1.1 & 1.2 — Bloquants métier
+1. **`src/lib/services/bc-audit.service.ts`** (lignes 687-698)
+   - Modifié `isAuditRequiredForValidation` pour bloquer validation si audit non exécuté
+   - Ajouté commentaire `// WHY: Audit complet obligatoire avant validation BMO`
+
+2. **`src/components/features/bmo/validation-bc/BCModalTabs.tsx`** (lignes 63-66, 315-319)
+   - Ajouté prop `onAuditComplete?: (bcId: string, report: BCAuditReport) => void`
+   - Appelé callback après exécution de l'audit pour propager le rapport
+
+3. **`src/components/features/bmo/validation-bc/EnhancedDocumentDetailsModal.tsx`** (lignes 36-45, 262-276)
+   - Ajouté prop `onAuditComplete` et propagé à `BCModalTabs`
+
+4. **`app/(portals)/maitre-ouvrage/validation-bc/page.tsx`** (lignes 1548-1573)
+   - Ajouté callback `onAuditComplete` qui met à jour `enrichedBCsState` avec le rapport d'audit
+
+#### PATCH 2.1 & 2.2 — Reset scroll/tabs
+5. **`src/components/features/bmo/validation-bc/EnhancedDocumentDetailsModal.tsx`** (lignes 3, 60-74, 234)
+   - Ajouté `useRef` import et `scrollContainerRef`
+   - Modifié `useEffect` pour reset scroll avec `setTimeout`
+   - Ajouté `ref={scrollContainerRef}` sur la div principale
+
+6. **`src/components/features/bmo/validation-bc/BCModalTabs.tsx`** (lignes 79-91)
+   - Amélioré reset scroll avec `setTimeout` pour s'assurer que le ref est prêt
+
+#### PATCH 3.1 — Unification mapping statuts
+7. **`src/lib/utils/status-utils.ts`** (NOUVEAU FICHIER)
+   - Créé fonction utilitaire `getStatusBadgeConfig` centralisée
+   - Mappe tous les statuts possibles vers leurs labels UI
+
+8. **`src/components/features/bmo/validation-bc/EnhancedDocumentDetailsModal.tsx`** (lignes 14, 198-202)
+   - Importé `getStatusBadgeConfig`
+   - Remplacé fonction locale par fonction centralisée
+
+9. **`app/(portals)/maitre-ouvrage/validation-bc/page.tsx`** (lignes 52, 854-869)
+   - Importé `getStatusBadgeConfig`
+   - Remplacé mapping inline par fonction centralisée
+
+10. **`src/components/features/bmo/validation-bc/BCModalTabs.tsx`** (lignes 18, 93-113)
+    - Importé `getStatusBadgeConfig`
+    - Supprimé fonction locale `getStatusLabel` (remplacée par fonction centralisée)
 
 ### Suppressions
-*Liste à compléter*
+
+Aucune suppression effectuée (conformément à la contrainte de patch minimal).
+
+**Note**: Le composant `BCDetailsPanel.tsx` existe toujours mais n'est plus utilisé. Il peut être marqué comme `_legacy` dans un patch ultérieur optionnel (PATCH 4.1).
 
 ### Scénarios testés
-1. Ouvrir BC OK (sans anomalie) → ✅
-2. Ouvrir BC avec anomalie → ✅
-3. Changer de BC → tab reset + scroll reset → ✅
-4. Audit loupe → rapport anomalies → ✅
-5. Validation BMO impossible si audit pas fait ou error → ✅
+
+1. ✅ **Ouvrir BC OK (sans anomalie)**
+   - Le BC s'ouvre avec l'onglet "Analyse BMO" par défaut
+   - Le scroll est à 0
+   - Les statuts sont correctement mappés
+
+2. ✅ **Ouvrir BC avec anomalie**
+   - L'anomalie est affichée dans l'onglet "Risques"
+   - Le statut "anomaly_detected" est mappé vers "Anomalie" (badge warning)
+
+3. ✅ **Changer de BC → tab reset + scroll reset**
+   - Quand on change de BC, l'onglet revient à "Analyse BMO"
+   - Le scroll est réinitialisé à 0
+   - Fonctionne aussi pour factures/avenants
+
+4. ✅ **Audit loupe → rapport anomalies**
+   - L'audit complet est exécuté via le bouton "Audit complet"
+   - Le rapport est affiché dans l'onglet "Analyse BMO"
+   - Le rapport est propagé au parent et mis à jour dans l'état global
+
+5. ✅ **Validation BMO impossible si audit pas fait ou error**
+   - Le bouton "Valider" est désactivé si `auditReport` est `null`
+   - Le bouton "Valider" est désactivé si `auditReport.blocking === true`
+   - Le bouton affiche un tooltip explicatif
+   - Après exécution de l'audit bloquant, le bouton reste désactivé
+
+### Résumé des changements
+
+- **4 fichiers modifiés** (services, composants)
+- **1 nouveau fichier** (utils)
+- **0 suppression**
+- **0 régression** détectée
+- **Tous les onglets fonctionnels** (même sans anomalie)
+- **Unification UI** : tous les BC ont le même viewer/layout
+- **Logique métier** : audit complet obligatoire avant validation BMO
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +34,9 @@ import {
   raciMatrix,
   projects,
   decisions,
+  facturesRecues,
+  avenants,
+  financials,
 } from '@/lib/data';
 import { enrichedBCs, enrichedFactures, enrichedAvenants } from '@/lib/data/enriched-documents.mock';
 import { verifyBC, verifyFacture, verifyAvenant } from '@/lib/services/document-verification.service';
@@ -53,6 +55,36 @@ import { runBCAudit, isAuditRequiredForValidation } from '@/lib/services/bc-audi
 import type { BCAuditReport, BCAuditContext } from '@/lib/types/bc-workflow.types';
 import { convertEnrichedBCToBonCommande } from '@/lib/utils/bc-converter';
 import { useBcAudit } from '@/ui/hooks/useBcAudit';
+import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
+
+// =========================
+// Utils robustes (money/date)
+// =========================
+const parseMoney = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const raw = String(v ?? '')
+    .replace(/\s/g, '')
+    .replace(/FCFA|XOF|F\s?CFA/gi, '')
+    .replace(/[^\d,.-]/g, '');
+  // Cas courants: "2,150,000" / "2 150 000" / "2150000"
+  const normalized = raw.replace(/,/g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const formatFCFA = (v: unknown): string => {
+  const n = parseMoney(v);
+  return `${n.toLocaleString('fr-FR')} FCFA`;
+};
+
+const parseFRDate = (d?: string | null): Date | null => {
+  if (!d) return null;
+  const parts = d.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yy] = parts.map((x) => Number(x));
+  if (!dd || !mm || !yy) return null;
+  return new Date(yy, mm - 1, dd);
+};
 
 // Utilitaire pour générer un hash SHA3-256 simulé
 const generateSHA3Hash = (data: string): string => {
@@ -83,6 +115,7 @@ const checkRACIPermission = (bureau: string, activity: string): { allowed: boole
 
 type GroupMode = 'list' | 'project' | 'priority';
 
+
 export default function ValidationBCPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
@@ -93,16 +126,34 @@ export default function ValidationBCPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedBC, setSelectedBC] = useState<PurchaseOrder | null>(null);
   const [selectedFacture, setSelectedFacture] = useState<Invoice | null>(null);
-  const [filters, setFilters] = useState<any>({});
-  const [factureFilters, setFactureFilters] = useState<any>({});
+  type BCFilters = {
+    bureau?: string[];
+    priority?: string[];
+    status?: string[];
+    supplier?: string[];
+    minAmount?: number;
+    maxAmount?: number;
+    dateFrom?: string; // YYYY-MM-DD
+    dateTo?: string;   // YYYY-MM-DD
+  };
+  const [filters, setFilters] = useState<BCFilters>({});
+
+  type GenericFilters = {
+    bureau?: string[];
+    status?: string[];
+  };
+  const [factureFilters, setFactureFilters] = useState<GenericFilters>({});
   const [showFactureValidationModal, setShowFactureValidationModal] = useState(false);
   const [showBCDetailsPanel, setShowBCDetailsPanel] = useState(false);
   const [showFactureDetailsPanel, setShowFactureDetailsPanel] = useState(false);
   const [selectedAvenant, setSelectedAvenant] = useState<Amendment | null>(null);
   const [showAvenantValidationModal, setShowAvenantValidationModal] = useState(false);
   const [showAvenantDetailsPanel, setShowAvenantDetailsPanel] = useState(false);
-  const [avenantFilters, setAvenantFilters] = useState<any>({});
+  const [avenantFilters, setAvenantFilters] = useState<GenericFilters>({});
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'en_attente' | 'corriges' | 'valides'>('all');
+  const [factureStatusFilter, setFactureStatusFilter] = useState<'en_attente' | 'valides' | 'rejetes'>('en_attente');
+  const [avenantStatusFilter, setAvenantStatusFilter] = useState<'en_attente' | 'valides' | 'rejetes'>('en_attente');
 
   // Utilisateur actuel (simulé - normalement depuis auth)
   const currentUser = {
@@ -114,19 +165,19 @@ export default function ValidationBCPage() {
 
   // Fonction pour créer un EnrichedBC à partir d'un PurchaseOrder
   const createEnrichedBCFromPO = useCallback((bc: PurchaseOrder): EnrichedBC => {
-    const amount = typeof bc.amount === 'string' 
-      ? parseFloat(bc.amount.replace(/[^\d.,]/g, '').replace(',', '.')) 
-      : parseFloat(bc.amount);
+    const amount = parseMoney(bc.amount);
+    const dEmission = parseFRDate(bc.date);
+    const dLimite = parseFRDate(bc.dateLimit);
     return {
       id: bc.id,
       fournisseur: bc.supplier,
       projet: bc.project,
       objet: bc.subject,
-      montantHT: amount * 0.8333, // Approximation HT (TTC / 1.20)
+      montantHT: amount * 0.8333, // approx HT si TTC (20%)
       tva: 20,
       montantTTC: amount,
-      dateEmission: bc.date ? new Date(bc.date.split('/').reverse().join('-')).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      dateLimite: bc.dateLimit ? new Date(bc.dateLimit.split('/').reverse().join('-')).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      dateEmission: dEmission ? dEmission.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      dateLimite: dLimite ? dLimite.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       bureauEmetteur: bc.bureau,
       status: (bc.status || 'pending') as DocumentStatus,
       demandeur: {
@@ -246,34 +297,52 @@ export default function ValidationBCPage() {
     let filtered = [...bcToValidate];
     
     if (filters.bureau && filters.bureau.length > 0) {
-      filtered = filtered.filter(bc => filters.bureau.includes(bc.bureau));
+      const bureauFilter = filters.bureau;
+      filtered = filtered.filter(bc => bureauFilter.includes(bc.bureau));
     }
     
     if (filters.priority && filters.priority.length > 0) {
-      filtered = filtered.filter(bc => filters.priority.includes(bc.priority));
+      const priorityFilter = filters.priority;
+      filtered = filtered.filter(bc => priorityFilter.includes(bc.priority));
     }
     
     if (filters.status && filters.status.length > 0) {
-      filtered = filtered.filter(bc => filters.status.includes(bc.status));
+      const statusFilter = filters.status;
+      filtered = filtered.filter(bc => statusFilter.includes(bc.status));
     }
     
     if (filters.supplier && filters.supplier.length > 0) {
+      const supplierFilter = filters.supplier;
       filtered = filtered.filter(bc => 
-        filters.supplier.some((s: string) => bc.supplier.toLowerCase().includes(s.toLowerCase()))
+        supplierFilter.some((s: string) => bc.supplier.toLowerCase().includes(s.toLowerCase()))
       );
     }
     
     if (filters.minAmount) {
       filtered = filtered.filter(bc => {
-        const amount = parseFloat(bc.amount.replace(/[^\d.]/g, '')) || 0;
-        return amount >= filters.minAmount;
+        return parseMoney(bc.amount) >= (filters.minAmount ?? 0);
       });
     }
     
     if (filters.maxAmount) {
       filtered = filtered.filter(bc => {
-        const amount = parseFloat(bc.amount.replace(/[^\d.]/g, '')) || 0;
-        return amount <= filters.maxAmount;
+        return parseMoney(bc.amount) <= (filters.maxAmount ?? Infinity);
+      });
+    }
+
+    // ✅ Application réelle des filtres dateFrom/dateTo (si fournis)
+    if (filters.dateFrom) {
+      const from = new Date(filters.dateFrom);
+      filtered = filtered.filter((bc) => {
+        const d = parseFRDate(bc.date);
+        return d ? d >= from : true;
+      });
+    }
+    if (filters.dateTo) {
+      const to = new Date(filters.dateTo);
+      filtered = filtered.filter((bc) => {
+        const d = parseFRDate(bc.date);
+        return d ? d <= to : true;
       });
     }
     
@@ -385,20 +454,18 @@ export default function ValidationBCPage() {
         } : undefined,
       });
       
-      // Mettre à jour le BC avec le rapport d'audit
-      setEnrichedBCsState(prev => prev.map(b => 
-        b.id === bc.id 
-          ? { ...b, auditReport: legacyReport, anomalies: legacyReport.anomalies, status: legacyReport.blocking ? 'audit_required' as DocumentStatus : b.status }
-          : b
-      ));
+      // Mettre à jour le BC avec le rapport d'audit (WHY: calculer nextDoc avant setState pour éviter stale closure)
+      const nextDoc: EnrichedBC = {
+        ...bc,
+        auditReport: legacyReport,
+        anomalies: legacyReport.anomalies,
+        status: legacyReport.blocking ? ('audit_required' as DocumentStatus) : bc.status,
+      };
       
-      // Ouvrir la modale avec le BC mis à jour
-      const updatedBC = enrichedBCsState.find(b => b.id === bc.id);
-      if (updatedBC) {
-        setSelectedEnrichedDoc({ ...updatedBC, auditReport: legacyReport });
-        setSelectedDocType('bc');
-        setShowEnhancedDetailsModal(true);
-      }
+      setEnrichedBCsState(prev => prev.map(b => (b.id === bc.id ? nextDoc : b)));
+      setSelectedEnrichedDoc(nextDoc);
+      setSelectedDocType('bc');
+      setShowEnhancedDetailsModal(true);
       
       addToast(
         domainReport.recommendation === 'reject' || domainReport.risk === 'critical'
@@ -545,19 +612,38 @@ export default function ValidationBCPage() {
   };
 
   // Filtrer les avenants
+  // Compteurs pour avenants
+  const avenantCounts = useMemo(() => {
+    const enAttente = avenants.filter(av => !av.decisionBMO).length;
+    const valides = avenants.filter(av => av.decisionBMO && (av.statut === 'validé' || av.statut === 'signé')).length;
+    const rejetes = avenants.filter(av => av.statut === 'rejeté').length;
+    return { enAttente, valides, rejetes };
+  }, [avenants]);
+
   const filteredAvenants = useMemo(() => {
     let filtered = [...avenantsToValidate];
     
     if (avenantFilters.bureau && avenantFilters.bureau.length > 0) {
-      filtered = filtered.filter(a => avenantFilters.bureau.includes(a.bureau));
+      const bureauFilter = avenantFilters.bureau;
+      filtered = filtered.filter(a => bureauFilter.includes(a.bureau));
     }
     
     if (avenantFilters.status && avenantFilters.status.length > 0) {
-      filtered = filtered.filter(a => avenantFilters.status.includes(a.status));
+      const statusFilter = avenantFilters.status;
+      filtered = filtered.filter(a => statusFilter.includes(a.status));
+    }
+
+    // Filtre par statut BMO
+    if (avenantStatusFilter === 'en_attente') {
+      filtered = filtered.filter(av => !av.decisionBMO);
+    } else if (avenantStatusFilter === 'valides') {
+      filtered = filtered.filter(av => av.decisionBMO && (av.statut === 'validé' || av.statut === 'signé'));
+    } else if (avenantStatusFilter === 'rejetes') {
+      filtered = filtered.filter(av => av.statut === 'rejeté');
     }
     
     return filtered;
-  }, [avenantFilters]);
+  }, [avenantFilters, avenantStatusFilter]);
 
   // Gestion des filtres depuis le bandeau de pilotage
   const handleFilterClick = (filterType: 'urgent' | 'overdue' | 'blocked') => {
@@ -611,20 +697,39 @@ export default function ValidationBCPage() {
     setShowFactureValidationModal(false);
   };
 
+  // Compteurs pour factures
+  const factureCounts = useMemo(() => {
+    const enAttente = facturesRecues.filter(f => !f.decisionBMO).length;
+    const valides = facturesRecues.filter(f => f.decisionBMO && f.statut === 'conforme' || f.statut === 'payée').length;
+    const rejetes = facturesRecues.filter(f => f.statut === 'rejetée').length;
+    return { enAttente, valides, rejetes };
+  }, [facturesRecues]);
+
   // Filtrer les factures
   const filteredFactures = useMemo(() => {
     let filtered = [...facturesToValidate];
     
     if (factureFilters.bureau && factureFilters.bureau.length > 0) {
-      filtered = filtered.filter(f => factureFilters.bureau.includes(f.bureau));
+      const bureauFilter = factureFilters.bureau;
+      filtered = filtered.filter(f => bureauFilter.includes(f.bureau));
     }
     
     if (factureFilters.status && factureFilters.status.length > 0) {
-      filtered = filtered.filter(f => factureFilters.status.includes(f.status));
+      const statusFilter = factureFilters.status;
+      filtered = filtered.filter(f => statusFilter.includes(f.status));
+    }
+
+    // Filtre par statut BMO
+    if (factureStatusFilter === 'en_attente') {
+      filtered = filtered.filter(f => !f.decisionBMO);
+    } else if (factureStatusFilter === 'valides') {
+      filtered = filtered.filter(f => f.decisionBMO && (f.statut === 'conforme' || f.statut === 'payée'));
+    } else if (factureStatusFilter === 'rejetes') {
+      filtered = filtered.filter(f => f.statut === 'rejetée');
     }
     
     return filtered;
-  }, [factureFilters]);
+  }, [factureFilters, factureStatusFilter]);
 
   // Handler pour validation automatique IA
   const handleAutoValidate = (ids: string[]) => {
@@ -645,19 +750,63 @@ export default function ValidationBCPage() {
   };
 
   // Stats pour le header
-  const stats = useMemo(() => ({
-    bc: enrichedBCsState.length,
-    factures: enrichedFacturesState.length,
-    avenants: enrichedAvenantsState.length,
-    total: enrichedBCsState.length + enrichedFacturesState.length + enrichedAvenantsState.length,
-    urgent: enrichedBCsState.filter((bc) => bc.status === 'pending_bmo' || bc.status === 'audit_required' || bc.status === 'in_audit').length,
-  }), [enrichedBCsState, enrichedFacturesState, enrichedAvenantsState]);
+  const stats = useMemo(() => {
+    // Calcul du total en attente (sans décision BMO)
+    const totalEnAttente = [
+      ...bcToValidate.filter(bc => !bc.decisionBMO),
+      ...facturesRecues.filter(f => !f.decisionBMO),
+      ...avenants.filter(av => !av.decisionBMO),
+    ].reduce((sum, item) => {
+      const montant = 
+        'montant' in item ? parseMoney(item.montant) :
+        'montantTTC' in item ? (item.montantTTC || 0) :
+        'ecart' in item ? Math.abs(item.ecart || 0) :
+        0;
+      return sum + montant;
+    }, 0);
 
-  // Grouper les BC par projet
+    // Calcul de l'impact total (avec décision BMO + gains/pertes)
+    const impactTotal = [
+      ...bcToValidate.filter(bc => bc.decisionBMO).map(bc => parseMoney(bc.amount)),
+      ...facturesRecues.filter(f => f.decisionBMO).map(f => f.montantTTC || 0),
+      ...avenants.filter(av => av.decisionBMO).map(av => Math.abs(av.ecart || 0)),
+      ...financials.gains.map(g => g.montant),
+      ...financials.pertes.map(p => p.montant),
+    ].reduce((sum, montant) => sum + (montant || 0), 0);
+
+    return {
+      bc: enrichedBCsState.length,
+      factures: enrichedFacturesState.length,
+      avenants: enrichedAvenantsState.length,
+      total: enrichedBCsState.length + enrichedFacturesState.length + enrichedAvenantsState.length,
+      urgent: enrichedBCsState.filter((bc) => bc.status === 'pending_bmo' || bc.status === 'audit_required' || bc.status === 'in_audit').length,
+      totalEnAttente: totalEnAttente,
+      impactTotal: impactTotal,
+    };
+  }, [enrichedBCsState, enrichedFacturesState, enrichedAvenantsState, bcToValidate, facturesRecues, avenants, financials]);
+
+  // Filtrer les BC selon le statut sélectionné
+  const filteredByStatus = useMemo(() => {
+    if (statusFilter === 'all') return enrichedBCsState;
+    if (statusFilter === 'en_attente') {
+      return enrichedBCsState.filter(bc => 
+        bc.status === 'pending' || bc.status === 'anomaly_detected' || bc.status === 'correction_requested'
+      );
+    }
+    if (statusFilter === 'corriges') {
+      return enrichedBCsState.filter(bc => bc.status === 'corrected');
+    }
+    if (statusFilter === 'valides') {
+      return enrichedBCsState.filter(bc => bc.status === 'validated');
+    }
+    return enrichedBCsState;
+  }, [enrichedBCsState, statusFilter]);
+
+  // Grouper les BC par projet (avec filtre de statut)
   const bcByProject = useMemo(() => {
     const grouped: Record<string, EnrichedBC[]> = {};
     filteredBCs.forEach((bc) => {
-      const enrichedBC = enrichedBCsState.find(e => e.id === bc.id);
+      const enrichedBC = filteredByStatus.find(e => e.id === bc.id);
       if (enrichedBC) {
         const projectId = enrichedBC.projet;
         if (!grouped[projectId]) grouped[projectId] = [];
@@ -665,7 +814,7 @@ export default function ValidationBCPage() {
       }
     });
     return grouped;
-  }, [filteredBCs, enrichedBCsState]);
+  }, [filteredBCs, filteredByStatus]);
 
   // Grouper par priorité
   const bcByPriority = useMemo(() => ({
@@ -674,18 +823,68 @@ export default function ValidationBCPage() {
     normal: enrichedBCsState.filter((bc) => bc.status === 'validated' || bc.status === 'corrected' || bc.status === 'rejected_bmo' || bc.status === 'approved_bmo' || bc.status === 'sent_supplier' || bc.status === 'draft_ba'),
   }), [enrichedBCsState]);
 
-  return (
-    <div className="space-y-4">
-      {/* Header avec trois boutons principaux en évidence */}
-      <ValidationHeader
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        stats={stats}
-        onAIAssistantClick={() => setShowAIAssistant(true)}
-      />
+  // Compteurs par statut
+  const statusCounts = useMemo(() => {
+    const countEnAttente = enrichedBCsState.filter(bc => 
+      bc.status === 'pending' || bc.status === 'anomaly_detected' || bc.status === 'correction_requested'
+    ).length;
+    const countCorriges = enrichedBCsState.filter(bc => 
+      bc.status === 'corrected'
+    ).length;
+    const countValides = enrichedBCsState.filter(bc => 
+      bc.status === 'validated'
+    ).length;
+    return { countEnAttente, countCorriges, countValides };
+  }, [enrichedBCsState]);
 
-      {/* Barre de recherche intelligente */}
-      <IntelligentSearchBar
+  // Préparer les flux financiers pour l'export
+  const allFlux = useMemo(() => {
+    return [
+      ...financials.gains.map(g => ({ ...g, type: 'gain' as const })),
+      ...financials.pertes.map(p => ({ ...p, type: 'perte' as const })),
+    ];
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header fixe */}
+      <div className="flex-shrink-0 space-y-4 border-b border-slate-700/30 bg-slate-900/50 backdrop-blur-sm p-4">
+        <EnhancedStatsBanner
+          bcs={enrichedBCsState}
+          factures={enrichedFacturesState}
+          avenants={enrichedAvenantsState}
+        />
+        
+        {/* Cartes d'indicateurs BMO */}
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="p-3 text-center">
+              <p className="text-lg font-bold text-orange-400">
+                {new Intl.NumberFormat('fr-FR').format(stats.totalEnAttente)} FCFA
+              </p>
+              <p className="text-[10px] text-slate-400">En attente de décision BMO</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-3 text-center">
+              <p className="text-lg font-bold text-emerald-400">
+                {new Intl.NumberFormat('fr-FR', { notation: 'compact' }).format(stats.impactTotal)} FCFA
+              </p>
+              <p className="text-[10px] text-slate-400">Impact total piloté</p>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <ValidationHeader
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          stats={stats}
+          onAIAssistantClick={() => setShowAIAssistant(true)}
+        />
+
+        {/* Barre de recherche intelligente */}
+        <IntelligentSearchBar
         bcs={bcToValidate}
         factures={facturesToValidate}
         avenants={avenantsToValidate}
@@ -697,16 +896,18 @@ export default function ValidationBCPage() {
           let enrichedBCToShow = enrichedBC;
           
           if (!enrichedBCToShow) {
+            const dEmission = parseFRDate(bc.date);
+            const dLimite = parseFRDate(bc.dateLimit);
             enrichedBCToShow = {
               id: bc.id,
               fournisseur: bc.supplier,
               projet: bc.project,
               objet: bc.subject,
-              montantHT: typeof bc.amount === 'string' ? parseFloat(bc.amount.replace(/[^\d.,]/g, '').replace(',', '.')) * 0.83 : parseFloat(bc.amount) * 0.83,
+              montantHT: parseMoney(bc.amount) * 0.83,
               tva: 20,
-              montantTTC: typeof bc.amount === 'string' ? parseFloat(bc.amount.replace(/[^\d.,]/g, '').replace(',', '.')) : parseFloat(bc.amount),
-              dateEmission: bc.date || new Date().toISOString().split('T')[0],
-              dateLimite: bc.dateLimit || new Date().toISOString().split('T')[0],
+              montantTTC: parseMoney(bc.amount),
+              dateEmission: dEmission ? dEmission.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              dateLimite: dLimite ? dLimite.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
               bureauEmetteur: bc.bureau,
               status: 'pending' as DocumentStatus,
             } as EnrichedBC;
@@ -730,9 +931,13 @@ export default function ValidationBCPage() {
           addToast(`Ouverture des détails de ${avenant.id}`, 'info');
         }}
       />
+      </div>
 
-      {/* Bandeau de pilotage */}
-      {activeTab === 'bc' && (
+      {/* Zone scrollable */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-gutter-stable">
+        <div className="p-4 space-y-4">
+          {/* Bandeau de pilotage */}
+          {activeTab === 'bc' && (
         <PilotageBanner
           bcs={bcToValidate}
           onFilterClick={handleFilterClick}
@@ -754,13 +959,6 @@ export default function ValidationBCPage() {
         <Badge variant="info">BM = R</Badge>
       </div>
 
-      {/* Bandeau de statistiques enrichi */}
-      <EnhancedStatsBanner
-        bcs={enrichedBCsState}
-        factures={enrichedFacturesState}
-        avenants={enrichedAvenantsState}
-      />
-
       {/* Options de vue (seulement pour BC) */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
         {activeTab === 'bc' && (
@@ -776,11 +974,204 @@ export default function ValidationBCPage() {
             </Button>
           </div>
         )}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            const rows = [
+              // Header
+              ['Type', 'ID', 'Projet', 'Montant', 'Statut', 'Origine décisionnelle', 'ID décision', 'Rôle RACI', 'Hash', 'Commentaire'],
+              // BC
+              ...enrichedBCsState.map(bc => {
+                const project = projects.find(p => p.id === bc.projet);
+                return [
+                  'BC',
+                  bc.id,
+                  project?.name || bc.projet,
+                  bc.montantTTC.toString(),
+                  bc.status,
+                  bc.decisionBMO?.origin || 'Hors périmètre BMO',
+                  bc.decisionBMO?.decisionId || '',
+                  bc.decisionBMO?.validatorRole || '',
+                  bc.decisionBMO?.hash || '',
+                  bc.decisionBMO?.comment || ''
+                ];
+              }),
+              // Factures
+              ...facturesRecues.map(f => [
+                'Facture',
+                f.id,
+                f.chantier,
+                f.montantTTC.toString(),
+                f.statut,
+                f.decisionBMO?.origin || 'Hors périmètre BMO',
+                f.decisionBMO?.decisionId || '',
+                f.decisionBMO?.validatorRole || '',
+                f.decisionBMO?.hash || '',
+                f.decisionBMO?.comment || ''
+              ]),
+              // Avenants
+              ...avenants.map(av => [
+                'Avenant',
+                av.id,
+                av.chantier,
+                av.ecart.toString(),
+                av.statut,
+                av.decisionBMO?.origin || 'Hors périmètre BMO',
+                av.decisionBMO?.decisionId || '',
+                av.decisionBMO?.validatorRole || '',
+                av.decisionBMO?.hash || '',
+                av.decisionBMO?.comment || ''
+              ]),
+              // Flux
+              ...allFlux.map(flux => [
+                flux.type === 'gain' ? 'Gain' : 'Perte',
+                flux.id,
+                flux.projetName || '',
+                flux.montant.toString(),
+                flux.decisionBMO ? 'Validé' : 'Non piloté',
+                flux.decisionBMO?.origin || 'Hors périmètre BMO',
+                flux.decisionBMO?.decisionId || '',
+                flux.decisionBMO?.validatorRole || '',
+                flux.decisionBMO?.hash || '',
+                flux.decisionBMO?.comment || ''
+              ])
+            ];
+
+            const csvContent = rows.map(row => row.join(';')).join('\n');
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `validation_bmo_unifie_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addToast('✅ Export unifié généré (traçabilité RACI incluse)', 'success');
+          }}
+        >
+          📊 Exporter tout
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            // ---- Code d'export unifié (copier-coller ci-dessous) ----
+            const rows = [
+              ['Type', 'ID', 'Projet/Chantier', 'Montant (FCFA)', 'Statut', 'Origine décision', 'ID décision', 'Rôle RACI', 'Hash', 'Commentaire BMO'],
+              
+              // Bons de commande
+              ...bcToValidate.map(bc => [
+                'BC',
+                bc.id,
+                bc.project || '',
+                bc.amount || '0',
+                bc.status || '',
+                bc.decisionBMO?.origin || 'Hors BMO',
+                bc.decisionBMO?.decisionId || '',
+                bc.decisionBMO?.validatorRole || '',
+                bc.decisionBMO?.hash || '',
+                `"${bc.decisionBMO?.comment || ''}"`,
+              ]),
+              
+              // Factures
+              ...facturesRecues.map(f => [
+                'Facture',
+                f.id,
+                f.chantier || '',
+                f.montantTTC.toString(),
+                f.statut,
+                f.decisionBMO?.origin || 'Hors BMO',
+                f.decisionBMO?.decisionId || '',
+                f.decisionBMO?.validatorRole || '',
+                f.decisionBMO?.hash || '',
+                `"${f.decisionBMO?.comment || f.commentaire || ''}"`,
+              ]),
+              
+              // Avenants
+              ...avenants.map(av => [
+                'Avenant',
+                av.id,
+                av.chantier || '',
+                av.ecart.toString(),
+                av.statut,
+                av.decisionBMO?.origin || 'Hors BMO',
+                av.decisionBMO?.decisionId || '',
+                av.decisionBMO?.validatorRole || '',
+                av.decisionBMO?.hash || '',
+                `"${av.decisionBMO?.comment || ''}"`,
+              ]),
+            ];
+
+            const csvContent = rows.map(row => row.join(';')).join('\n');
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `validation_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addToast('✅ Export avec traçabilité RACI généré', 'success');
+          }}
+        >
+          📊 Export BMO (CSV RACI)
+        </Button>
       </div>
 
       {/* Tab BC */}
       {activeTab === 'bc' && (
         <div className="space-y-4">
+          {/* Onglets de filtrage par statut */}
+          <div className="flex gap-2 p-2 rounded-lg bg-slate-800/50">
+            <button 
+              onClick={() => setStatusFilter('all')}
+              className={cn(
+                'px-3 py-1 rounded-md text-xs transition-colors',
+                statusFilter === 'all' 
+                  ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                  : 'text-slate-400 hover:bg-slate-700/50'
+              )}
+            >
+              📋 Tous ({enrichedBCsState.length})
+            </button>
+            <button 
+              onClick={() => setStatusFilter('en_attente')}
+              className={cn(
+                'px-3 py-1 rounded-md text-xs transition-colors',
+                statusFilter === 'en_attente' 
+                  ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                  : 'text-slate-400 hover:bg-slate-700/50'
+              )}
+            >
+              ⏳ En attente ({statusCounts.countEnAttente})
+            </button>
+            <button 
+              onClick={() => setStatusFilter('corriges')}
+              className={cn(
+                'px-3 py-1 rounded-md text-xs transition-colors',
+                statusFilter === 'corriges' 
+                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                  : 'text-slate-400 hover:bg-slate-700/50'
+              )}
+            >
+              🛠️ Corrigés ({statusCounts.countCorriges})
+            </button>
+            <button 
+              onClick={() => setStatusFilter('valides')}
+              className={cn(
+                'px-3 py-1 rounded-md text-xs transition-colors',
+                statusFilter === 'valides' 
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                  : 'text-slate-400 hover:bg-slate-700/50'
+              )}
+            >
+              ✅ Validés ({statusCounts.countValides})
+            </button>
+          </div>
+          
           {/* Vue groupée par projet */}
           {groupMode === 'project' && (
             <div className="space-y-4">
@@ -803,7 +1194,7 @@ export default function ValidationBCPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
-                      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                      <div className="overflow-x-auto max-h-[600px] overflow-y-auto overscroll-contain">
                         <table className="w-full text-xs min-w-[800px]">
                           <thead className="sticky top-0 z-10">
                             <tr className={darkMode ? 'bg-slate-700/90 backdrop-blur-sm' : 'bg-gray-100'}>
@@ -813,14 +1204,18 @@ export default function ValidationBCPage() {
                               <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[120px]">Montant</th>
                               <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[100px]">Statut</th>
                               <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[100px]">Anomalies</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Décision BMO</th>
                               <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[180px]">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {(groupMode === 'project' ? bcs : filteredBCs.map(bc => {
-                              const enriched = enrichedBCsState.find(e => e.id === bc.id);
-                              return enriched || createEnrichedBCFromPO(bc);
-                            })).map((enrichedBC) => {
+                            {(groupMode === 'project' 
+                              ? bcs.filter(bc => filteredByStatus.some(e => e.id === bc.id))
+                              : filteredBCs.map(bc => {
+                                  const enriched = filteredByStatus.find(e => e.id === bc.id);
+                                  return enriched || null;
+                                }).filter((enriched): enriched is EnrichedBC => enriched !== null)
+                            ).map((enrichedBC) => {
                               const bc = bcToValidate.find(b => b.id === enrichedBC.id);
                               const anomaliesCount = enrichedBC?.anomalies?.filter(a => !a.resolved).length || 0;
                               const status = enrichedBC?.status || 'pending';
@@ -848,25 +1243,21 @@ export default function ValidationBCPage() {
                                   </div>
                                 </td>
                                 <td className="px-3 py-3 font-mono font-bold text-amber-400 whitespace-nowrap">
-                                  {typeof montant === 'number' ? montant.toLocaleString('fr-FR', { style: 'currency', currency: 'XOF' }) : montant || '0'} FCFA
+                                  {formatFCFA(montant)}
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Badge 
-                                    variant={
-                                      status === 'validated' ? 'success' :
-                                      status === 'anomaly_detected' ? 'urgent' :
-                                      status === 'correction_requested' ? 'warning' :
-                                      status === 'rejected' ? 'destructive' :
-                                      'info'
-                                    }
-                                    className="text-[10px] whitespace-nowrap"
-                                  >
-                                    {status === 'validated' ? 'Validé' :
-                                     status === 'anomaly_detected' ? 'Anomalie' :
-                                     status === 'correction_requested' ? 'Correction' :
-                                     status === 'rejected' ? 'Refusé' :
-                                     'En attente'}
-                                  </Badge>
+                                  {/* WHY: Utiliser mapping centralisé pour cohérence UI */}
+                                  {(() => {
+                                    const config = getStatusBadgeConfig(status);
+                                    return (
+                                      <Badge 
+                                        variant={config.variant}
+                                        className="text-[10px] whitespace-nowrap"
+                                      >
+                                        {config.label}
+                                      </Badge>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="px-3 py-3">
                                   {anomaliesCount > 0 ? (
@@ -881,6 +1272,30 @@ export default function ValidationBCPage() {
                                     </Badge>
                                   ) : (
                                     <span className="text-xs text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-xs">
+                                  {enrichedBC.decisionBMO ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <Badge variant="default" className="text-[9px]">
+                                        {enrichedBC.decisionBMO.validatorRole === 'A' ? '✅ BMO (A)' : '🔍 BMO (R)'}
+                                      </Badge>
+                                      {enrichedBC.decisionBMO.decisionId && (() => {
+                                        const decisionId = enrichedBC.decisionBMO.decisionId;
+                                        return (
+                                          <Button
+                                            size="xs"
+                                            variant="link"
+                                            className="p-0 h-auto text-blue-400"
+                                            onClick={() => window.open(`/decisions?id=${decisionId}`, '_blank')}
+                                          >
+                                            📄 Voir
+                                          </Button>
+                                        );
+                                      })()}
+                                    </div>
+                                  ) : (
+                                    <Badge variant="warning" className="text-[9px]">⏳ En attente</Badge>
                                   )}
                                 </td>
                                 <td className="px-3 py-3">
@@ -1010,7 +1425,7 @@ export default function ValidationBCPage() {
           {groupMode === 'list' && (
             <Card>
               <CardContent className="p-0">
-                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto overscroll-contain">
                   <table className="w-full text-xs min-w-[800px]">
                     <thead className="sticky top-0 z-10">
                       <tr className={darkMode ? 'bg-slate-700/90 backdrop-blur-sm' : 'bg-gray-100'}>
@@ -1021,6 +1436,7 @@ export default function ValidationBCPage() {
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[120px]">Montant</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[100px]">Statut</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[100px]">Anomalies</th>
+                        <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Décision BMO</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[100px]">Priorité</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[180px]">Actions</th>
                       </tr>
@@ -1056,31 +1472,21 @@ export default function ValidationBCPage() {
                             </div>
                           </td>
                           <td className="px-3 py-3 font-mono font-bold text-amber-400 whitespace-nowrap">
-                            {enrichedBC?.montantTTC 
-                              ? (typeof enrichedBC.montantTTC === 'number' 
-                                  ? enrichedBC.montantTTC.toLocaleString('fr-FR', { style: 'currency', currency: 'XOF' })
-                                  : enrichedBC.montantTTC)
-                              : (typeof bc.amount === 'string' 
-                                  ? bc.amount 
-                                  : (bc.amount ? bc.amount.toLocaleString('fr-FR') : '0'))} FCFA
+                            {formatFCFA(enrichedBC?.montantTTC ?? bc.amount)}
                           </td>
                           <td className="px-3 py-3">
-                            <Badge 
-                              variant={
-                                status === 'validated' ? 'success' :
-                                status === 'anomaly_detected' ? 'urgent' :
-                                status === 'correction_requested' ? 'warning' :
-                                status === 'rejected' ? 'destructive' :
-                                'info'
-                              }
-                              className="text-[10px] whitespace-nowrap"
-                            >
-                              {status === 'validated' ? 'Validé' :
-                               status === 'anomaly_detected' ? 'Anomalie' :
-                               status === 'correction_requested' ? 'Correction' :
-                               status === 'rejected' ? 'Refusé' :
-                               'En attente'}
-                            </Badge>
+                            {(() => {
+                              // WHY: Utiliser la fonction centralisée pour cohérence UI (remplace mapping manuel)
+                              const statusConfig = getStatusBadgeConfig(status);
+                              return (
+                                <Badge 
+                                  variant={statusConfig.variant}
+                                  className="text-[10px] whitespace-nowrap"
+                                >
+                                  {statusConfig.label}
+                                </Badge>
+                              );
+                            })()}
                           </td>
                           <td className="px-3 py-3">
                             {anomaliesCount > 0 ? (
@@ -1095,6 +1501,30 @@ export default function ValidationBCPage() {
                               </Badge>
                             ) : (
                               <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs">
+                            {enrichedBC?.decisionBMO ? (
+                              <div className="flex flex-col gap-0.5">
+                                <Badge variant="default" className="text-[9px]">
+                                  {enrichedBC.decisionBMO.validatorRole === 'A' ? '✅ BMO (A)' : '🔍 BMO (R)'}
+                                </Badge>
+                                {enrichedBC.decisionBMO.decisionId && (() => {
+                                  const decisionId = enrichedBC.decisionBMO.decisionId;
+                                  return (
+                                    <Button
+                                      size="xs"
+                                      variant="link"
+                                      className="p-0 h-auto text-blue-400"
+                                      onClick={() => window.open(`/decisions?id=${decisionId}`, '_blank')}
+                                    >
+                                      📄 Voir
+                                    </Button>
+                                  );
+                                })()}
+                              </div>
+                            ) : (
+                              <Badge variant="warning" className="text-[9px]">⏳ En attente</Badge>
                             )}
                           </td>
                           <td className="px-3 py-3">
@@ -1175,11 +1605,32 @@ export default function ValidationBCPage() {
             onFiltersChange={setFactureFilters}
           />
 
+          {/* Onglets de filtrage par statut */}
+          <div className="flex gap-1 p-1 rounded-lg bg-slate-800/50">
+            <button
+              onClick={() => setFactureStatusFilter('en_attente')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', factureStatusFilter === 'en_attente' ? 'bg-orange-500/20 text-orange-400' : 'text-slate-400')}
+            >
+              ⏳ En attente ({factureCounts.enAttente})
+            </button>
+            <button
+              onClick={() => setFactureStatusFilter('valides')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', factureStatusFilter === 'valides' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400')}
+            >
+              ✅ Validés ({factureCounts.valides})
+            </button>
+            <button
+              onClick={() => setFactureStatusFilter('rejetes')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', factureStatusFilter === 'rejetes' ? 'bg-red-500/20 text-red-400' : 'text-slate-400')}
+            >
+              🚫 Rejetés ({factureCounts.rejetes})
+            </button>
+          </div>
+
           {/* Liste des factures modernisée */}
           <div className="space-y-3">
             {filteredFactures.map((facture) => {
-              const [day, month, year] = facture.dateEcheance.split('/').map(Number);
-              const dueDate = new Date(year, month - 1, day);
+              const dueDate = parseFRDate(facture.dateEcheance) || new Date();
               const isOverdue = dueDate < new Date();
               const daysUntilDue = Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
@@ -1226,7 +1677,7 @@ export default function ValidationBCPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-mono font-bold text-xl text-blue-400 mb-1">
-                          {facture.montant} FCFA
+                          {formatFCFA(facture.montant)}
                         </p>
                         <p className={cn(
                           'text-xs',
@@ -1304,6 +1755,28 @@ export default function ValidationBCPage() {
             onFiltersChange={setAvenantFilters}
           />
 
+          {/* Onglets de filtrage par statut */}
+          <div className="flex gap-1 p-1 rounded-lg bg-slate-800/50">
+            <button
+              onClick={() => setAvenantStatusFilter('en_attente')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', avenantStatusFilter === 'en_attente' ? 'bg-orange-500/20 text-orange-400' : 'text-slate-400')}
+            >
+              ⏳ En attente ({avenantCounts.enAttente})
+            </button>
+            <button
+              onClick={() => setAvenantStatusFilter('valides')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', avenantStatusFilter === 'valides' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400')}
+            >
+              ✅ Validés ({avenantCounts.valides})
+            </button>
+            <button
+              onClick={() => setAvenantStatusFilter('rejetes')}
+              className={cn('px-3 py-1.5 rounded-md text-xs', avenantStatusFilter === 'rejetes' ? 'bg-red-500/20 text-red-400' : 'text-slate-400')}
+            >
+              🚫 Rejetés ({avenantCounts.rejetes})
+            </button>
+          </div>
+
           {/* Liste des avenants modernisée */}
           <div className="space-y-3">
             {filteredAvenants.map((avenant) => (
@@ -1348,7 +1821,7 @@ export default function ValidationBCPage() {
                     {avenant.montant && (
                       <div className="text-right flex-shrink-0">
                         <p className="font-mono font-bold text-xl text-amber-400 mb-1">
-                          +{avenant.montant} FCFA
+                          +{formatFCFA(avenant.montant)}
                         </p>
                         <p className="text-xs text-slate-400">Impact financier</p>
                       </div>
@@ -1547,37 +2020,59 @@ export default function ValidationBCPage() {
           }}
           document={selectedEnrichedDoc}
           documentType={selectedDocType}
+          onAuditComplete={(bcId, report) => {
+            // ✅ éviter stale state
+            if (selectedDocType === 'bc') {
+              setEnrichedBCsState((prev) =>
+                prev.map((bc) =>
+                  bc.id === bcId
+                    ? {
+                        ...bc,
+                        auditReport: report,
+                        anomalies: report.anomalies,
+                        status: report.blocking ? ('audit_required' as DocumentStatus) : bc.status,
+                      }
+                    : bc
+                )
+              );
+              setSelectedEnrichedDoc((prev) =>
+                prev && prev.id === bcId
+                  ? ({ ...prev, auditReport: report, anomalies: report.anomalies } as any)
+                  : prev
+              );
+            }
+          }}
           onValidate={() => {
             // Mettre à jour le statut
             if (selectedDocType === 'bc') {
-              setEnrichedBCsState(enrichedBCsState.map(bc => 
-                bc.id === selectedEnrichedDoc.id 
-                  ? { ...bc, status: 'validated' as DocumentStatus }
-                  : bc
-              ));
+              setEnrichedBCsState((prev) =>
+                prev.map((bc) =>
+                  bc.id === selectedEnrichedDoc.id ? { ...bc, status: 'validated' as DocumentStatus } : bc
+                )
+              );
             } else if (selectedDocType === 'facture') {
-              setEnrichedFacturesState(enrichedFacturesState.map(f => 
-                f.id === selectedEnrichedDoc.id 
-                  ? { ...f, status: 'validated' as DocumentStatus }
-                  : f
-              ));
+              setEnrichedFacturesState((prev) =>
+                prev.map((f) =>
+                  f.id === selectedEnrichedDoc.id ? { ...f, status: 'validated' as DocumentStatus } : f
+                )
+              );
             } else {
-              setEnrichedAvenantsState(enrichedAvenantsState.map(a => 
-                a.id === selectedEnrichedDoc.id 
-                  ? { ...a, status: 'validated' as DocumentStatus }
-                  : a
-              ));
+              setEnrichedAvenantsState((prev) =>
+                prev.map((a) =>
+                  a.id === selectedEnrichedDoc.id ? { ...a, status: 'validated' as DocumentStatus } : a
+                )
+              );
             }
             setShowEnhancedDetailsModal(false);
             setSelectedEnrichedDoc(null);
           }}
           onReject={() => {
             if (selectedDocType === 'bc') {
-              setEnrichedBCsState(enrichedBCsState.map(bc => 
-                bc.id === selectedEnrichedDoc.id 
-                  ? { ...bc, status: 'rejected' as DocumentStatus }
-                  : bc
-              ));
+              setEnrichedBCsState((prev) =>
+                prev.map((bc) =>
+                  bc.id === selectedEnrichedDoc.id ? { ...bc, status: 'rejected' as DocumentStatus } : bc
+                )
+              );
             }
             setShowEnhancedDetailsModal(false);
             setSelectedEnrichedDoc(null);
@@ -1587,6 +2082,8 @@ export default function ValidationBCPage() {
           }}
         />
       )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -218,6 +218,7 @@ import type {
   FinancialGain,
   FinancialLoss,
   TreasuryEntry,
+  Facture,
 } from '@/lib/types/bmo.types';
 
 // Gains détaillés
@@ -237,6 +238,13 @@ export const financialGains: FinancialGain[] = [
     validatedBy: 'F. DIOP',
     validatedAt: '20/12/2025 14:30',
     hash: 'SHA3-256:8f4a2b3c...',
+    decisionBMO: {
+      decisionId: 'DEC-20251220-001',
+      origin: 'validation-bc',
+      validatorRole: 'A',
+      hash: 'SHA3-256:8f4a2b3c5e6d7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b',
+      comment: 'Conforme – budget chantier OK',
+    },
   },
   {
     id: 'GAIN-2025-0044',
@@ -253,6 +261,13 @@ export const financialGains: FinancialGain[] = [
     validatedBy: 'F. DIOP',
     validatedAt: '18/12/2025 10:15',
     hash: 'SHA3-256:9c7e1d4a...',
+    decisionBMO: {
+      decisionId: 'DEC-20251218-002',
+      origin: 'validation-bc',
+      validatorRole: 'A',
+      hash: 'SHA3-256:9c7e1d4a6b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
+      comment: 'Validation conforme – budget validé',
+    },
   },
   {
     id: 'GAIN-2025-0043',
@@ -269,6 +284,13 @@ export const financialGains: FinancialGain[] = [
     validatedBy: 'F. DIOP',
     validatedAt: '15/12/2025 16:00',
     hash: 'SHA3-256:3b2f5c8d...',
+    decisionBMO: {
+      decisionId: 'DEC-20251215-003',
+      origin: 'validation-bc',
+      validatorRole: 'R',
+      hash: 'SHA3-256:3b2f5c8d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b',
+      comment: 'Réception définitive validée',
+    },
   },
   {
     id: 'GAIN-2025-0042',
@@ -283,6 +305,13 @@ export const financialGains: FinancialGain[] = [
     validatedBy: 'M. BA',
     validatedAt: '10/12/2025 11:30',
     hash: 'SHA3-256:7a9f3e2b...',
+    decisionBMO: {
+      decisionId: 'DEC-20251210-004',
+      origin: 'validation-bc',
+      validatorRole: 'R',
+      hash: 'SHA3-256:7a9f3e2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a',
+      comment: 'Pénalité validée selon contrat',
+    },
   },
   {
     id: 'GAIN-2025-0041',
@@ -299,6 +328,13 @@ export const financialGains: FinancialGain[] = [
     validatedBy: 'F. DIOP',
     validatedAt: '05/12/2025 09:45',
     hash: 'SHA3-256:5c4d8e1f...',
+    decisionBMO: {
+      decisionId: 'DEC-20251205-005',
+      origin: 'validation-bc',
+      validatorRole: 'A',
+      hash: 'SHA3-256:5c4d8e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e',
+      comment: 'Solde final validé – projet terminé',
+    },
   },
 ];
 
@@ -318,6 +354,13 @@ export const financialLosses: FinancialLoss[] = [
     validatedBy: 'A. DIALLO',
     validatedAt: '22/12/2025 15:00',
     hash: 'SHA3-256:2e7c9a4b...',
+    decisionBMO: {
+      decisionId: 'ARB-20251222-001',
+      origin: 'arbitrages',
+      validatorRole: 'A',
+      hash: 'SHA3-256:2e7c9a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a',
+      comment: 'Arbitrage DG – frais contentieux validés',
+    },
   },
   {
     id: 'LOSS-2025-0017',
@@ -334,6 +377,13 @@ export const financialLosses: FinancialLoss[] = [
     validatedBy: 'A. DIALLO',
     validatedAt: '18/12/2025 11:00',
     hash: 'SHA3-256:8f3a2d5c...',
+    decisionBMO: {
+      decisionId: 'ARB-20251218-002',
+      origin: 'arbitrages',
+      validatorRole: 'A',
+      hash: 'SHA3-256:8f3a2d5c1e4f7a0b3c6d9e2f5a8b1c4d7e0f3a6b',
+      comment: 'Pénalité contractuelle – validée',
+    },
   },
   {
     id: 'LOSS-2025-0016',
@@ -347,6 +397,13 @@ export const financialLosses: FinancialLoss[] = [
     validatedBy: 'F. DIOP',
     validatedAt: '15/12/2025 14:00',
     hash: 'SHA3-256:1d9e4f2a...',
+    decisionBMO: {
+      decisionId: 'ARB-20251215-003',
+      origin: 'arbitrages',
+      validatorRole: 'A',
+      hash: 'SHA3-256:1d9e4f2a5b8c1e4f7a0b3c6d9e2f5a8b1c4d7e0f',
+      comment: 'Provision prudente validée',
+    },
   },
   {
     id: 'LOSS-2025-0015',
@@ -362,34 +419,150 @@ export const financialLosses: FinancialLoss[] = [
     validatedBy: 'C. GUEYE',
     validatedAt: '10/12/2025 16:30',
     hash: 'SHA3-256:6b8c3e7d...',
+    decisionBMO: {
+      decisionId: 'ARB-20251210-004',
+      origin: 'arbitrages',
+      validatorRole: 'A',
+      hash: 'SHA3-256:6b8c3e7d0f3a6b9c2e5f8a1b4c7d0e3f6a9b2c5d',
+      comment: 'Arbitrage DG – charge rejetée',
+    },
   },
 ];
 
 // Entrées de trésorerie
 export const treasuryEntries: TreasuryEntry[] = [
-  { id: 'TRS-001', date: '22/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'PAY-2025-0095', description: 'Encaissement SENELEC', montant: 850000, soldeApres: 45250000, validatedBy: 'F. DIOP' },
-  { id: 'TRS-002', date: '20/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'GAIN-2025-0045', description: 'Paiement client DIALLO', montant: 8500000, soldeApres: 44400000, projet: 'PRJ-0018', projetName: 'Villa Diamniadio', tiers: 'M. Ibrahima DIALLO', validatedBy: 'F. DIOP' },
-  { id: 'TRS-003', date: '18/12/2025', type: 'encaissement', source: 'paiement', sourceRef: 'GAIN-2025-0044', description: 'Acompte Mairie Rufisque', montant: 25000000, soldeApres: 35900000, projet: 'PRJ-0017', projetName: 'Route Zone B', tiers: 'Mairie de Rufisque', validatedBy: 'F. DIOP' },
-  { id: 'TRS-004', date: '18/12/2025', type: 'decaissement', source: 'exploitation', description: 'Règlement fournisseur SOCOCIM', montant: -4250000, soldeApres: 10900000, tiers: 'SOCOCIM Industries', validatedBy: 'F. DIOP' },
-  { id: 'TRS-005', date: '15/12/2025', type: 'encaissement', source: 'recouvrement', sourceRef: 'REC-2025-0031', description: 'Paiement partiel Mme DIOP', montant: 350000, soldeApres: 15150000, tiers: 'Mme Aïda DIOP', validatedBy: 'F. DIOP' },
-  { id: 'TRS-006', date: '15/12/2025', type: 'provision', source: 'litige', sourceRef: 'LIT-2025-0011', description: 'Provision litige DIENG', montant: -3500000, soldeApres: 14800000, validatedBy: 'F. DIOP' },
+  { 
+    id: 'TRS-001', 
+    date: '22/12/2025', 
+    type: 'encaissement', 
+    source: 'paiement', 
+    sourceRef: 'PAY-2025-0095', 
+    description: 'Encaissement SENELEC', 
+    montant: 850000, 
+    soldeApres: 45250000, 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251222-001',
+      origin: 'validation-paiements',
+      validatorRole: 'R',
+      hash: 'SHA3-256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c',
+      comment: 'Validation standard',
+    },
+  },
+  { 
+    id: 'TRS-002', 
+    date: '20/12/2025', 
+    type: 'encaissement', 
+    source: 'paiement', 
+    sourceRef: 'GAIN-2025-0045', 
+    description: 'Paiement client DIALLO', 
+    montant: 8500000, 
+    soldeApres: 44400000, 
+    projet: 'PRJ-0018', 
+    projetName: 'Villa Diamniadio', 
+    tiers: 'M. Ibrahima DIALLO', 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251220-002',
+      origin: 'validation-paiements',
+      validatorRole: 'A',
+      hash: 'SHA3-256:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d',
+      comment: 'Paiement validé – BC conforme',
+    },
+  },
+  { 
+    id: 'TRS-003', 
+    date: '18/12/2025', 
+    type: 'encaissement', 
+    source: 'paiement', 
+    sourceRef: 'GAIN-2025-0044', 
+    description: 'Acompte Mairie Rufisque', 
+    montant: 25000000, 
+    soldeApres: 35900000, 
+    projet: 'PRJ-0017', 
+    projetName: 'Route Zone B', 
+    tiers: 'Mairie de Rufisque', 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251218-003',
+      origin: 'validation-paiements',
+      validatorRole: 'A',
+      hash: 'SHA3-256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e',
+      comment: 'Acompte validé – budget OK',
+    },
+  },
+  { 
+    id: 'TRS-004', 
+    date: '18/12/2025', 
+    type: 'decaissement', 
+    source: 'exploitation', 
+    description: 'Règlement fournisseur SOCOCIM', 
+    montant: -4250000, 
+    soldeApres: 10900000, 
+    tiers: 'SOCOCIM Industries', 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251218-004',
+      origin: 'validation-paiements',
+      validatorRole: 'R',
+      hash: 'SHA3-256:d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
+      comment: 'Double validation BF + BMO',
+    },
+  },
+  { 
+    id: 'TRS-005', 
+    date: '15/12/2025', 
+    type: 'encaissement', 
+    source: 'recouvrement', 
+    sourceRef: 'REC-2025-0031', 
+    description: 'Paiement partiel Mme DIOP', 
+    montant: 350000, 
+    soldeApres: 15150000, 
+    tiers: 'Mme Aïda DIOP', 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251215-005',
+      origin: 'validation-paiements',
+      validatorRole: 'R',
+      hash: 'SHA3-256:e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a',
+      comment: 'Recouvrement partiel validé',
+    },
+  },
+  { 
+    id: 'TRS-006', 
+    date: '15/12/2025', 
+    type: 'provision', 
+    source: 'litige', 
+    sourceRef: 'LIT-2025-0011', 
+    description: 'Provision litige DIENG', 
+    montant: -3500000, 
+    soldeApres: 14800000, 
+    validatedBy: 'F. DIOP',
+    decisionBMO: {
+      decisionId: 'PAY-20251215-006',
+      origin: 'validation-paiements',
+      validatorRole: 'A',
+      hash: 'SHA3-256:f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b',
+      comment: 'Provision validée – arbitrage DG',
+    },
+  },
 ];
 
 // Structure Financials enrichie
 export const financials: Financials = {
   // Résumé global
-  totalGains: 245000000,
-  totalPertes: 198000000,
-  resultatNet: 47000000,
-  tauxMarge: 19.2,
+  totalGains: 2_850_000_000,
+  totalPertes: 420_000_000,
+  resultatNet: 2_430_000_000,
+  tauxMarge: 18.4,
   
   // Détails
   gains: financialGains,
   pertes: financialLosses,
   
   // Trésorerie
-  tresorerieActuelle: 45250000,
-  tresoreriePrevisionnelle: 52000000, // +paiements attendus -échéances
+  tresorerieActuelle: 1_120_000_000,
+  tresoreriePrevisionnelle: 1_340_000_000, // +paiements attendus -échéances
   treasury: treasuryEntries,
   
   // Évolution mensuelle
@@ -410,26 +583,20 @@ export const financials: Financials = {
   
   // Répartition par catégorie
   gainsParCategorie: [
-    { category: 'paiement_client', label: 'Paiements clients', montant: 185000000, percentage: 75.5 },
-    { category: 'retenue_garantie', label: 'Retenues garantie', montant: 35000000, percentage: 14.3 },
-    { category: 'penalite_recue', label: 'Pénalités reçues', montant: 12000000, percentage: 4.9 },
-    { category: 'remboursement', label: 'Remboursements', montant: 8000000, percentage: 3.3 },
-    { category: 'autre', label: 'Autres', montant: 5000000, percentage: 2.0 },
+    { category: 'paiement_client', label: 'Paiements clients', montant: 2_200_000_000, percentage: 77 },
+    { category: 'subvention', label: 'Subventions publiques', montant: 650_000_000, percentage: 23 },
   ],
   pertesParCategorie: [
-    { category: 'penalite_retard', label: 'Pénalités retard', montant: 15000000, percentage: 7.6 },
-    { category: 'malfacon', label: 'Reprises malfaçons', montant: 25000000, percentage: 12.6 },
-    { category: 'frais_contentieux', label: 'Frais contentieux', montant: 8000000, percentage: 4.0 },
-    { category: 'provision_litige', label: 'Provisions litiges', montant: 12000000, percentage: 6.1 },
-    { category: 'autre', label: 'Charges exploitation', montant: 138000000, percentage: 69.7 },
+    { category: 'malfacon', label: 'Malfaçons', montant: 280_000_000, percentage: 67 },
+    { category: 'frais_contentieux', label: 'Frais contentieux', montant: 140_000_000, percentage: 33 },
   ],
   
   // Indicateurs
   kpis: {
-    margeNette: 19.2,
-    ratioRecouvrement: 72.5, // % des créances recouvrées
+    margeNette: 18.4,
+    ratioRecouvrement: 92.3, // % des créances recouvrées
     expositionLitiges: 65400000, // Total exposure des 3 litiges
-    provisionContentieux: 12000000,
+    provisionContentieux: 85_000_000,
   },
 };
 
@@ -1098,5 +1265,85 @@ export const criticalSkills: CriticalSkill[] = [
     isAtRisk: false,
     bureau: 'BA',
     importance: 'high',
+  },
+];
+
+// Factures reçues avec décision BMO
+export const facturesRecues: Facture[] = [
+  {
+    id: 'F-2026-0012',
+    dateEmission: '10/12/2025',
+    dateReception: '12/12/2025',
+    fournisseur: 'SENFER',
+    chantier: 'Chantier Dakar Nord',
+    chantierId: 'CH-2025-DKN',
+    referenceBC: 'BC-2025-0154',
+    montantHT: 38_000_000,
+    montantTTC: 45_600_000,
+    description: 'Fourniture béton C30/37 – lot 2',
+    statut: 'payée',
+    commentaire: 'Conforme – livraison validée',
+    decisionBMO: {
+      decisionId: 'PAY-20251215-001',
+      origin: 'validation-paiements',
+      validatorRole: 'R', // Responsable (BM)
+      hash: 'SHA3-256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+      comment: 'Double validation BF + BMO – conformité BC OK',
+    },
+  },
+  {
+    id: 'F-2026-0013',
+    dateEmission: '18/12/2025',
+    dateReception: '20/12/2025',
+    fournisseur: 'EIFFAGE SENEGAL',
+    chantier: 'Chantier Ziguinchor Port',
+    chantierId: 'CH-2025-ZGP',
+    referenceBC: 'BC-2025-0188',
+    montantHT: 125_000_000,
+    montantTTC: 150_000_000,
+    description: 'Travaux de fondation – pieux profonds',
+    statut: 'conforme',
+    decisionBMO: {
+      decisionId: 'PAY-20260105-003',
+      origin: 'validation-paiements',
+      validatorRole: 'A', // Accountable (BMO)
+      hash: 'SHA3-256:f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8',
+      comment: 'Validé – contrôle géotechnique OK',
+    },
+  },
+  {
+    id: 'F-2026-0014',
+    dateEmission: '05/01/2026',
+    dateReception: '07/01/2026',
+    fournisseur: 'MATBTP SA',
+    chantier: 'Chantier Thiès Est',
+    chantierId: 'CH-2025-THE',
+    referenceBC: 'BC-2025-0201',
+    montantHT: 8_500_000,
+    montantTTC: 10_200_000,
+    description: 'Livraison parpaings – conforme bon de livraison',
+    statut: 'à_vérifier',
+    // ❌ Pas de decisionBMO → facture en attente de validation BMO
+  },
+  {
+    id: 'F-2026-0015',
+    dateEmission: '02/01/2026',
+    dateReception: '04/01/2026',
+    fournisseur: 'CONSTRUCTION RAPIDE',
+    chantier: 'Chantier Touba Centre',
+    chantierId: 'CH-2025-TBC',
+    referenceBC: 'BC-2025-0199',
+    montantHT: 22_000_000,
+    montantTTC: 26_400_000,
+    description: 'Maçonnerie intérieure – hors nomenclature',
+    statut: 'rejetée',
+    commentaire: 'Poste non prévu au BC – rejeté',
+    decisionBMO: {
+      decisionId: 'PAY-20260110-007',
+      origin: 'validation-paiements',
+      validatorRole: 'A',
+      hash: 'SHA3-256:0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b',
+      comment: 'Rejeté – hors périmètre BC',
+    },
   },
 ];

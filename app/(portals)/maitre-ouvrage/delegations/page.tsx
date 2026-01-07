@@ -30,13 +30,14 @@ export default function DelegationsPage() {
   const handleExtend = (delegation: typeof selectedD) => {
     if (!delegation) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'delegations',
       action: 'extend',
       targetId: delegation.id,
       targetType: 'Delegation',
       details: `Prolongation délégation ${delegation.type} - ${delegation.agent}`,
-      status: 'success',
-      hash: `SHA3-256:del_ext_${Date.now().toString(16)}`,
     });
     addToast('Délégation prolongée - Décision hashée', 'success');
   };
@@ -44,25 +45,28 @@ export default function DelegationsPage() {
   const handleSuspend = (delegation: typeof selectedD) => {
     if (!delegation) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'delegations',
       action: 'suspend',
       targetId: delegation.id,
       targetType: 'Delegation',
       details: `Suspension délégation ${delegation.type} - ${delegation.agent}`,
-      status: 'warning',
-      hash: `SHA3-256:del_sus_${Date.now().toString(16)}`,
     });
     addToast('Délégation suspendue - Décision hashée', 'warning');
   };
 
   const handleCreate = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'delegations',
       action: 'create',
       targetId: 'NEW',
       targetType: 'Delegation',
       details: 'Création nouvelle délégation',
-      status: 'info',
     });
     addToast('Formulaire nouvelle délégation ouvert', 'info');
   };

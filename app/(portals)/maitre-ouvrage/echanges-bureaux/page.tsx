@@ -30,12 +30,14 @@ export default function EchangesBureauxPage() {
   const handleRespond = (echange: typeof selectedE) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-bureaux',
       action: 'respond',
       targetId: echange.id,
       targetType: 'BureauExchange',
       details: `Réponse échange ${echange.from} → ${echange.to}`,
-      status: 'success',
     });
     addToast('Réponse envoyée', 'success');
   };
@@ -43,13 +45,14 @@ export default function EchangesBureauxPage() {
   const handleEscalate = (echange: typeof selectedE) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-bureaux',
       action: 'escalate',
       targetId: echange.id,
       targetType: 'BureauExchange',
       details: `Escalade échange au DG`,
-      status: 'warning',
-      hash: `SHA3-256:esc_${Date.now().toString(16)}`,
     });
     addToast('Échange escaladé au DG - Trace créée', 'warning');
   };
@@ -57,13 +60,14 @@ export default function EchangesBureauxPage() {
   const handleClose = (echange: typeof selectedE) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-bureaux',
       action: 'close',
       targetId: echange.id,
       targetType: 'BureauExchange',
       details: `Clôture échange`,
-      status: 'success',
-      hash: `SHA3-256:close_${Date.now().toString(16)}`,
     });
     addToast('Échange clôturé - Trace créée', 'success');
   };

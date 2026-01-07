@@ -22,12 +22,14 @@ export default function ConferencesPage() {
 
   const handleCreateFromDossier = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'conferences',
       action: 'create_from_dossier',
       targetId: 'NEW',
       targetType: 'Conference',
       details: 'Création conférence depuis dossier',
-      status: 'info',
     });
     addToast('Sélectionnez un dossier bloqué, arbitrage ou risque critique', 'info');
   };
@@ -35,12 +37,14 @@ export default function ConferencesPage() {
   const handleJoinConference = (conf: typeof selected) => {
     if (!conf) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'conferences',
       action: 'join',
       targetId: conf.id,
       targetType: 'Conference',
       details: `Connexion conférence ${conf.title}`,
-      status: 'success',
     });
     if (conf.visioLink) {
       addToast('Ouverture du lien visio...', 'success');
@@ -50,13 +54,14 @@ export default function ConferencesPage() {
   const handleGenerateSummary = (conf: typeof selected) => {
     if (!conf) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'conferences',
       action: 'generate_summary',
       targetId: conf.id,
       targetType: 'Conference',
       details: 'Génération compte-rendu IA',
-      status: 'info',
-      hash: `SHA3-256:sum_${Date.now().toString(16)}`,
     });
     addToast('Génération du compte-rendu IA en cours...', 'info');
   };
@@ -64,13 +69,14 @@ export default function ConferencesPage() {
   const handleValidateSummary = (conf: typeof selected) => {
     if (!conf || !conf.summary) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'conferences',
       action: 'validate_summary',
       targetId: conf.id,
       targetType: 'Conference',
       details: 'Validation compte-rendu par humain',
-      status: 'success',
-      hash: `SHA3-256:val_${Date.now().toString(16)}`,
     });
     addToast('Compte-rendu validé - Décisions extraites vers registre', 'success');
   };
@@ -78,12 +84,14 @@ export default function ConferencesPage() {
   const handleExtractDecisions = (conf: typeof selected) => {
     if (!conf) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'conferences',
       action: 'extract_decisions',
       targetId: conf.id,
       targetType: 'Conference',
       details: 'Extraction décisions vers registre',
-      status: 'success',
     });
     addToast('Décisions extraites et hashées', 'success');
   };

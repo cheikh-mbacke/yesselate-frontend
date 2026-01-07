@@ -102,12 +102,14 @@ export default function DemandesRHPage() {
   const handleApprove = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
       action: 'approve',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Demande ${demande.type} approuvée pour ${demande.agent}`,
-      status: 'success',
     });
     addToast(`${demande.id} approuvée ✓`, 'success');
   };
@@ -115,12 +117,14 @@ export default function DemandesRHPage() {
   const handleReject = (demande: typeof selectedD, reason: string = 'Motif à préciser') => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
       action: 'reject',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Demande refusée: ${reason}`,
-      status: 'warning',
     });
     addToast(`${demande.id} refusée`, 'error');
   };
@@ -128,12 +132,14 @@ export default function DemandesRHPage() {
   const handleRequestInfo = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
       action: 'request_info',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Informations complémentaires demandées',
-      status: 'info',
     });
     addToast(`Demande d'informations envoyée`, 'warning');
   };
@@ -141,12 +147,14 @@ export default function DemandesRHPage() {
   const handleCreateSubstitution = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
       action: 'create_substitution',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Substitution créée pour ${demande.agent}`,
-      status: 'success',
     });
     addToast('Substitution créée', 'success');
   };

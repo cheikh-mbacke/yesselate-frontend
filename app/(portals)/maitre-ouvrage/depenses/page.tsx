@@ -64,12 +64,14 @@ export default function DepensesPage() {
   const handleApprove = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'depenses',
       action: 'approve',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Dépense ${demande.amount} FCFA approuvée pour ${demande.agent}`,
-      status: 'success',
     });
     addToast(`Dépense approuvée - Lien finance créé`, 'success');
   };
@@ -77,12 +79,14 @@ export default function DepensesPage() {
   const handleRequestPieces = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'depenses',
       action: 'request_pieces',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Pièces justificatives demandées',
-      status: 'info',
     });
     addToast('Pièces justificatives demandées', 'warning');
   };
@@ -90,12 +94,14 @@ export default function DepensesPage() {
   const handleReject = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'depenses',
       action: 'reject',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Dépense refusée',
-      status: 'warning',
     });
     addToast('Dépense refusée', 'error');
   };

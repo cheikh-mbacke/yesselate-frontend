@@ -29,12 +29,14 @@ export default function EchangesStructuresPage() {
   const handleRespond = (echange: typeof selected) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'respond',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Réponse à ${echange.subject}`,
-      status: 'success',
     });
     addToast('Interface de réponse ouverte', 'info');
   };
@@ -42,13 +44,14 @@ export default function EchangesStructuresPage() {
   const handleEscalate = (echange: typeof selected) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'escalate',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Escalade vers arbitrage: ${echange.subject}`,
-      status: 'warning',
-      hash: `SHA3-256:esc_${Date.now().toString(16)}`,
     });
     addToast('Échange escaladé → Création arbitrage automatique', 'warning');
   };
@@ -56,25 +59,28 @@ export default function EchangesStructuresPage() {
   const handleClose = (echange: typeof selected, type: 'repondu' | 'sans_suite') => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'close',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Clôture ${type}: ${echange.subject}`,
-      status: 'success',
-      hash: `SHA3-256:close_${Date.now().toString(16)}`,
     });
     addToast(`Échange clôturé (${type}) - Justification enregistrée`, 'success');
   };
 
   const handleCreateEchange = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'create',
       targetId: 'NEW',
       targetType: 'EchangeStructure',
       details: 'Création nouvel échange structuré',
-      status: 'info',
     });
     addToast('Sélectionnez le type d\'échange et le contexte lié', 'info');
   };

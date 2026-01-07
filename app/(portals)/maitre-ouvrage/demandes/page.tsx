@@ -1,13 +1,22 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
+import {
+  PilotageBanner,
+  SmartFilters,
+  IntelligentSearch,
+  DemandDetailsModal,
+  RequestComplementModal,
+  IntelligentAssignmentModal,
+  DemandTimeline,
+  DemandHeatmap,
+} from '@/components/features/bmo/demandes';
 import {
   demands,
   bureaux,
@@ -16,6 +25,9 @@ import {
   employees,
 } from '@/lib/data';
 import type { Priority, Demand } from '@/lib/types/bmo.types';
+import { AlertTriangle, Clock, Eye, UserPlus, Calendar, TrendingUp, FileText, Send, BarChart3 } from 'lucide-react';
+import { usePageNavigation, useCrossPageLinks } from '@/hooks/usePageNavigation';
+import { useAutoSyncCounts } from '@/hooks/useAutoSync';
 
 // Utilitaire pour générer un hash SHA3-256 simulé
 const generateHash = (data: string): string => {
@@ -37,7 +49,19 @@ const calculateDelay = (dateStr: string): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-type ViewMode = 'list' | 'bureau';
+type ViewMode = 'list' | 'bureau' | 'timeline' | 'heatmap';
+
+interface AdvancedFilters {
+  bureau?: string[];
+  type?: string[];
+  priority?: string[];
+  status?: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: string;
+  amountMax?: string;
+  project?: string;
+}
 
 export default function DemandesPage() {
   const { darkMode } = useAppStore();
@@ -46,27 +70,107 @@ export default function DemandesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedDemand, setSelectedDemand] = useState<Demand | null>(null);
-  const [showProofPanel, setShowProofPanel] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showComplementModal, setShowComplementModal] = useState(false);
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({});
+  const [heatmapGroupBy, setHeatmapGroupBy] = useState<'bureau' | 'priority' | 'type'>('bureau');
+
+  // Navigation automatique
+  const { updateFilters, getFilters } = usePageNavigation('demandes');
+  const crossPageLinks = useCrossPageLinks('demandes');
+
+  // Synchronisation automatique des comptages pour la sidebar
+  useAutoSyncCounts('demandes', () => {
+    return enrichedDemands.filter(d => d.status === 'pending').length;
+  }, { interval: 10000, immediate: true });
 
   // Enrichir les demandes avec le délai calculé
   const enrichedDemands = useMemo(() => {
     return demands.map((d) => ({
       ...d,
       delayDays: calculateDelay(d.date),
+      isOverdue: calculateDelay(d.date) > 7 && d.status !== 'validated',
     }));
   }, []);
 
-  // Filtrer les demandes
+  // Filtrer les demandes avec tous les filtres
   const filteredDemands = useMemo(() => {
-    return enrichedDemands.filter((d) => {
-      const matchesFilter = filter === 'all' || d.priority === filter;
-      const matchesSearch =
-        searchQuery === '' ||
-        d.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.id.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesFilter && matchesSearch;
-    });
-  }, [enrichedDemands, filter, searchQuery]);
+    let result = enrichedDemands;
+
+    // Filtre priorité simple
+    if (filter !== 'all') {
+      result = result.filter(d => d.priority === filter);
+    }
+
+    // Filtre recherche
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      result = result.filter(d =>
+        d.subject.toLowerCase().includes(lowerQuery) ||
+        d.id.toLowerCase().includes(lowerQuery) ||
+        d.bureau.toLowerCase().includes(lowerQuery) ||
+        d.type.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    // Filtres avancés
+    if (advancedFilters.bureau && advancedFilters.bureau.length > 0) {
+      result = result.filter(d => advancedFilters.bureau!.includes(d.bureau));
+    }
+
+    if (advancedFilters.type && advancedFilters.type.length > 0) {
+      result = result.filter(d => advancedFilters.type!.includes(d.type));
+    }
+
+    if (advancedFilters.priority && advancedFilters.priority.length > 0) {
+      result = result.filter(d => advancedFilters.priority!.includes(d.priority));
+    }
+
+    if (advancedFilters.status && advancedFilters.status.length > 0) {
+      result = result.filter(d => {
+        const status = d.status || 'pending';
+        return advancedFilters.status!.includes(status);
+      });
+    }
+
+    // Filtres de date
+    if (advancedFilters.dateFrom || advancedFilters.dateTo) {
+      result = result.filter(d => {
+        const [day, month, year] = d.date.split('/').map(Number);
+        const demandDate = new Date(year, month - 1, day);
+        
+        if (advancedFilters.dateFrom) {
+          const fromDate = new Date(advancedFilters.dateFrom);
+          if (demandDate < fromDate) return false;
+        }
+        
+        if (advancedFilters.dateTo) {
+          const toDate = new Date(advancedFilters.dateTo);
+          if (demandDate > toDate) return false;
+        }
+        
+        return true;
+      });
+    }
+
+    // Filtre projet (simulé)
+    if (advancedFilters.project) {
+      result = result.filter(d => d.subject.toLowerCase().includes(advancedFilters.project!.toLowerCase()));
+    }
+
+    return result;
+  }, [enrichedDemands, filter, searchQuery, advancedFilters]);
+
+  // Stats globales
+  const globalStats = useMemo(() => ({
+    total: demands.length,
+    urgent: demands.filter((d) => d.priority === 'urgent').length,
+    high: demands.filter((d) => d.priority === 'high').length,
+    normal: demands.filter((d) => d.priority === 'normal').length,
+    avgDelay: Math.round(enrichedDemands.reduce((a, d) => a + d.delayDays, 0) / enrichedDemands.length),
+    overdue: enrichedDemands.filter(d => d.isOverdue).length,
+  }), [enrichedDemands]);
 
   // Stats par bureau
   const statsByBureau = useMemo(() => {
@@ -84,18 +188,9 @@ export default function DemandesPage() {
     return stats;
   }, [enrichedDemands]);
 
-  // Stats globales
-  const globalStats = useMemo(() => ({
-    total: demands.length,
-    urgent: demands.filter((d) => d.priority === 'urgent').length,
-    high: demands.filter((d) => d.priority === 'high').length,
-    normal: demands.filter((d) => d.priority === 'normal').length,
-    avgDelay: Math.round(enrichedDemands.reduce((a, d) => a + d.delayDays, 0) / enrichedDemands.length),
-  }), [enrichedDemands]);
-
-  // Preuves liées à une demande (décisions + échanges)
+  // Preuves liées à une demande
   const getProofsForDemand = (demandId: string) => {
-    const relatedDecisions = decisions.filter((d) => 
+    const relatedDecisions = decisions.filter((d) =>
       d.subject.includes(demandId) || d.subject.includes(demandId.replace('DEM-', ''))
     );
     const relatedExchanges = echangesBureaux.filter((e) =>
@@ -140,139 +235,232 @@ export default function DemandesPage() {
   };
 
   const handleRequestComplement = (demand: Demand) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'complement',
-      module: 'demandes',
-      targetId: demand.id,
-      targetType: 'Demande',
-      targetLabel: demand.subject,
-      details: 'Demande de complément envoyée',
-      bureau: demand.bureau,
-    });
-    addToast(`Complément demandé pour ${demand.id}`, 'info');
+    setSelectedDemand(demand);
+    setShowComplementModal(true);
+    addToast(`Ouverture de la modale de complément pour ${demand.id}`, 'info');
   };
 
-  const handleAssign = (demand: Demand, employeeId: string) => {
-    const employee = employees.find((e) => e.id === employeeId);
-    if (employee) {
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        action: 'assignation',
-        module: 'demandes',
-        targetId: demand.id,
-        targetType: 'Demande',
-        targetLabel: demand.subject,
-        details: `Assignée à ${employee.name}`,
-        bureau: demand.bureau,
-      });
-      addToast(`${demand.id} assignée à ${employee.name}`, 'success');
+  const handleAssign = (demand: Demand, employeeId?: string) => {
+    if (employeeId) {
+      const employee = employees.find((e) => e.id === employeeId);
+      if (employee) {
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'assignation',
+          module: 'demandes',
+          targetId: demand.id,
+          targetType: 'Demande',
+          targetLabel: demand.subject,
+          details: `Assignée à ${employee.name}`,
+          bureau: demand.bureau,
+        });
+        addToast(`${demand.id} assignée à ${employee.name}`, 'success');
+      }
+    } else {
+      setSelectedDemand(demand);
+      setShowAssignmentModal(true);
+    }
+  };
+
+  const handleAction = (action: 'resolve' | 'assign' | 'escalate' | 'replanify' | 'addNote' | 'addDocument') => {
+    if (!selectedDemand) return;
+
+    switch (action) {
+      case 'resolve':
+        handleValidate(selectedDemand);
+        setShowDetailsModal(false);
+        break;
+      case 'assign':
+        setShowDetailsModal(false);
+        // Ouvrir la modale d'affectation après un court délai
+        setTimeout(() => {
+          setShowAssignmentModal(true);
+        }, 300);
+        break;
+      case 'escalate':
+        addToast(`Escalade de ${selectedDemand.id} vers le BMO`, 'warning');
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'escalade',
+          module: 'demandes',
+          targetId: selectedDemand.id,
+          targetType: 'Demande',
+          targetLabel: selectedDemand.subject,
+          details: `Escalade vers le BMO`,
+          bureau: selectedDemand.bureau,
+        });
+        break;
+      case 'replanify':
+        addToast(`Replanification de ${selectedDemand.id}`, 'info');
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'replanification',
+          module: 'demandes',
+          targetId: selectedDemand.id,
+          targetType: 'Demande',
+          targetLabel: selectedDemand.subject,
+          details: `Demande replanifiée`,
+          bureau: selectedDemand.bureau,
+        });
+        break;
+      case 'addNote':
+        addToast('Note ajoutée avec succès', 'success');
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'note',
+          module: 'demandes',
+          targetId: selectedDemand.id,
+          targetType: 'Demande',
+          targetLabel: selectedDemand.subject,
+          details: `Note ajoutée`,
+          bureau: selectedDemand.bureau,
+        });
+        break;
+      case 'addDocument':
+        addToast('Document ajouté avec succès', 'success');
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'document',
+          module: 'demandes',
+          targetId: selectedDemand.id,
+          targetType: 'Demande',
+          targetLabel: selectedDemand.subject,
+          details: `Document ajouté`,
+          bureau: selectedDemand.bureau,
+        });
+        break;
+    }
+  };
+
+  const handleFilterClick = (filterType: 'urgent' | 'overdue' | 'blocked') => {
+    if (filterType === 'urgent') {
+      setFilter('urgent');
+      addToast('Filtrage des demandes urgentes', 'info');
+    } else if (filterType === 'overdue') {
+      // Filtrer les demandes en retard
+      const overdueDemands = enrichedDemands.filter(d => d.isOverdue);
+      if (overdueDemands.length > 0) {
+        setAdvancedFilters({ ...advancedFilters });
+        setFilter('all');
+        addToast(`${overdueDemands.length} demande(s) en retard`, 'warning');
+      } else {
+        addToast('Aucune demande en retard', 'info');
+      }
+    } else if (filterType === 'blocked') {
+      setAdvancedFilters({ ...advancedFilters, status: ['pending'] });
+      setFilter('all');
+      const blockedCount = enrichedDemands.filter(d => d.status === 'pending' || !d.status).length;
+      addToast(`${blockedCount} demande(s) bloquée(s)`, 'warning');
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-6 p-4">
+      {/* Header amélioré */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📋 Demandes à traiter
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <span className="text-3xl">📋</span>
+            Demandes à traiter
             <Badge variant="warning">{globalStats.total}</Badge>
           </h1>
-          <p className="text-sm text-slate-400">
-            Volume par bureau, délai moyen: <span className="text-amber-400 font-bold">{globalStats.avgDelay}j</span>
+          <p className="text-sm text-slate-400 mt-1">
+            Pilotage intelligent et gestion des demandes multi-bureaux
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <SmartFilters
+            filters={advancedFilters}
+            onFiltersChange={setAdvancedFilters}
+          />
+        </div>
+      </div>
+
+      {/* Bandeau de pilotage */}
+      <PilotageBanner
+        demands={enrichedDemands}
+        onFilterClick={handleFilterClick}
+      />
+
+      {/* Recherche et vues */}
+      <div className="flex flex-wrap items-center gap-3">
+        <IntelligentSearch
+          demands={enrichedDemands}
+          onSelect={(demandId) => {
+            const demand = enrichedDemands.find(d => d.id === demandId);
+            if (demand) {
+              setSelectedDemand(demand);
+              setShowDetailsModal(true);
+            }
+          }}
+          onFilterChange={setSearchQuery}
+        />
         <div className="flex gap-2">
           <Button
             size="sm"
-            variant={viewMode === 'list' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('list')}
+            variant={viewMode === 'list' ? 'default' : 'outline'}
+            onClick={() => {
+              setViewMode('list');
+              addToast('Affichage en mode liste', 'info');
+            }}
           >
             📋 Liste
           </Button>
           <Button
             size="sm"
-            variant={viewMode === 'bureau' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('bureau')}
+            variant={viewMode === 'bureau' ? 'default' : 'outline'}
+            onClick={() => {
+              setViewMode('bureau');
+              addToast('Affichage par bureau', 'info');
+            }}
           >
-            🏢 Par bureau
+            🏢 Bureaux
+          </Button>
+          <Button
+            size="sm"
+            variant={viewMode === 'timeline' ? 'default' : 'outline'}
+            onClick={() => {
+              setViewMode('timeline');
+              addToast('Affichage en timeline', 'info');
+            }}
+          >
+            ⏱️ Timeline
+          </Button>
+          <Button
+            size="sm"
+            variant={viewMode === 'heatmap' ? 'default' : 'outline'}
+            onClick={() => {
+              setViewMode('heatmap');
+              addToast('Affichage en heatmap', 'info');
+            }}
+          >
+            🔥 Heatmap
           </Button>
         </div>
-      </div>
-
-      {/* Stats par priorité */}
-      <div className="grid grid-cols-5 gap-3">
-        <Card
-          className={cn('cursor-pointer transition-all', filter === 'all' && 'ring-2 ring-orange-500')}
-          onClick={() => setFilter('all')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{globalStats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-red-500/30', filter === 'urgent' && 'ring-2 ring-red-500')}
-          onClick={() => setFilter('urgent')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{globalStats.urgent}</p>
-            <p className="text-[10px] text-slate-400">Urgentes</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-amber-500/30', filter === 'high' && 'ring-2 ring-amber-500')}
-          onClick={() => setFilter('high')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{globalStats.high}</p>
-            <p className="text-[10px] text-slate-400">Prioritaires</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-blue-500/30', filter === 'normal' && 'ring-2 ring-blue-500')}
-          onClick={() => setFilter('normal')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{globalStats.normal}</p>
-            <p className="text-[10px] text-slate-400">Normales</p>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-orange-400">{globalStats.avgDelay}j</p>
-            <p className="text-[10px] text-slate-400">Délai moyen</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recherche */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="🔍 Rechercher (ID, sujet)..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={cn(
-            'flex-1 px-4 py-2 rounded-lg text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-          )}
-        />
-        <Button variant="secondary" onClick={() => { setFilter('all'); setSearchQuery(''); }}>
-          Réinitialiser
-        </Button>
       </div>
 
       {/* Vue par bureau */}
       {viewMode === 'bureau' && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {bureaux.filter((b) => statsByBureau[b.code]?.total > 0).map((bureau) => (
-            <Card key={bureau.code} className="hover:border-orange-500/50 transition-all">
+            <Card
+              key={bureau.code}
+              className="hover:border-orange-500/50 transition-all cursor-pointer"
+              onClick={() => {
+                setAdvancedFilters({ ...advancedFilters, bureau: [bureau.code] });
+                addToast(`Filtrage des demandes du bureau ${bureau.code}`, 'info');
+              }}
+            >
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <span>{bureau.icon}</span>
@@ -298,225 +486,297 @@ export default function DemandesPage() {
         </div>
       )}
 
-      {/* Liste des demandes */}
-      <div className="space-y-3">
-        {filteredDemands.map((demand, i) => {
-          const proofs = getProofsForDemand(demand.id);
-          const hasProofs = proofs.decisions.length > 0 || proofs.exchanges.length > 0;
+      {/* Vue Timeline */}
+      {viewMode === 'timeline' && (
+        <DemandTimeline demands={filteredDemands} />
+      )}
 
-          return (
-            <Card
-              key={i}
-              className={cn(
-                'hover:border-orange-500/50 transition-all',
-                demand.priority === 'urgent' && 'border-l-4 border-l-red-500',
-                demand.priority === 'high' && 'border-l-4 border-l-amber-500'
-              )}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={cn(
-                        'w-10 h-10 rounded-lg flex items-center justify-center text-xl',
-                        darkMode ? 'bg-slate-700' : 'bg-gray-100'
-                      )}
-                    >
-                      {demand.icon}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="font-mono text-[10px] text-orange-400">{demand.id}</span>
-                        <BureauTag bureau={demand.bureau} />
-                        <Badge
-                          variant={
-                            demand.priority === 'urgent' ? 'urgent' :
-                            demand.priority === 'high' ? 'warning' : 'default'
-                          }
-                          pulse={demand.priority === 'urgent'}
-                        >
-                          {demand.priority}
-                        </Badge>
-                        <Badge variant="info">J+{demand.delayDays}</Badge>
-                        {hasProofs && (
-                          <Badge
-                            variant="gold"
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setSelectedDemand(demand);
-                              setShowProofPanel(true);
-                            }}
-                          >
-                            🔗 {proofs.decisions.length + proofs.exchanges.length} preuves
-                          </Badge>
+      {/* Vue Heatmap */}
+      {viewMode === 'heatmap' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-400">Grouper par:</span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={heatmapGroupBy === 'bureau' ? 'default' : 'outline'}
+                onClick={() => {
+                  setHeatmapGroupBy('bureau');
+                  addToast('Groupement par bureau', 'info');
+                }}
+              >
+                Bureau
+              </Button>
+              <Button
+                size="sm"
+                variant={heatmapGroupBy === 'priority' ? 'default' : 'outline'}
+                onClick={() => {
+                  setHeatmapGroupBy('priority');
+                  addToast('Groupement par priorité', 'info');
+                }}
+              >
+                Priorité
+              </Button>
+              <Button
+                size="sm"
+                variant={heatmapGroupBy === 'type' ? 'default' : 'outline'}
+                onClick={() => {
+                  setHeatmapGroupBy('type');
+                  addToast('Groupement par type', 'info');
+                }}
+              >
+                Type
+              </Button>
+            </div>
+          </div>
+          <DemandHeatmap
+            demands={filteredDemands}
+            bureaux={bureaux}
+            groupBy={heatmapGroupBy}
+          />
+        </div>
+      )}
+
+      {/* Liste des demandes (vue principale) */}
+      {viewMode === 'list' && (
+        <div className="space-y-3">
+          {filteredDemands.map((demand) => {
+            const proofs = getProofsForDemand(demand.id);
+            const hasProofs = proofs.decisions.length > 0 || proofs.exchanges.length > 0;
+
+            return (
+              <Card
+                key={demand.id}
+                className={cn(
+                  'transition-all hover:shadow-lg cursor-pointer',
+                  demand.priority === 'urgent' && 'border-l-4 border-l-red-500 bg-red-500/5',
+                  demand.priority === 'high' && 'border-l-4 border-l-amber-500 bg-amber-500/5',
+                  demand.isOverdue && 'ring-2 ring-orange-500/50',
+                )}
+                onClick={() => {
+                  setSelectedDemand(demand);
+                  setShowDetailsModal(true);
+                  addToast(`Ouverture des détails de ${demand.id}`, 'info');
+                }}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <div
+                        className={cn(
+                          'w-12 h-12 rounded-lg flex items-center justify-center text-2xl flex-shrink-0',
+                          darkMode ? 'bg-slate-700' : 'bg-gray-100'
                         )}
+                      >
+                        {demand.icon}
                       </div>
-                      <h3 className="font-semibold text-sm">{demand.subject}</h3>
-                      <p className="text-xs text-slate-400">Type: {demand.type}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono font-bold text-amber-400">{demand.amount}</p>
-                    <p className="text-[10px] text-slate-500">{demand.date}</p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                  <Button size="xs" variant="success" onClick={() => handleValidate(demand)}>
-                    ✓ Valider
-                  </Button>
-                  <Button size="xs" variant="info" onClick={() => {
-                    setSelectedDemand(demand);
-                    setShowProofPanel(true);
-                  }}>
-                    👁 Ouvrir
-                  </Button>
-                  <Button size="xs" variant="warning" onClick={() => handleRequestComplement(demand)}>
-                    📎 Demander complément
-                  </Button>
-                  <div className="relative group">
-                    <Button size="xs" variant="secondary">
-                      👤 Assigner ▾
-                    </Button>
-                    <div className={cn(
-                      'absolute top-full left-0 mt-1 w-48 rounded-lg shadow-lg z-50 hidden group-hover:block',
-                      darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-                    )}>
-                      {employees.filter((e) => e.bureau === demand.bureau || e.bureau === 'BMO').slice(0, 5).map((emp) => (
-                        <button
-                          key={emp.id}
-                          className={cn(
-                            'w-full px-3 py-2 text-left text-xs hover:bg-orange-500/10 flex items-center gap-2',
-                            darkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-50'
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className="font-mono text-xs text-orange-400 font-bold">{demand.id}</span>
+                          <BureauTag bureau={demand.bureau} />
+                          <Badge
+                            variant={
+                              demand.priority === 'urgent' ? 'urgent' :
+                              demand.priority === 'high' ? 'warning' : 'default'
+                            }
+                            pulse={demand.priority === 'urgent'}
+                            className="text-[10px]"
+                          >
+                            {demand.priority}
+                          </Badge>
+                          {demand.isOverdue && (
+                            <Badge variant="urgent" className="text-[10px]">
+                              <Clock className="w-3 h-3 mr-1" />
+                              Retard ({demand.delayDays}j)
+                            </Badge>
                           )}
-                          onClick={() => handleAssign(demand, emp.id)}
-                        >
-                          <span className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center text-[10px] font-bold">
-                            {emp.initials}
-                          </span>
-                          {emp.name}
-                        </button>
-                      ))}
+                          <Badge variant="info" className="text-[10px]">J+{demand.delayDays}</Badge>
+                          {hasProofs && (
+                            <Badge variant="outline" className="text-[10px]">
+                              🔗 {proofs.decisions.length + proofs.exchanges.length} preuves
+                            </Badge>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-base mb-1">{demand.subject}</h3>
+                        <div className="flex items-center gap-3 text-xs text-slate-400">
+                          <span>Type: {demand.type}</span>
+                          <span>•</span>
+                          <span>Date: {demand.date}</span>
+                          {demand.amount !== '—' && demand.amount !== 'N/A' && (
+                            <>
+                              <span>•</span>
+                              <span className="text-amber-400 font-semibold">{demand.amount}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {demand.amount !== '—' && demand.amount !== 'N/A' && (
+                        <p className="font-mono font-bold text-lg text-amber-400 mb-1">{demand.amount}</p>
+                      )}
+                      <p className="text-xs text-slate-400">{demand.date}</p>
                     </div>
                   </div>
-                  <Button size="xs" variant="destructive" onClick={() => handleReject(demand)}>
-                    ✕ Rejeter
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+
+                  {/* Actions rapides */}
+                  <div
+                    className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-700/50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Button
+                      size="sm"
+                      variant="success"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const confirmValidate = window.confirm(`Voulez-vous vraiment valider la demande ${demand.id} ?`);
+                        if (confirmValidate) {
+                          handleValidate(demand);
+                        }
+                      }}
+                      className="text-xs"
+                    >
+                      ✓ Valider
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="info"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedDemand(demand);
+                        setShowDetailsModal(true);
+                        addToast(`Ouverture des détails de ${demand.id}`, 'info');
+                      }}
+                      className="text-xs"
+                    >
+                      <Eye className="w-3 h-3 mr-1" />
+                      Détails
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="warning"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRequestComplement(demand);
+                      }}
+                      className="text-xs"
+                    >
+                      <FileText className="w-3 h-3 mr-1" />
+                      Complément
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAssign(demand);
+                      }}
+                      className="text-xs"
+                    >
+                      <UserPlus className="w-3 h-3 mr-1" />
+                      Affecter
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const confirmReject = window.confirm(`Voulez-vous vraiment rejeter la demande ${demand.id} ?`);
+                        if (confirmReject) {
+                          handleReject(demand);
+                        }
+                      }}
+                      className="text-xs"
+                    >
+                      ✕ Rejeter
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {filteredDemands.length === 0 && (
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-slate-400">Aucune demande trouvée</p>
+            <p className="text-slate-400">Aucune demande trouvée avec les filtres sélectionnés</p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setFilter('all');
+                setSearchQuery('');
+                setAdvancedFilters({});
+              }}
+              className="mt-4"
+            >
+              Réinitialiser les filtres
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Panel Fil de preuves (traçabilité) */}
-      {showProofPanel && selectedDemand && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
-                🔗 Fil de preuves - {selectedDemand.id}
-              </CardTitle>
-              <Button size="xs" variant="ghost" onClick={() => setShowProofPanel(false)}>
-                ✕
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Détails demande */}
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <h4 className="font-bold text-sm mb-2">{selectedDemand.subject}</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-slate-400">Bureau:</span> <BureauTag bureau={selectedDemand.bureau} /></div>
-                  <div><span className="text-slate-400">Type:</span> {selectedDemand.type}</div>
-                  <div><span className="text-slate-400">Montant:</span> <span className="text-amber-400">{selectedDemand.amount}</span></div>
-                  <div><span className="text-slate-400">Date:</span> {selectedDemand.date}</div>
-                </div>
-              </div>
+      {/* Modale détails */}
+      <DemandDetailsModal
+        isOpen={showDetailsModal}
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedDemand(null);
+        }}
+        demand={selectedDemand}
+        onAction={handleAction}
+        onRequestComplement={() => {
+          setShowDetailsModal(false);
+          setShowComplementModal(true);
+        }}
+      />
 
-              {/* Décisions liées */}
-              <div>
-                <h4 className="font-bold text-xs mb-2 flex items-center gap-2">
-                  ⚖️ Décisions liées
-                  <Badge variant="info">{getProofsForDemand(selectedDemand.id).decisions.length}</Badge>
-                </h4>
-                {getProofsForDemand(selectedDemand.id).decisions.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucune décision liée</p>
-                ) : (
-                  <div className="space-y-2">
-                    {getProofsForDemand(selectedDemand.id).decisions.map((dec) => (
-                      <div key={dec.id} className={cn('p-2 rounded border-l-2 border-l-emerald-500', darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] text-emerald-400">{dec.id}</span>
-                          <Badge variant="success">{dec.status}</Badge>
-                        </div>
-                        <p className="text-xs">{dec.type}: {dec.subject}</p>
-                        <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                          <span>Par: {dec.author}</span>
-                          <span>{dec.date}</span>
-                        </div>
-                        <div className={cn('mt-1 px-2 py-1 rounded text-[9px] font-mono', darkMode ? 'bg-slate-600' : 'bg-gray-200')}>
-                          🔒 {dec.hash}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {/* Modale complément */}
+      <RequestComplementModal
+        isOpen={showComplementModal}
+        onClose={() => {
+          setShowComplementModal(false);
+          setSelectedDemand(null);
+        }}
+        demand={selectedDemand}
+        onSend={(message, attachments) => {
+          if (selectedDemand) {
+            addActionLog({
+              userId: 'USR-001',
+              userName: 'A. DIALLO',
+              userRole: 'Directeur Général',
+              action: 'complement',
+              module: 'demandes',
+              targetId: selectedDemand.id,
+              targetType: 'Demande',
+              targetLabel: selectedDemand.subject,
+              details: `Demande de complément envoyée: ${message.substring(0, 50)}...`,
+              bureau: selectedDemand.bureau,
+            });
+            addToast(`Demande de complément envoyée pour ${selectedDemand.id}`, 'success');
+          }
+        }}
+      />
 
-              {/* Échanges liés */}
-              <div>
-                <h4 className="font-bold text-xs mb-2 flex items-center gap-2">
-                  💬 Échanges inter-bureaux
-                  <Badge variant="info">{getProofsForDemand(selectedDemand.id).exchanges.length}</Badge>
-                </h4>
-                {getProofsForDemand(selectedDemand.id).exchanges.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucun échange lié</p>
-                ) : (
-                  <div className="space-y-2">
-                    {getProofsForDemand(selectedDemand.id).exchanges.map((exch) => (
-                      <div key={exch.id} className={cn('p-2 rounded border-l-2 border-l-blue-500', darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] text-blue-400">{exch.id}</span>
-                          <BureauTag bureau={exch.from} />
-                          <span>→</span>
-                          <BureauTag bureau={exch.to} />
-                        </div>
-                        <p className="text-xs font-semibold">{exch.subject}</p>
-                        <p className="text-[10px] text-slate-400 mt-1">{exch.message.slice(0, 100)}...</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button className="flex-1" variant="success" onClick={() => {
-                  handleValidate(selectedDemand);
-                  setShowProofPanel(false);
-                }}>
-                  ✓ Valider cette demande
-                </Button>
-                <Button variant="destructive" onClick={() => {
-                  handleReject(selectedDemand);
-                  setShowProofPanel(false);
-                }}>
-                  ✕ Rejeter
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Modale affectation */}
+      <IntelligentAssignmentModal
+        isOpen={showAssignmentModal}
+        onClose={() => {
+          setShowAssignmentModal(false);
+          setSelectedDemand(null);
+        }}
+        demand={selectedDemand}
+        employees={employees}
+        bureaux={bureaux}
+        onAssign={(employeeId) => {
+          if (selectedDemand) {
+            handleAssign(selectedDemand, employeeId);
+            // La modale se ferme automatiquement dans IntelligentAssignmentModal
+          }
+        }}
+      />
     </div>
   );
 }

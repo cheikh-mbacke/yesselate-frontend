@@ -70,13 +70,14 @@ export default function ArbitragesVivantsPage() {
   const handleTrancher = (arb: typeof selected, optionId?: string) => {
     if (!arb) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'arbitrages-vivants',
-      action: 'trancher',
+      action: 'validation',
       targetId: arb.id,
       targetType: 'ArbitrageVivant',
       details: `Arbitrage tranché: ${arb.subject}${optionId ? ` - Option ${optionId}` : ''}`,
-      status: 'success',
-      hash: `SHA3-256:arb_dec_${Date.now().toString(16)}`,
     });
     addToast('Arbitrage tranché - Décision enregistrée au registre avec hash SHA3-256', 'success');
   };
@@ -85,12 +86,14 @@ export default function ArbitragesVivantsPage() {
     if (!arb) return;
     const isVivant = '_type' in arb ? arb._type === 'vivant' : selectedType === 'vivant';
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: isVivant ? 'arbitrages-vivants' : 'arbitrages',
-      action: 'postpone',
+      action: 'modification',
       targetId: arb.id,
       targetType: isVivant ? 'ArbitrageVivant' : 'Arbitration',
       details: `Report arbitrage: ${arb.subject}`,
-      status: 'warning',
     });
     addToast('Report enregistré avec justification obligatoire', 'warning');
   };
@@ -99,12 +102,14 @@ export default function ArbitragesVivantsPage() {
     if (!arb) return;
     const isVivant = '_type' in arb ? arb._type === 'vivant' : selectedType === 'vivant';
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: isVivant ? 'arbitrages-vivants' : 'arbitrages',
-      action: isVivant ? 'request_complement' : 'request_info',
+      action: 'modification',
       targetId: arb.id,
       targetType: isVivant ? 'ArbitrageVivant' : 'Arbitration',
       details: `Demande complément: ${arb.subject}`,
-      status: 'info',
     });
     addToast('Demande de complément envoyée aux parties', 'info');
   };
@@ -112,12 +117,14 @@ export default function ArbitragesVivantsPage() {
   const handleScheduleHearing = (arb: typeof selected) => {
     if (!arb) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'arbitrages-vivants',
-      action: 'schedule_hearing',
+      action: 'creation',
       targetId: arb.id,
       targetType: 'ArbitrageVivant',
       details: `Planification audition: ${arb.subject}`,
-      status: 'info',
     });
     addToast('Planifier une audition/conférence → Création conférence liée', 'info');
   };
@@ -137,12 +144,14 @@ export default function ArbitragesVivantsPage() {
   const handleAdjustResponsibilities = (bureau: typeof selectedB) => {
     if (!bureau) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'bureaux',
-      action: 'adjust_responsibilities',
+      action: 'modification',
       targetId: bureau.code,
       targetType: 'Bureau',
       details: `Ajustement responsabilités ${bureau.name}`,
-      status: 'info',
     });
     addToast('Ajustement des responsabilités initié', 'success');
   };
@@ -150,12 +159,14 @@ export default function ArbitragesVivantsPage() {
   const handleReportBottleneck = (bureau: typeof selectedB, goulot: string) => {
     if (!bureau) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'bureaux',
-      action: 'report_bottleneck',
+      action: 'creation',
       targetId: bureau.code,
       targetType: 'Bureau',
       details: `Goulot remonté: ${goulot}`,
-      status: 'warning',
     });
     addToast('Goulot remonté au DG', 'warning');
   };

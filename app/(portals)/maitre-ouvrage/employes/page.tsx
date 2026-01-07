@@ -84,12 +84,14 @@ export default function EmployesPage() {
 
   const handleExport = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'employes',
       action: 'export',
       targetId: 'ALL',
       targetType: 'Employee',
       details: `Export liste employés (${employees.length})`,
-      status: 'success',
     });
     addToast('Export employés généré', 'success');
   };

@@ -27,12 +27,14 @@ export default function IAPage() {
   const handleRunAnalysis = (module: typeof selectedM) => {
     if (!module) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'ia',
       action: 'run_analysis',
       targetId: module.id,
       targetType: 'AIModule',
       details: `Lancement analyse ${module.name}`,
-      status: 'info',
     });
     addToast(`Analyse ${module.name} lancée`, 'info');
   };
@@ -40,12 +42,14 @@ export default function IAPage() {
   const handleRetrain = (module: typeof selectedM) => {
     if (!module) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'ia',
       action: 'retrain',
       targetId: module.id,
       targetType: 'AIModule',
       details: `Ré-entraînement ${module.name}`,
-      status: 'warning',
     });
     addToast('Ré-entraînement programmé', 'warning');
   };

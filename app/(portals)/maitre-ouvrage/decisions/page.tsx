@@ -34,6 +34,9 @@ export default function DecisionsPage() {
   const handleVerifyHash = (decision: typeof selectedD) => {
     if (!decision) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'decisions',
       action: 'verify_hash',
       targetId: decision.id,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   PieChart,
   Pie,
@@ -13,8 +14,9 @@ import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { KPICard } from '@/components/features/bmo/KPICard';
+import { DashboardCard } from '@/components/features/bmo/DashboardCard';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
 import {
   performanceData,
@@ -28,6 +30,7 @@ import {
 } from '@/lib/data';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { darkMode } = useAppStore();
   const { liveStats, addToast, openSubstitutionModal, openBlocageModal } = useBMOStore();
 
@@ -69,7 +72,7 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, [yearlyTotals]);
 
-  // Top risques combinés (systemAlerts critiques + blockedDossiers)
+  // Top risques combinés
   const topRisques = useMemo(() => {
     const alertsRisks = systemAlerts
       .filter((a) => a.type === 'critical' || a.type === 'warning')
@@ -97,7 +100,7 @@ export default function DashboardPage() {
     return [...alertsRisks, ...blockedRisks].slice(0, 5);
   }, []);
 
-  // 3 actions les plus rentables maintenant
+  // Actions rentables
   const actionsRentables = useMemo(() => {
     const actions: Array<{
       id: string;
@@ -108,9 +111,9 @@ export default function DashboardPage() {
       urgency: 'critical' | 'high' | 'medium';
       link: string;
       icon: string;
+      params?: Record<string, string>;
     }> = [];
 
-    // 1. Dossiers bloqués > 5 jours (priorité max)
     const criticalBlocked = blockedDossiers.filter((d) => d.delay >= 5);
     if (criticalBlocked.length > 0) {
       const mostUrgent = criticalBlocked.sort((a, b) => b.delay - a.delay)[0];
@@ -123,10 +126,10 @@ export default function DashboardPage() {
         urgency: 'critical',
         link: '/maitre-ouvrage/substitution',
         icon: '🔄',
+        params: { id: mostUrgent.id },
       });
     }
 
-    // 2. Paiements proches échéance (< 5 jours)
     const urgentPayments = paymentsN1.filter((p) => {
       const dueDate = new Date(p.dueDate.split('/').reverse().join('-'));
       const today = new Date();
@@ -143,10 +146,10 @@ export default function DashboardPage() {
         urgency: 'high',
         link: '/maitre-ouvrage/validation-paiements',
         icon: '💳',
+        params: { urgent: 'true' },
       });
     }
 
-    // 3. Contrats à signer
     if (contractsToSign.length > 0) {
       const pendingContracts = contractsToSign.filter((c) => c.status === 'pending');
       if (pendingContracts.length > 0) {
@@ -159,6 +162,7 @@ export default function DashboardPage() {
           urgency: 'medium',
           link: '/maitre-ouvrage/validation-contrats',
           icon: '📜',
+          params: { status: 'pending' },
         });
       }
     }
@@ -179,13 +183,32 @@ export default function DashboardPage() {
     });
   }, []);
 
+  // Handlers pour navigation
+  const handleRisqueClick = (risque: typeof topRisques[0]) => {
+    if (risque.type === 'blocked' && risque.dossier) {
+      openBlocageModal(risque.dossier);
+    } else {
+      router.push('/maitre-ouvrage/alerts');
+    }
+  };
+
+  const handleBureauClick = (bureauCode: string) => {
+    router.push(`/maitre-ouvrage/arbitrages-vivants?bureau=${bureauCode}`);
+  };
+
+  const buildUrl = (base: string, params?: Record<string, string>) => {
+    if (!params) return base;
+    const searchParams = new URLSearchParams(params);
+    return `${base}?${searchParams.toString()}`;
+  };
+
   return (
-    <div className="space-y-4">
-      {/* Alerte critique si dossiers bloqués > 5 jours */}
+    <div className="space-y-6">
+      {/* Alerte critique */}
       {blockedDossiers.filter((d) => d.delay >= 5).length > 0 && (
         <div
           className={cn(
-            'rounded-xl p-3 flex items-center gap-3 border animate-pulse',
+            'rounded-xl p-4 flex items-center gap-3 border animate-pulse',
             darkMode
               ? 'bg-red-500/10 border-red-500/30'
               : 'bg-red-50 border-red-200'
@@ -208,7 +231,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* KPIs globaux (demandes, validations, rejets, budget) */}
+      {/* SECTION 1: Performance Globale */}
+      <section>
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span>📊</span>
+          <span>Performance Globale</span>
+        </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPICard
           icon="📋"
@@ -216,6 +244,7 @@ export default function DashboardPage() {
           value={animatedKPIs.demandes}
           trend="Total annuel"
           color="#3B82F6"
+            onClick={() => router.push('/maitre-ouvrage/demandes')}
         />
         <KPICard
           icon="✅"
@@ -224,6 +253,7 @@ export default function DashboardPage() {
           trend={`${((animatedKPIs.validations / (animatedKPIs.demandes || 1)) * 100).toFixed(1)}% taux`}
           up={true}
           color="#10B981"
+            onClick={() => router.push('/maitre-ouvrage/demandes?filter=validated')}
         />
         <KPICard
           icon="❌"
@@ -232,6 +262,7 @@ export default function DashboardPage() {
           trend={`${((animatedKPIs.rejets / (animatedKPIs.demandes || 1)) * 100).toFixed(1)}% taux`}
           up={false}
           color="#EF4444"
+            onClick={() => router.push('/maitre-ouvrage/demandes?filter=rejected')}
         />
         <KPICard
           icon="💰"
@@ -240,22 +271,35 @@ export default function DashboardPage() {
           sub="FCFA"
           trend="Cumul annuel"
           color="#D4AF37"
+            onClick={() => router.push('/maitre-ouvrage/finances')}
         />
       </div>
+      </section>
 
-      {/* Ligne principale: Santé organisationnelle + Top risques */}
+      {/* SECTION 2: Risques & Santé Organisationnelle */}
+      <section>
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>Risques & Santé Organisationnelle</span>
+        </h2>
       <div className="grid lg:grid-cols-2 gap-4">
-        {/* Santé organisationnelle (répartition par bureaux) */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              🏢 Santé organisationnelle
-              <Badge variant="info">{bureaux.length} bureaux</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+          {/* Santé organisationnelle */}
+          <DashboardCard
+            title="Santé organisationnelle"
+            subtitle="État des bureaux"
+            icon="🏢"
+            badge={bureaux.length}
+            badgeVariant="info"
+            borderColor="#3B82F6"
+            footer={
+              <Link href="/maitre-ouvrage/arbitrages-vivants?tab=bureaux">
+                <Button size="sm" variant="ghost" className="w-full text-xs">
+                  Voir tous les bureaux →
+                </Button>
+              </Link>
+            }
+          >
             <div className="flex gap-4">
-              {/* Pie Chart */}
               <div className="w-32 h-32">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -275,13 +319,17 @@ export default function DashboardPage() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              {/* Liste bureaux avec indicateur santé */}
               <div className="flex-1 grid grid-cols-2 gap-1">
                 {bureauHealth.map((bureau) => (
-                  <div
+                  <button
                     key={bureau.code}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBureauClick(bureau.code);
+                    }}
                     className={cn(
-                      'flex items-center gap-2 p-1.5 rounded text-xs',
+                      'flex items-center gap-2 p-1.5 rounded text-xs transition-colors',
+                      darkMode ? 'hover:bg-slate-700/50' : 'hover:bg-gray-100',
                       darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
                     )}
                   >
@@ -302,35 +350,46 @@ export default function DashboardPage() {
                         {bureau.blockedCount}
                       </Badge>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </DashboardCard>
 
         {/* Top risques */}
-        <Card className="border-amber-500/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              ⚠️ Top risques
-              <Badge variant="warning">{topRisques.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+          <DashboardCard
+            title="Top risques"
+            subtitle="Risques critiques et dossiers bloqués"
+            icon="⚠️"
+            badge={topRisques.length}
+            badgeVariant="warning"
+            borderColor="#F59E0B"
+            footer={
+              <Link href="/maitre-ouvrage/alerts">
+                <Button size="sm" variant="ghost" className="w-full text-xs">
+                  Voir tous les risques →
+                </Button>
+              </Link>
+            }
+          >
+            <div className="space-y-2">
             {topRisques.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-4">
                 ✅ Aucun risque critique détecté
               </p>
             ) : (
-              topRisques.map((risque, i) => (
-                <div
+                topRisques.map((risque) => (
+                  <button
                   key={risque.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRisqueClick(risque);
+                    }}
                   className={cn(
-                    'flex items-center gap-2 p-2 rounded-lg border-l-4',
+                      'w-full flex items-center gap-2 p-2 rounded-lg border-l-4 transition-colors',
                     risque.severity === 'critical'
-                      ? 'border-l-red-500 bg-red-500/5'
-                      : 'border-l-amber-500 bg-amber-500/5'
+                        ? 'border-l-red-500 bg-red-500/5 hover:bg-red-500/10'
+                        : 'border-l-amber-500 bg-amber-500/5 hover:bg-amber-500/10'
                   )}
                 >
                   <span className="text-lg">
@@ -341,30 +400,26 @@ export default function DashboardPage() {
                     <p className="text-[10px] text-slate-400 truncate">{risque.action}</p>
                   </div>
                   <BureauTag bureau={risque.source} />
-                  {risque.type === 'blocked' && risque.dossier && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => openBlocageModal(risque.dossier!)}
-                    >
-                      👁️
-                    </Button>
+                  </button>
+                ))
                   )}
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+          </DashboardCard>
       </div>
+      </section>
 
-      {/* 3 actions les plus rentables maintenant */}
-      <Card className="border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            ⚡ 3 actions les plus rentables maintenant
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* SECTION 3: Actions Prioritaires */}
+      <section>
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span>⚡</span>
+          <span>Actions Prioritaires</span>
+        </h2>
+        <DashboardCard
+          title="3 actions les plus rentables maintenant"
+          subtitle="Actions recommandées pour optimiser les résultats"
+          icon="⚡"
+          borderColor="#F97316"
+        >
           <div className="grid md:grid-cols-3 gap-3">
             {actionsRentables.length === 0 ? (
               <p className="text-xs text-slate-400 col-span-3 text-center py-4">
@@ -372,21 +427,22 @@ export default function DashboardPage() {
               </p>
             ) : (
               actionsRentables.map((action, i) => (
-                <div
+                <Link
                   key={action.id}
+                  href={buildUrl(action.link, action.params)}
                   className={cn(
-                    'p-3 rounded-lg border',
+                    'p-3 rounded-lg border transition-all hover:scale-[1.02]',
                     action.urgency === 'critical'
-                      ? 'border-red-500/50 bg-red-500/10'
+                      ? 'border-red-500/50 bg-red-500/10 hover:bg-red-500/20'
                       : action.urgency === 'high'
-                      ? 'border-amber-500/50 bg-amber-500/10'
-                      : 'border-blue-500/50 bg-blue-500/10'
+                      ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20'
+                      : 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20'
                   )}
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-xl">{action.icon}</span>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold">#{i + 1}</span>
                         <Badge
                           variant={
@@ -396,61 +452,63 @@ export default function DashboardPage() {
                               ? 'warning'
                               : 'info'
                           }
+                          className="text-[9px]"
                         >
                           {action.urgency}
                         </Badge>
                       </div>
-                      <p className="text-sm font-semibold mt-1">{action.title}</p>
+                      <p className="text-sm font-semibold">{action.title}</p>
                       <p className="text-[10px] text-slate-400">{action.subtitle}</p>
                       {action.amount && action.amount !== '—' && (
-                        <p className="text-xs font-mono text-amber-400 mt-1">
+                        <p className={cn(
+                          'text-xs font-mono mt-1',
+                          darkMode ? 'text-slate-300' : 'text-gray-700'
+                        )}>
                           {action.amount} FCFA
                         </p>
                       )}
                     </div>
                   </div>
-                  <Link href={action.link}>
-                    <Button
-                      size="sm"
-                      variant={action.urgency === 'critical' ? 'destructive' : 'warning'}
-                      className="w-full mt-2"
-                    >
-                      Traiter →
-                    </Button>
                   </Link>
-                </div>
               ))
             )}
           </div>
-        </CardContent>
-      </Card>
+        </DashboardCard>
+      </section>
 
-      {/* Timeline des décisions avec preuves */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              ⚖️ Timeline des décisions
-              <Badge variant="info">{decisions.length}</Badge>
-            </span>
+      {/* SECTION 4: Décisions & Timeline */}
+      <section>
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span>⚖️</span>
+          <span>Décisions & Timeline</span>
+        </h2>
+        <DashboardCard
+          title="Timeline des décisions"
+          subtitle="Historique des décisions récentes"
+          icon="⚖️"
+          badge={decisions.length}
+          badgeVariant="info"
+          borderColor="#3B82F6"
+          footer={
             <Link href="/maitre-ouvrage/decisions">
-              <Button size="xs" variant="ghost">
-                Voir tout →
+              <Button size="sm" variant="ghost" className="w-full text-xs">
+                Voir toutes les décisions →
               </Button>
             </Link>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {decisions.slice(0, 5).map((decision, i) => (
-            <div
+          }
+        >
+          <div className="space-y-2">
+            {decisions.slice(0, 5).map((decision) => (
+              <Link
               key={decision.id}
+                href={`/maitre-ouvrage/decisions?id=${decision.id}`}
               className={cn(
-                'flex items-center gap-3 p-2 rounded-lg border-l-4',
+                  'flex items-center gap-3 p-2 rounded-lg border-l-4 transition-colors',
                 decision.status === 'executed'
-                  ? 'border-l-emerald-500'
+                    ? 'border-l-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10'
                   : decision.status === 'pending'
-                  ? 'border-l-amber-500'
-                  : 'border-l-slate-500',
+                    ? 'border-l-amber-500 bg-amber-500/5 hover:bg-amber-500/10'
+                    : 'border-l-slate-500 bg-slate-500/5 hover:bg-slate-500/10',
                 darkMode ? 'bg-slate-700/20' : 'bg-gray-50'
               )}
             >
@@ -463,7 +521,7 @@ export default function DashboardPage() {
                     ? 'bg-orange-500/20 text-orange-400'
                     : decision.type === 'Délégation'
                     ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-purple-500/20 text-purple-400'
+                      : 'bg-blue-500/20 text-blue-400'
                 )}
               >
                 {decision.type === 'Validation N+1'
@@ -476,7 +534,12 @@ export default function DashboardPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-orange-400">{decision.id}</span>
+                    <span className={cn(
+                      'font-mono text-[10px]',
+                      darkMode ? 'text-slate-400' : 'text-gray-500'
+                    )}>
+                      {decision.id}
+                    </span>
                   <Badge
                     variant={
                       decision.status === 'executed'
@@ -485,6 +548,7 @@ export default function DashboardPage() {
                         ? 'warning'
                         : 'default'
                     }
+                      className="text-[9px]"
                   >
                     {decision.status}
                   </Badge>
@@ -496,62 +560,65 @@ export default function DashboardPage() {
                   Par {decision.author} • {decision.date}
                 </p>
               </div>
-              <div className="text-right">
-                {/* Hash de preuve */}
-                <div
-                  className={cn(
-                    'px-2 py-1 rounded text-[9px] font-mono cursor-pointer',
-                    darkMode ? 'bg-slate-700/50' : 'bg-gray-100'
-                  )}
-                  onClick={() => {
-                    navigator.clipboard.writeText(decision.hash);
-                    addToast('Hash copié dans le presse-papier', 'success');
-                  }}
-                  title="Cliquer pour copier le hash"
-                >
-                  🔒 {decision.hash.slice(0, 12)}...
+              </Link>
+            ))}
                 </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        </DashboardCard>
+      </section>
 
-      {/* Stats temps réel */}
+      {/* SECTION 5: Indicateurs Temps Réel */}
+      <section>
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span>📈</span>
+          <span>Indicateurs Temps Réel</span>
+        </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">
+          <DashboardCard
+            title="Taux validation"
+            icon="✅"
+            href="/maitre-ouvrage/analytics"
+            borderColor="#10B981"
+          >
+            <p className="text-2xl font-bold text-emerald-400 text-center">
               {liveStats.tauxValidation}%
             </p>
-            <p className="text-[10px] text-slate-400">Taux validation</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">
+          </DashboardCard>
+          <DashboardCard
+            title="Temps moyen réponse"
+            icon="⏱️"
+            href="/maitre-ouvrage/analytics"
+            borderColor="#3B82F6"
+          >
+            <p className="text-2xl font-bold text-blue-400 text-center">
               {liveStats.tempsReponse}
             </p>
-            <p className="text-[10px] text-slate-400">Temps moyen réponse</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">
+          </DashboardCard>
+          <DashboardCard
+            title="Validations aujourd'hui"
+            icon="📊"
+            href="/maitre-ouvrage/analytics?period=today"
+            borderColor="#3B82F6"
+          >
+            <p className="text-2xl font-bold text-blue-400 text-center">
               {liveStats.validationsJour}
             </p>
-            <p className="text-[10px] text-slate-400">Validations aujourd'hui</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-orange-400">
+          </DashboardCard>
+          <DashboardCard
+            title="Montant traité"
+            icon="💰"
+            href="/maitre-ouvrage/finances"
+            borderColor="#3B82F6"
+          >
+            <p className={cn(
+              'text-lg font-bold text-center',
+              darkMode ? 'text-slate-200' : 'text-gray-800'
+            )}>
               {liveStats.montantTraite}
             </p>
-            <p className="text-[10px] text-slate-400">Montant traité (FCFA)</p>
-          </CardContent>
-        </Card>
+            <p className="text-[10px] text-slate-400 text-center mt-1">FCFA</p>
+          </DashboardCard>
       </div>
+      </section>
     </div>
   );
 }

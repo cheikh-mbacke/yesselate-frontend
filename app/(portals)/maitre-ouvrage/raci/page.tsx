@@ -52,24 +52,27 @@ export default function RACIPage() {
     }
     setEditMode(!editMode);
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'raci',
       action: editMode ? 'exit_edit' : 'enter_edit',
       targetId: 'RACI_MATRIX',
       targetType: 'RACI',
       details: editMode ? 'Sortie mode édition RACI' : 'Entrée mode édition RACI',
-      status: 'info',
     });
   };
 
   const handleSaveRACI = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'raci',
       action: 'save',
       targetId: 'RACI_MATRIX',
       targetType: 'RACI',
       details: 'Sauvegarde matrice RACI',
-      status: 'success',
-      hash: `SHA3-256:raci_${Date.now().toString(16)}`,
     });
     addToast('Matrice RACI sauvegardée - Hash généré', 'success');
     setEditMode(false);

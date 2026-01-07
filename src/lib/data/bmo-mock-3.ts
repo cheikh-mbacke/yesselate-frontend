@@ -434,21 +434,23 @@ export const financials: Financials = {
 };
 
 // --- Données PieChart bureaux ---
+// Couleurs neutres (bleus) pour différencier les bureaux visuellement
 export const bureauPieData = [
-  { name: 'BMO', value: 15, color: '#F97316' },
-  { name: 'BF', value: 12, color: '#3B82F6' },
-  { name: 'BM', value: 10, color: '#10B981' },
-  { name: 'BA', value: 18, color: '#06B6D4' },
-  { name: 'BCT', value: 8, color: '#EF4444' },
-  { name: 'BQC', value: 6, color: '#EC4899' },
-  { name: 'BJ', value: 6, color: '#8B5CF6' },
+  { name: 'BMO', value: 15, color: '#3B82F6' }, // Bleu principal
+  { name: 'BF', value: 12, color: '#2563EB' }, // Bleu foncé
+  { name: 'BM', value: 10, color: '#6366F1' }, // Indigo
+  { name: 'BA', value: 18, color: '#06B6D4' }, // Cyan
+  { name: 'BCT', value: 8, color: '#64748B' }, // Slate (neutre gris-bleu)
+  { name: 'BQC', value: 6, color: '#06B6D4' }, // Cyan (neutre)
+  { name: 'BJ', value: 6, color: '#0891B2' }, // Cyan foncé
 ];
 
 // --- Données PieChart statut projets ---
+// Logique métier : Vert = positif (en cours), Rouge = problème (bloqués), Bleu = neutre (terminés)
 export const projectStatusData = [
-  { name: 'En cours', value: 5, fill: '#10B981' },
-  { name: 'Bloqués', value: 1, fill: '#EF4444' },
-  { name: 'Terminés', value: 2, fill: '#3B82F6' },
+  { name: 'En cours', value: 5, fill: '#10B981' }, // Vert = positif
+  { name: 'Bloqués', value: 1, fill: '#EF4444' }, // Rouge = problème
+  { name: 'Terminés', value: 2, fill: '#3B82F6' }, // Bleu = neutre
 ];
 
 // --- Statistiques clients (NOUVEAU) ---

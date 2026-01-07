@@ -633,12 +633,12 @@ export interface Litigation {
   };
 }
 
-// --- Événement calendrier ---
+// --- Événement calendrier (enrichi pour multi-bureaux) ---
 export interface CalendarEvent {
   id: string;
   title: string;
   time: string;
-  type: 'meeting' | 'visio' | 'deadline' | 'site' | 'delivery' | 'legal' | 'inspection' | 'training' | 'hr';
+  type: 'meeting' | 'visio' | 'deadline' | 'site' | 'delivery' | 'legal' | 'inspection' | 'training' | 'hr' | 'intervention' | 'audit' | 'formation';
   location?: string;
   date: string;
   endDate?: string;
@@ -647,6 +647,46 @@ export interface CalendarEvent {
   project?: string;
   supplier?: string;
   employee?: string;
+  // Nouveaux champs pour coordination multi-bureaux
+  bureau?: string; // Bureau principal responsable
+  involvedBureaux?: string[]; // Bureaux impliqués
+  estimatedCharge?: number; // Charge estimée en heures
+  dependencies?: string[]; // IDs d'événements dépendants
+  participants?: ActivityParticipant[];
+  documents?: string[]; // IDs de documents liés
+  risks?: string[]; // IDs de risques associés
+  notes?: ActivityNote[];
+  status?: 'planned' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled';
+  conflicts?: ConflictDetection[];
+  createdAt?: string;
+  createdBy?: string;
+  modifiedAt?: string;
+  modifiedBy?: string;
+}
+
+export interface ActivityParticipant {
+  employeeId: string;
+  name: string;
+  bureau: string;
+  role: 'organizer' | 'participant' | 'required' | 'optional';
+  confirmed?: boolean;
+}
+
+export interface ActivityNote {
+  id: string;
+  content: string;
+  author: string;
+  createdAt: string;
+  type?: 'info' | 'warning' | 'critical';
+}
+
+export interface ConflictDetection {
+  type: 'overlap' | 'resource' | 'absence' | 'overload' | 'dependency';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  conflictingEventIds?: string[];
+  conflictingResource?: string;
+  detectedAt: string;
 }
 
 // --- Tâche ---

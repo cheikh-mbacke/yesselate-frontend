@@ -17,7 +17,7 @@ export default function ApiPage() {
   const stats = useMemo(() => {
     const endpointsActive = apiEndpoints.filter(e => e.status === 'active').length;
     const endpointsError = apiEndpoints.filter(e => e.status === 'error' || e.status === 'degraded').length;
-    const integrationsActive = apiIntegrations.filter(i => i.status === 'active').length;
+    const integrationsActive = apiIntegrations.filter(i => i.status === 'connected').length;
     const integrationsError = apiIntegrations.filter(i => i.status === 'error').length;
     const rotationRequired = apiIntegrations.filter(i => i.credentials.rotationRequired).length;
     const totalCalls = apiEndpoints.reduce((acc, e) => acc + e.callsToday, 0);
@@ -29,13 +29,14 @@ export default function ApiPage() {
   const handleRotateCredentials = (integration: typeof selectedI) => {
     if (!integration) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'api',
-      action: 'rotate_credentials',
+      action: 'modification',
       targetId: integration.id,
       targetType: 'ApiIntegration',
       details: `Rotation credentials ${integration.provider}`,
-      status: 'success',
-      hash: `SHA3-256:cred_${Date.now().toString(16)}`,
     });
     addToast('Credentials rotés - Action loguée', 'success');
   };
@@ -43,12 +44,14 @@ export default function ApiPage() {
   const handleTestConnection = (integration: typeof selectedI) => {
     if (!integration) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'api',
-      action: 'test_connection',
+      action: 'validation',
       targetId: integration.id,
       targetType: 'ApiIntegration',
       details: `Test connexion ${integration.provider}`,
-      status: 'info',
     });
     addToast(`Test ${integration.provider} en cours...`, 'info');
   };
@@ -56,12 +59,14 @@ export default function ApiPage() {
   const handleDisable = (integration: typeof selectedI) => {
     if (!integration) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'api',
-      action: 'disable',
+      action: 'modification',
       targetId: integration.id,
       targetType: 'ApiIntegration',
       details: `Désactivation ${integration.provider}`,
-      status: 'warning',
     });
     addToast('Intégration désactivée', 'warning');
   };
@@ -221,7 +226,7 @@ export default function ApiPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{getTypeIcon(integration.type)}</span>
-                          <Badge variant={integration.status === 'active' ? 'success' : integration.status === 'error' ? 'urgent' : 'warning'}>{integration.status}</Badge>
+                          <Badge variant={integration.status === 'connected' ? 'success' : integration.status === 'error' ? 'urgent' : 'warning'}>{integration.status}</Badge>
                           <Badge variant="default">{integration.type}</Badge>
                           {integration.credentials.rotationRequired && <Badge variant="warning" pulse>Rotation requise</Badge>}
                         </div>
@@ -232,9 +237,9 @@ export default function ApiPage() {
                       </div>
                     </div>
 
-                    {integration.status === 'error' && integration.errorMessage && (
+                    {integration.status === 'error' && integration.lastError && (
                       <div className="p-2 rounded bg-red-500/10 border border-red-500/30 mb-3">
-                        <p className="text-xs text-red-400">⚠️ {integration.errorMessage}</p>
+                        <p className="text-xs text-red-400">⚠️ {integration.lastError}</p>
                       </div>
                     )}
 
@@ -257,7 +262,7 @@ export default function ApiPage() {
                   <div className="mb-4 pb-4 border-b border-slate-700/50">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-2xl">{getTypeIcon(selectedI.type)}</span>
-                      <Badge variant={selectedI.status === 'active' ? 'success' : 'urgent'}>{selectedI.status}</Badge>
+                      <Badge variant={selectedI.status === 'connected' ? 'success' : 'urgent'}>{selectedI.status}</Badge>
                     </div>
                     <h3 className="font-bold">{selectedI.provider}</h3>
                   </div>

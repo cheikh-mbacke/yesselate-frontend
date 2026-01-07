@@ -54,24 +54,28 @@ export default function EvaluationsPage() {
   // Actions
   const handleValidateRecommendation = (evalId: string, recId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'evaluations',
       action: 'validate_recommendation',
       targetId: evalId,
       targetType: 'Evaluation',
       details: `Recommandation ${recId} validée`,
-      status: 'success',
     });
     addToast('Recommandation validée', 'success');
   };
 
   const handleProgrammerFormation = (evalId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'evaluations',
       action: 'schedule_formation',
       targetId: evalId,
       targetType: 'Evaluation',
       details: 'Formation programmée',
-      status: 'success',
     });
     addToast('Formation programmée', 'success');
   };

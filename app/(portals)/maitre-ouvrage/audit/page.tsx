@@ -28,24 +28,28 @@ export default function AuditPage() {
 
   const handleCreateAction = (auditId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'audit',
       action: 'create_action',
       targetId: auditId,
       targetType: 'AuditItem',
       details: 'Création action corrective',
-      status: 'info',
     });
     addToast('Action corrective créée', 'success');
   };
 
   const handleMarkResolved = (findingId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'audit',
       action: 'resolve_finding',
       targetId: findingId,
       targetType: 'AuditFinding',
       details: `Constat ${findingId} résolu`,
-      status: 'success',
     });
     addToast('Constat marqué comme résolu', 'success');
   };

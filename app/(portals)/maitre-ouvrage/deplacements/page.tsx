@@ -53,12 +53,14 @@ export default function DeplacementsPage() {
     const hasOrdreMission = demande.documents?.some(d => d.type === 'ordre_mission');
     
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'deplacements',
       action: 'approve',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Déplacement ${demande.destination} approuvé pour ${demande.agent}`,
-      status: 'success',
     });
     
     if (!hasOrdreMission) {
@@ -71,12 +73,14 @@ export default function DeplacementsPage() {
   const handleGenerateOrdreMission = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'deplacements',
       action: 'generate_ordre_mission',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Ordre de mission généré',
-      status: 'success',
     });
     addToast('Ordre de mission généré', 'success');
   };
@@ -84,12 +88,14 @@ export default function DeplacementsPage() {
   const handleReject = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'deplacements',
       action: 'reject',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Déplacement refusé',
-      status: 'warning',
     });
     addToast('Déplacement refusé', 'error');
   };

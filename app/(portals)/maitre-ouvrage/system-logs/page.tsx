@@ -59,12 +59,14 @@ export default function SystemLogsPage() {
 
   const handleExportLogs = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'system-logs',
       action: 'export',
       targetId: 'ALL',
       targetType: 'SystemLogs',
       details: `Export journal système (${filteredLogs.length} entrées)`,
-      status: 'success',
     });
     addToast('Export des logs généré', 'success');
   };
@@ -72,12 +74,14 @@ export default function SystemLogsPage() {
   const handleVerifyHash = (log: typeof selectedL) => {
     if (!log) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'system-logs',
       action: 'verify_hash',
       targetId: log.id,
       targetType: 'SystemLog',
       details: `Vérification intégrité log ${log.id}`,
-      status: 'success',
     });
     addToast('Hash vérifié ✓ - Log intègre', 'success');
   };
@@ -85,12 +89,14 @@ export default function SystemLogsPage() {
   const handleInvestigate = (log: typeof selectedL) => {
     if (!log) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'system-logs',
       action: 'investigate',
       targetId: log.id,
       targetType: 'SystemLog',
       details: `Investigation démarrée sur ${log.id}`,
-      status: 'info',
     });
     addToast('Investigation démarrée', 'info');
   };

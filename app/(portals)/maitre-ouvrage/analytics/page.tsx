@@ -18,10 +18,27 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
+import { usePageNavigation, useCrossPageLinks } from '@/hooks/usePageNavigation';
+import { useAutoSyncCounts } from '@/hooks/useAutoSync';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
+import {
+  AnalyticsDashboard,
+  ComparisonChart,
+  PredictionInsights,
+  AdvancedFilters,
+  AnomalyDetection,
+  PerformanceHeatmap,
+  PerformanceScore,
+  AdvancedExport,
+  IntelligentInsights,
+  PredictiveTimeline,
+  MultiBureauComparator,
+  NarrativeReport,
+  DetailsSidePanel,
+} from '@/components/features/bmo/analytics';
 import {
   performanceData,
   bureauPieData,
@@ -30,28 +47,39 @@ import {
 } from '@/lib/data';
 
 type ReportType = 'mensuel-dg' | 'bureau' | 'projet';
-type ViewType = 'tendances' | 'rapports' | 'sources';
+type ViewType = 'overview' | 'tendances' | 'rapports' | 'sources' | 'comparaisons' | 'predictions' | 'anomalies' | 'insights';
 
 export default function AnalyticsPage() {
   const { darkMode } = useAppStore();
   const { addToast } = useBMOStore();
-  const [activeView, setActiveView] = useState<ViewType>('tendances');
+  const [activeView, setActiveView] = useState<ViewType>('overview');
   const [selectedBureau, setSelectedBureau] = useState<string>('ALL');
   const [selectedProject, setSelectedProject] = useState<string>('ALL');
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [selectedBureaux, setSelectedBureaux] = useState<string[]>([]);
+  const [advancedFilters, setAdvancedFilters] = useState<any>({});
+  const [sidePanelData, setSidePanelData] = useState<any>(null);
+  const [showSidePanel, setShowSidePanel] = useState(false);
 
   // Données enrichies pour les graphiques
   const enrichedData = useMemo(() => {
-    return performanceData.map((d) => ({
+    let data = performanceData.map((d) => ({
       ...d,
       tauxValidation: Math.round((d.validations / d.demandes) * 100),
       tauxRejet: Math.round((d.rejets / d.demandes) * 100),
     }));
-  }, []);
+
+    // Appliquer les filtres avancés
+    if (advancedFilters.bureaux && advancedFilters.bureaux.length > 0) {
+      data = data.filter((d: any) => advancedFilters.bureaux.includes(d.bureau));
+    }
+
+    return data;
+  }, [performanceData, advancedFilters]);
 
   // Totaux annuels
   const yearlyTotals = useMemo(() => {
-    return performanceData.reduce(
+    return enrichedData.reduce(
       (acc, month) => ({
         demandes: acc.demandes + month.demandes,
         validations: acc.validations + month.validations,
@@ -60,18 +88,18 @@ export default function AnalyticsPage() {
       }),
       { demandes: 0, validations: 0, rejets: 0, budget: 0 }
     );
-  }, []);
+  }, [enrichedData]);
 
   // Moyenne mensuelle
   const monthlyAverages = useMemo(() => {
-    const count = performanceData.length;
+    const count = enrichedData.length || 1;
     return {
       demandes: Math.round(yearlyTotals.demandes / count),
       validations: Math.round(yearlyTotals.validations / count),
       rejets: Math.round(yearlyTotals.rejets / count),
       budget: (yearlyTotals.budget / count).toFixed(1),
     };
-  }, [yearlyTotals]);
+  }, [yearlyTotals, enrichedData]);
 
   // Sources des données (traçabilité)
   const dataSources = [
@@ -130,90 +158,130 @@ export default function AnalyticsPage() {
     setGeneratingReport(true);
     addToast(`Génération du rapport ${type} en cours...`, 'info');
 
-    // Simulation de génération
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     setGeneratingReport(false);
     addToast(`Rapport ${type} généré avec succès !`, 'success');
   };
 
+  const handleKpiClick = (kpiData: any) => {
+    setSidePanelData({
+      title: kpiData.title,
+      type: 'kpi',
+      details: kpiData.details,
+      trend: kpiData.trend,
+      metadata: {
+        'Dernière mise à jour': new Date().toLocaleString('fr-FR'),
+        'Source': kpiData.source || 'Calcul automatique',
+      },
+    });
+    setShowSidePanel(true);
+  };
+
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-6 p-4">
+      {/* Header amélioré */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📈 Analytics & Rapports
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <span className="text-3xl">📈</span>
+            Analytics & Pilotage Avancé
           </h1>
-          <p className="text-sm text-slate-400">
-            Tendances, génération de rapports et traçabilité des données
+          <p className="text-sm text-slate-400 mt-1">
+            Tableaux de bord intelligents, prédictions, comparaisons et rapports automatisés
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <AdvancedFilters
+            filters={advancedFilters}
+            onFiltersChange={setAdvancedFilters}
+          />
+          <AdvancedExport
+            data={enrichedData}
+            type="analytics"
+            fileName="rapport-analytics"
+          />
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex gap-2 border-b border-slate-700/50 pb-2">
+      {/* Navigation améliorée avec onglet Overview */}
+      <div className="flex gap-2 border-b border-slate-700/50 pb-2 overflow-x-auto">
+        <Button
+          size="sm"
+          variant={activeView === 'overview' ? 'default' : 'ghost'}
+          onClick={() => setActiveView('overview')}
+          className="whitespace-nowrap"
+        >
+          🏠 Vue d'ensemble
+        </Button>
         <Button
           size="sm"
           variant={activeView === 'tendances' ? 'default' : 'ghost'}
           onClick={() => setActiveView('tendances')}
         >
-          📊 Tendances 12 mois
+          📊 Tendances
+        </Button>
+        <Button
+          size="sm"
+          variant={activeView === 'insights' ? 'default' : 'ghost'}
+          onClick={() => setActiveView('insights')}
+        >
+          💡 Insights
+        </Button>
+        <Button
+          size="sm"
+          variant={activeView === 'comparaisons' ? 'default' : 'ghost'}
+          onClick={() => setActiveView('comparaisons')}
+        >
+          📊 Comparaisons
+        </Button>
+        <Button
+          size="sm"
+          variant={activeView === 'predictions' ? 'default' : 'ghost'}
+          onClick={() => setActiveView('predictions')}
+        >
+          🔮 Prédictions
+        </Button>
+        <Button
+          size="sm"
+          variant={activeView === 'anomalies' ? 'default' : 'ghost'}
+          onClick={() => setActiveView('anomalies')}
+        >
+          🚨 Anomalies
         </Button>
         <Button
           size="sm"
           variant={activeView === 'rapports' ? 'default' : 'ghost'}
           onClick={() => setActiveView('rapports')}
         >
-          📄 Génération rapports
+          📄 Rapports
         </Button>
         <Button
           size="sm"
           variant={activeView === 'sources' ? 'default' : 'ghost'}
           onClick={() => setActiveView('sources')}
         >
-          🔍 Sources des chiffres
+          🔍 Sources
         </Button>
       </div>
 
-      {/* Vue: Tendances 12 mois */}
-      {activeView === 'tendances' && (
-        <div className="space-y-4">
-          {/* KPIs annuels */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/30">
-              <CardContent className="p-4 text-center">
-                <p className="text-3xl font-bold text-blue-400">{yearlyTotals.demandes}</p>
-                <p className="text-xs text-slate-400">Demandes totales</p>
-                <p className="text-[10px] text-blue-400">~{monthlyAverages.demandes}/mois</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-gradient-to-br from-emerald-500/10 to-green-500/10 border-emerald-500/30">
-              <CardContent className="p-4 text-center">
-                <p className="text-3xl font-bold text-emerald-400">{yearlyTotals.validations}</p>
-                <p className="text-xs text-slate-400">Validations</p>
-                <p className="text-[10px] text-emerald-400">
-                  {((yearlyTotals.validations / yearlyTotals.demandes) * 100).toFixed(1)}% taux
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="bg-gradient-to-br from-red-500/10 to-orange-500/10 border-red-500/30">
-              <CardContent className="p-4 text-center">
-                <p className="text-3xl font-bold text-red-400">{yearlyTotals.rejets}</p>
-                <p className="text-xs text-slate-400">Rejets</p>
-                <p className="text-[10px] text-red-400">
-                  {((yearlyTotals.rejets / yearlyTotals.demandes) * 100).toFixed(1)}% taux
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="bg-gradient-to-br from-amber-500/10 to-yellow-500/10 border-amber-500/30">
-              <CardContent className="p-4 text-center">
-                <p className="text-3xl font-bold text-amber-400">{yearlyTotals.budget.toFixed(1)}</p>
-                <p className="text-xs text-slate-400">Budget (Mds FCFA)</p>
-                <p className="text-[10px] text-amber-400">~{monthlyAverages.budget} Mds/mois</p>
-              </CardContent>
-            </Card>
-          </div>
+      {/* Vue d'ensemble (nouvelle vue principale) */}
+      {activeView === 'overview' && (
+        <div className="space-y-6">
+          {/* KPIs Dashboard */}
+          <AnalyticsDashboard
+            yearlyTotals={yearlyTotals}
+            monthlyAverages={monthlyAverages}
+            previousPeriod={performanceData.slice(0, 6).reduce(
+              (acc, month) => ({
+                demandes: acc.demandes + month.demandes,
+                validations: acc.validations + month.validations,
+                rejets: acc.rejets + month.rejets,
+                budget: acc.budget + month.budget,
+              }),
+              { demandes: 0, validations: 0, rejets: 0, budget: 0 }
+            )}
+          />
 
           {/* Graphique principal: Demandes vs Validations vs Rejets */}
           <Card>
@@ -262,6 +330,12 @@ export default function AnalyticsPage() {
                       fill="#3B82F6"
                       name="Demandes"
                       radius={[4, 4, 0, 0]}
+                      onClick={(data: any) => handleKpiClick({
+                        title: `Demandes - ${data.month}`,
+                        details: { demandes: data.demandes },
+                        trend: 'up',
+                      })}
+                      style={{ cursor: 'pointer' }}
                     />
                     <Bar
                       yAxisId="left"
@@ -343,6 +417,186 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
+          {/* Insights intelligents */}
+          <IntelligentInsights
+            yearlyTotals={yearlyTotals}
+            enrichedData={enrichedData}
+            monthlyAverages={monthlyAverages}
+          />
+
+          {/* Score de performance */}
+          <PerformanceScore
+            yearlyTotals={yearlyTotals}
+            enrichedData={enrichedData}
+          />
+
+          {/* Timeline prédictive */}
+          <PredictiveTimeline
+            enrichedData={enrichedData}
+            monthsAhead={3}
+          />
+
+          {/* Rapport narratif */}
+          <NarrativeReport
+            yearlyTotals={yearlyTotals}
+            enrichedData={enrichedData}
+            monthlyAverages={monthlyAverages}
+          />
+        </div>
+      )}
+
+      {/* Vue: Insights intelligents */}
+      {activeView === 'insights' && (
+        <div className="space-y-6">
+          <IntelligentInsights
+            yearlyTotals={yearlyTotals}
+            enrichedData={enrichedData}
+            monthlyAverages={monthlyAverages}
+          />
+          <AnomalyDetection
+            performanceData={performanceData}
+            enrichedData={enrichedData}
+          />
+        </div>
+      )}
+
+      {/* Vue: Tendances */}
+      {activeView === 'tendances' && (
+        <div className="space-y-6">
+          {/* Graphique principal */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                📊 Évolution mensuelle : Demandes, Validations, Rejets
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={enrichedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={[0, 100]}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Legend />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="demandes"
+                      fill="#3B82F6"
+                      name="Demandes"
+                      radius={[4, 4, 0, 0]}
+                      onClick={(data) => handleKpiClick({
+                        title: `Demandes - ${data.month}`,
+                        details: { demandes: data.demandes },
+                        trend: 'up',
+                      })}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="validations"
+                      fill="#10B981"
+                      name="Validations"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="rejets"
+                      fill="#EF4444"
+                      name="Rejets"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="tauxValidation"
+                      stroke="#F97316"
+                      strokeWidth={2}
+                      name="Taux validation %"
+                      dot={{ fill: '#F97316' }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Graphique Budget */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                💰 Évolution du budget traité (Milliards FCFA)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={enrichedData}>
+                    <defs>
+                      <linearGradient id="colorBudget" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#D4AF37" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="budget"
+                      stroke="#D4AF37"
+                      strokeWidth={2}
+                      fill="url(#colorBudget)"
+                      name="Budget (Mds)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Tableau récapitulatif */}
           <Card>
             <CardHeader>
@@ -365,7 +619,14 @@ export default function AnalyticsPage() {
                     {enrichedData.map((row, i) => (
                       <tr
                         key={i}
-                        className={cn('border-t', darkMode ? 'border-slate-700/50' : 'border-gray-100')}
+                        className={cn(
+                          'border-t transition-colors hover:bg-slate-700/30 cursor-pointer',
+                          darkMode ? 'border-slate-700/50' : 'border-gray-100'
+                        )}
+                        onClick={() => handleKpiClick({
+                          title: `Données du mois - ${row.month}`,
+                          details: row,
+                        })}
                       >
                         <td className="px-4 py-2 font-medium">{row.month}</td>
                         <td className="px-4 py-2 text-right text-blue-400">{row.demandes}</td>
@@ -394,9 +655,67 @@ export default function AnalyticsPage() {
         </div>
       )}
 
+      {/* Vue: Comparaisons */}
+      {activeView === 'comparaisons' && (
+        <div className="space-y-6">
+          <MultiBureauComparator
+            bureaux={bureaux}
+            performanceData={performanceData}
+            enrichedData={enrichedData}
+          />
+          <ComparisonChart
+            bureaux={bureaux}
+            performanceData={enrichedData}
+            selectedBureaux={selectedBureaux}
+          />
+        </div>
+      )}
+
+      {/* Vue: Prédictions */}
+      {activeView === 'predictions' && (
+        <div className="space-y-6">
+          <PredictionInsights performanceData={enrichedData} />
+          <PredictiveTimeline enrichedData={enrichedData} monthsAhead={3} />
+          <div className="grid md:grid-cols-2 gap-4">
+            <PerformanceHeatmap
+              performanceData={performanceData}
+              bureaux={bureaux}
+              metric="demandes"
+            />
+            <PerformanceHeatmap
+              performanceData={performanceData}
+              bureaux={bureaux}
+              metric="taux"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Vue: Anomalies */}
+      {activeView === 'anomalies' && (
+        <div className="space-y-6">
+          <AnomalyDetection
+            performanceData={performanceData}
+            enrichedData={enrichedData}
+          />
+          <div className="grid md:grid-cols-2 gap-4">
+            <PerformanceHeatmap
+              performanceData={performanceData}
+              bureaux={bureaux}
+              metric="rejets"
+            />
+            <PerformanceHeatmap
+              performanceData={performanceData}
+              bureaux={bureaux}
+              metric="validations"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Vue: Génération rapports */}
       {activeView === 'rapports' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="grid md:grid-cols-3 gap-4">
             {/* Rapport mensuel DG */}
             <Card className="border-orange-500/30">
@@ -417,10 +736,6 @@ export default function AnalyticsPage() {
                   <div className="flex justify-between">
                     <span>Période:</span>
                     <span className="text-slate-400">Mois en cours</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Destinataire:</span>
-                    <span className="text-slate-400">Direction Générale</span>
                   </div>
                 </div>
                 <Button
@@ -459,12 +774,6 @@ export default function AnalyticsPage() {
                     </option>
                   ))}
                 </select>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span>Format:</span>
-                    <Badge>Excel + PDF</Badge>
-                  </div>
-                </div>
                 <Button
                   className="w-full"
                   variant="info"
@@ -502,12 +811,6 @@ export default function AnalyticsPage() {
                     </option>
                   ))}
                 </select>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span>Format:</span>
-                    <Badge>Excel + PDF</Badge>
-                  </div>
-                </div>
                 <Button
                   className="w-full"
                   variant="success"
@@ -520,51 +823,18 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
-          {/* Historique des rapports générés */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">📚 Historique des rapports</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {[
-                  { id: 'RPT-001', type: 'Mensuel DG', date: '01/12/2025', status: 'Généré', size: '2.4 MB' },
-                  { id: 'RPT-002', type: 'Bureau BF', date: '28/11/2025', status: 'Généré', size: '1.8 MB' },
-                  { id: 'RPT-003', type: 'Projet PRJ-0018', date: '25/11/2025', status: 'Généré', size: '3.1 MB' },
-                ].map((report) => (
-                  <div
-                    key={report.id}
-                    className={cn(
-                      'flex items-center justify-between p-3 rounded-lg',
-                      darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">📄</span>
-                      <div>
-                        <p className="text-sm font-semibold">{report.type}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {report.id} • {report.date} • {report.size}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="success">{report.status}</Badge>
-                      <Button size="xs" variant="ghost">
-                        ⬇️ Télécharger
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Rapport narratif */}
+          <NarrativeReport
+            yearlyTotals={yearlyTotals}
+            enrichedData={enrichedData}
+            monthlyAverages={monthlyAverages}
+          />
         </div>
       )}
 
       {/* Vue: Sources des chiffres */}
       {activeView === 'sources' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <Card className="border-blue-500/30">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
@@ -621,91 +891,18 @@ export default function AnalyticsPage() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Intégrité des données */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                🔒 Intégrité et audit des données
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div className={cn('p-4 rounded-lg', darkMode ? 'bg-emerald-500/10' : 'bg-emerald-50')}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">✅</span>
-                    <span className="font-bold text-emerald-400">Données vérifiées</span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Toutes les données sont horodatées et signées cryptographiquement.
-                  </p>
-                </div>
-                <div className={cn('p-4 rounded-lg', darkMode ? 'bg-blue-500/10' : 'bg-blue-50')}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">🔄</span>
-                    <span className="font-bold text-blue-400">Synchronisation</span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Données synchronisées en temps réel avec les modules sources.
-                  </p>
-                </div>
-                <div className={cn('p-4 rounded-lg', darkMode ? 'bg-purple-500/10' : 'bg-purple-50')}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">📜</span>
-                    <span className="font-bold text-purple-400">Journal d'audit</span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Chaque modification est enregistrée dans le journal des actions.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Formules de calcul */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">📐 Formules de calcul</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[
-                  {
-                    indicateur: 'Taux de validation',
-                    formule: '(Validations / Demandes) × 100',
-                    exemple: `(${yearlyTotals.validations} / ${yearlyTotals.demandes}) × 100 = ${((yearlyTotals.validations / yearlyTotals.demandes) * 100).toFixed(1)}%`,
-                  },
-                  {
-                    indicateur: 'Taux de rejet',
-                    formule: '(Rejets / Demandes) × 100',
-                    exemple: `(${yearlyTotals.rejets} / ${yearlyTotals.demandes}) × 100 = ${((yearlyTotals.rejets / yearlyTotals.demandes) * 100).toFixed(1)}%`,
-                  },
-                  {
-                    indicateur: 'Budget moyen mensuel',
-                    formule: 'SUM(Budget) / 12',
-                    exemple: `${yearlyTotals.budget.toFixed(1)} / 12 = ${monthlyAverages.budget} Mds FCFA`,
-                  },
-                ].map((calc, i) => (
-                  <div
-                    key={i}
-                    className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-sm">{calc.indicateur}</span>
-                      <code className={cn('px-2 py-1 rounded text-[10px]', darkMode ? 'bg-slate-600' : 'bg-gray-200')}>
-                        {calc.formule}
-                      </code>
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      Exemple: {calc.exemple}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
+
+      {/* Panneau latéral de détails */}
+      <DetailsSidePanel
+        isOpen={showSidePanel}
+        onClose={() => {
+          setShowSidePanel(false);
+          setSidePanelData(null);
+        }}
+        data={sidePanelData}
+      />
     </div>
   );
 }

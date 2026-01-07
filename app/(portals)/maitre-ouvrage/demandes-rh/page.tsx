@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
 import { demandesRH, plannedAbsences, employees, bureaux, criticalSkills } from '@/lib/data';
+import { usePageNavigation } from '@/hooks/usePageNavigation';
+import { useAutoSyncCounts } from '@/hooks/useAutoSync';
+import type { ActionLogType } from '@/lib/types/bmo.types';
 
 type RHFilter = 'all' | 'Congé' | 'Dépense' | 'Maladie' | 'Déplacement' | 'Paie';
 type StatusFilter = 'all' | 'pending' | 'validated' | 'rejected';
@@ -102,12 +105,14 @@ export default function DemandesRHPage() {
   const handleApprove = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
-      action: 'approve',
+      action: 'validation',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Demande ${demande.type} approuvée pour ${demande.agent}`,
-      status: 'success',
     });
     addToast(`${demande.id} approuvée ✓`, 'success');
   };
@@ -115,12 +120,14 @@ export default function DemandesRHPage() {
   const handleReject = (demande: typeof selectedD, reason: string = 'Motif à préciser') => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
-      action: 'reject',
+      action: 'rejection',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Demande refusée: ${reason}`,
-      status: 'warning',
     });
     addToast(`${demande.id} refusée`, 'error');
   };
@@ -128,12 +135,14 @@ export default function DemandesRHPage() {
   const handleRequestInfo = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
-      action: 'request_info',
+      action: 'request_complement',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: 'Informations complémentaires demandées',
-      status: 'info',
     });
     addToast(`Demande d'informations envoyée`, 'warning');
   };
@@ -141,12 +150,14 @@ export default function DemandesRHPage() {
   const handleCreateSubstitution = (demande: typeof selectedD) => {
     if (!demande) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'demandes-rh',
-      action: 'create_substitution',
+      action: 'substitution',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Substitution créée pour ${demande.agent}`,
-      status: 'success',
     });
     addToast('Substitution créée', 'success');
   };
@@ -179,7 +190,7 @@ export default function DemandesRHPage() {
                 <h3 className="font-bold text-red-400">{stats.urgent} demande(s) urgente(s) en attente</h3>
                 <p className="text-sm text-slate-400">Action immédiate requise</p>
               </div>
-              <Button size="sm" variant="urgent" onClick={() => setStatusFilter('pending')}>
+              <Button size="sm" variant="destructive" onClick={() => setStatusFilter('pending')}>
                 Voir urgences
               </Button>
             </div>
@@ -295,7 +306,7 @@ export default function DemandesRHPage() {
           </Card>
           <Card className="bg-red-500/10 border-red-500/30">
             <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-red-400">{stats.maladie}</p>
+              <p className="text-2xl font-bold text-red-400">{stats.maladies}</p>
               <p className="text-[10px] text-slate-400">Maladie</p>
             </CardContent>
           </Card>

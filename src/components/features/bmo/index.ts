@@ -8,6 +8,7 @@ export { BMOHeader, BMOToolbar } from './Header';
 
 // UI components
 export { KPICard } from './KPICard';
+export { DashboardCard } from './DashboardCard';
 export { BureauTag } from './BureauTag';
 
 // Overlay components

@@ -236,8 +236,10 @@ export interface PurchaseOrder {
   requestedBy: string;
   bureau: string;
   date: string;
+  dateLimit?: string; // Date limite de validation
   priority: Priority;
   status: DemandStatus;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Contrat ---
@@ -281,6 +283,7 @@ export interface Invoice {
   status: DemandStatus;
   validatedBy: string | null;
   bureau: string;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Avenant ---
@@ -296,6 +299,7 @@ export interface Amendment {
   preparedBy: string;
   bureau: string;
   date: string;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Dossier bloqué ---
@@ -633,12 +637,12 @@ export interface Litigation {
   };
 }
 
-// --- Événement calendrier ---
+// --- Événement calendrier (enrichi pour multi-bureaux) ---
 export interface CalendarEvent {
   id: string;
   title: string;
   time: string;
-  type: 'meeting' | 'visio' | 'deadline' | 'site' | 'delivery' | 'legal' | 'inspection' | 'training' | 'hr';
+  type: 'meeting' | 'visio' | 'deadline' | 'site' | 'delivery' | 'legal' | 'inspection' | 'training' | 'hr' | 'intervention' | 'audit' | 'formation';
   location?: string;
   date: string;
   endDate?: string;
@@ -647,6 +651,46 @@ export interface CalendarEvent {
   project?: string;
   supplier?: string;
   employee?: string;
+  // Nouveaux champs pour coordination multi-bureaux
+  bureau?: string; // Bureau principal responsable
+  involvedBureaux?: string[]; // Bureaux impliqués
+  estimatedCharge?: number; // Charge estimée en heures
+  dependencies?: string[]; // IDs d'événements dépendants
+  participants?: ActivityParticipant[];
+  documents?: string[]; // IDs de documents liés
+  risks?: string[]; // IDs de risques associés
+  notes?: ActivityNote[];
+  status?: 'planned' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled';
+  conflicts?: ConflictDetection[];
+  createdAt?: string;
+  createdBy?: string;
+  modifiedAt?: string;
+  modifiedBy?: string;
+}
+
+export interface ActivityParticipant {
+  employeeId: string;
+  name: string;
+  bureau: string;
+  role: 'organizer' | 'participant' | 'required' | 'optional';
+  confirmed?: boolean;
+}
+
+export interface ActivityNote {
+  id: string;
+  content: string;
+  author: string;
+  createdAt: string;
+  type?: 'info' | 'warning' | 'critical';
+}
+
+export interface ConflictDetection {
+  type: 'overlap' | 'resource' | 'absence' | 'overload' | 'dependency';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  conflictingEventIds?: string[];
+  conflictingResource?: string;
+  detectedAt: string;
 }
 
 // --- Tâche ---
@@ -882,7 +926,10 @@ export type ActionLogType =
   | 'export'
   | 'import'
   | 'budget_alert'
-  | 'budget_approval';
+  | 'budget_approval'
+  | 'audit'
+  | 'request_complement'
+  | 'escalation';
 
 export interface ActionLog {
   id: string;
@@ -1041,6 +1088,22 @@ export type GainCategory =
   | 'subvention'           // Subvention reçue
   | 'autre';
 
+// =============== TYPES BMO ===============
+export type RACIRole = 'A' | 'R'; // Accountable / Responsible
+
+// WHY: Chaque décision BMO doit avoir un hash SHA3-256 horodaté pour garantir l'intégrité et la traçabilité
+// Le rôle RACI ('A' ou 'R') détermine qui est responsable de la validation
+export interface BMODecision {
+  decisionId: string;        // ex: DEC-20250405-001
+  origin: string;            // ex: "validation-bc", "arbitrages", "validation-paiements"
+  validatorRole: RACIRole;   // "A" = BMO (Accountable), "R" = BM/BA/BJ (Responsible)
+  hash: string;              // SHA3-256 horodaté - garantit l'intégrité et la traçabilité
+  comment?: string;
+}
+
+// Décision BMO pour pilotage financier (RACI) - Alias pour compatibilité
+export type DecisionBMO = BMODecision;
+
 export interface FinancialGain {
   id: string;
   date: string;
@@ -1057,6 +1120,7 @@ export interface FinancialGain {
   validatedBy?: string;
   validatedAt?: string;
   hash?: string; // SHA3-256 pour traçabilité
+  decisionBMO?: DecisionBMO; // Information de pilotage BMO (RACI)
 }
 
 // --- Perte financière ---
@@ -1087,6 +1151,7 @@ export interface FinancialLoss {
   validatedBy?: string;
   validatedAt?: string;
   hash?: string;
+  decisionBMO?: DecisionBMO; // Information de pilotage BMO (RACI)
 }
 
 // --- Entrée de trésorerie ---
@@ -1115,6 +1180,31 @@ export interface TreasuryEntry {
   projetName?: string;
   tiers?: string; // Client, fournisseur, etc.
   validatedBy?: string;
+  decisionBMO?: DecisionBMO; // Information de pilotage BMO (RACI)
+}
+
+// --- Facture reçue ---
+export type FactureStatut =
+  | 'à_vérifier'
+  | 'conforme'
+  | 'non_conforme'
+  | 'payée'
+  | 'rejetée';
+
+export interface Facture {
+  id: string;               // F-2026-0012
+  dateEmission: string;     // '12/12/2025'
+  dateReception: string;    // '15/12/2025'
+  fournisseur: string;      // 'SENFER'
+  chantier: string;         // 'Chantier Dakar Nord'
+  chantierId: string;       // 'CH-2025-DKN'
+  referenceBC: string;      // 'BC-2025-0154'
+  montantHT: number;        // 38000000
+  montantTTC: number;       // 45600000
+  description: string;      // 'Fourniture béton C30/37 – lot 2'
+  statut: FactureStatut;
+  commentaire?: string;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (comme dans les gains/pertes)
 }
 
 // --- Structure Financials enrichie ---

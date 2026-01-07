@@ -50,24 +50,28 @@ export default function MissionsPage() {
   // Actions
   const handleAssign = (missionId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'missions',
       action: 'assign',
       targetId: missionId,
       targetType: 'Mission',
       details: 'Participant assigné',
-      status: 'success',
     });
     addToast('Participant assigné à la mission', 'success');
   };
 
   const handlePlanifier = (missionId: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'missions',
       action: 'planifier',
       targetId: missionId,
       targetType: 'Mission',
       details: 'Mission planifiée',
-      status: 'success',
     });
     addToast('Mission planifiée', 'success');
   };

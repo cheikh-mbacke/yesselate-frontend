@@ -1,40 +1,120 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
 import { echangesStructures, coordinationStats } from '@/lib/data';
+import { usePageNavigation } from '@/hooks/usePageNavigation';
+import { useAutoSyncCounts } from '@/hooks/useAutoSync';
+
+type StatusFilter = 'all' | 'ouvert' | 'en_traitement' | 'escalade' | 'resolu';
+type TypeFilter = 'all' | 'demande_info' | 'alerte_risque' | 'proposition_substitution' | 'demande_validation' | 'signalement_blocage' | 'coordination_urgente';
+
+// WHY: Normalisation pour recherche multi-champs (aligné avec autres pages)
+const normalize = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
 
 export default function EchangesStructuresPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
-  const [filter, setFilter] = useState<'all' | 'ouvert' | 'en_traitement' | 'escalade' | 'resolu'>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+
+  // État principal
+  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [selectedEchange, setSelectedEchange] = useState<string | null>(null);
 
-  const filteredEchanges = echangesStructures.filter(e => {
-    if (filter !== 'all' && e.status !== filter) return false;
-    if (typeFilter !== 'all' && e.type !== typeFilter) return false;
-    return true;
-  });
+  // Recherche (aligné avec autres pages)
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Persistance navigation
+  const { updateFilters, getFilters } = usePageNavigation('echanges-structures');
+
+  // Charger les filtres sauvegardés
+  useEffect(() => {
+    try {
+      const saved = getFilters?.();
+      if (!saved) return;
+      if (saved.filter) setFilter(saved.filter);
+      if (saved.typeFilter) setTypeFilter(saved.typeFilter);
+      if (saved.selectedEchange) setSelectedEchange(saved.selectedEchange);
+      if (typeof saved.searchQuery === 'string') setSearchQuery(saved.searchQuery);
+    } catch {
+      // silent
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sauvegarder les filtres
+  useEffect(() => {
+    try {
+      updateFilters?.({
+        filter,
+        typeFilter,
+        selectedEchange,
+        searchQuery,
+      });
+    } catch {
+      // silent
+    }
+  }, [filter, typeFilter, selectedEchange, searchQuery, updateFilters]);
 
   const stats = coordinationStats.echanges;
+
+  // Auto-sync pour sidebar
+  useAutoSyncCounts('echanges-structures', () => stats.ouverts, { interval: 30000, immediate: true });
+
+  // Filtrage aligné avec pattern des autres pages
+  const filteredEchanges = useMemo(() => {
+    let result = [...echangesStructures];
+
+    // Filtre par statut
+    if (filter !== 'all') {
+      result = result.filter(e => e.status === filter);
+    }
+
+    // Filtre par type
+    if (typeFilter !== 'all') {
+      result = result.filter(e => e.type === typeFilter);
+    }
+
+    // Recherche multi-champs
+    if (searchQuery.trim()) {
+      const q = normalize(searchQuery);
+      result = result.filter(e =>
+        normalize(e.id).includes(q) ||
+        normalize(e.subject).includes(q) ||
+        normalize(e.content).includes(q) ||
+        normalize(e.from.bureau).includes(q) ||
+        normalize(e.to.bureau).includes(q) ||
+        normalize(e.linkedContext.label).includes(q)
+      );
+    }
+
+    return result;
+  }, [filter, typeFilter, searchQuery]);
 
   const selected = selectedEchange ? echangesStructures.find(e => e.id === selectedEchange) : null;
 
   const handleRespond = (echange: typeof selected) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'respond',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Réponse à ${echange.subject}`,
-      status: 'success',
     });
     addToast('Interface de réponse ouverte', 'info');
   };
@@ -42,13 +122,14 @@ export default function EchangesStructuresPage() {
   const handleEscalate = (echange: typeof selected) => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'escalate',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Escalade vers arbitrage: ${echange.subject}`,
-      status: 'warning',
-      hash: `SHA3-256:esc_${Date.now().toString(16)}`,
     });
     addToast('Échange escaladé → Création arbitrage automatique', 'warning');
   };
@@ -56,25 +137,28 @@ export default function EchangesStructuresPage() {
   const handleClose = (echange: typeof selected, type: 'repondu' | 'sans_suite') => {
     if (!echange) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'close',
       targetId: echange.id,
       targetType: 'EchangeStructure',
       details: `Clôture ${type}: ${echange.subject}`,
-      status: 'success',
-      hash: `SHA3-256:close_${Date.now().toString(16)}`,
     });
     addToast(`Échange clôturé (${type}) - Justification enregistrée`, 'success');
   };
 
   const handleCreateEchange = () => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'echanges-structures',
       action: 'create',
       targetId: 'NEW',
       targetType: 'EchangeStructure',
       details: 'Création nouvel échange structuré',
-      status: 'info',
     });
     addToast('Sélectionnez le type d\'échange et le contexte lié', 'info');
   };
@@ -116,15 +200,25 @@ export default function EchangesStructuresPage() {
 
   return (
     <div className="space-y-4">
+      {/* Header aligné avec autres pages */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
             📨 Échanges Structurés
             <Badge variant="warning">{stats.ouverts} ouvert(s)</Badge>
+            {stats.escalades > 0 && <Badge variant="urgent">{stats.escalades} escaladé(s)</Badge>}
           </h1>
           <p className="text-sm text-slate-400">Échanges inter-bureaux avec intention, délai et auto-escalade</p>
         </div>
-        <Button onClick={handleCreateEchange}>+ Nouvel échange</Button>
+        <div className="flex gap-2 w-full md:w-auto">
+          <Input
+            placeholder="Rechercher (ID, sujet, bureau...)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full md:w-64"
+          />
+          <Button onClick={handleCreateEchange}>+ Nouvel échange</Button>
+        </div>
       </div>
 
       {/* Principe clé */}

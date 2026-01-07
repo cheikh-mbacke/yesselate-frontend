@@ -35,12 +35,14 @@ export default function MessagesExternesPage() {
   const handleRespond = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'messages-externes',
       action: 'respond',
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Réponse message ${message.sender}`,
-      status: 'success',
     });
     addToast('Réponse envoyée - Preuve archivée', 'success');
   };
@@ -48,12 +50,14 @@ export default function MessagesExternesPage() {
   const handleAssign = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'messages-externes',
       action: 'assign',
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message assigné pour traitement`,
-      status: 'info',
     });
     addToast('Message assigné', 'info');
   };
@@ -61,12 +65,14 @@ export default function MessagesExternesPage() {
   const handleLink = (message: typeof selectedM, linkType: string) => {
     if (!message) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'messages-externes',
       action: 'link',
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message lié à ${linkType}`,
-      status: 'info',
     });
     addToast(`Lié à ${linkType}`, 'success');
   };
@@ -74,12 +80,14 @@ export default function MessagesExternesPage() {
   const handleArchive = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'messages-externes',
       action: 'archive',
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message archivé`,
-      status: 'success',
     });
     addToast('Message archivé', 'success');
   };

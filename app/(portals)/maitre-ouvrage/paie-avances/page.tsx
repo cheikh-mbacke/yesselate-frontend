@@ -88,12 +88,14 @@ export default function PaieAvancesPage() {
     if (needsDoubleControl(demande.amount)) {
       setShowDoubleControl(demande.id);
       addActionLog({
+        userId: 'USR-001',
+        userName: 'A. DIALLO',
+        userRole: 'Directeur Général',
         module: 'paie-avances',
         action: 'first_approval',
         targetId: demande.id,
         targetType: 'HRRequest',
         details: `Première validation ${demande.amount} FCFA - Double contrôle requis`,
-        status: 'info',
       });
       addToast('Première validation OK - Double contrôle requis', 'warning');
     } else {
@@ -105,13 +107,14 @@ export default function PaieAvancesPage() {
     if (!demande) return;
     
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'paie-avances',
       action: 'approve',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Avance ${demande.amount} FCFA approuvée pour ${demande.agent}`,
-      status: 'success',
-      hash: `SHA3-256:paie_${Date.now().toString(16)}`,
     });
     addToast('Avance validée - Trace RH + Finance créée', 'success');
     setShowDoubleControl(null);
@@ -121,12 +124,14 @@ export default function PaieAvancesPage() {
     if (!demande) return;
     
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'paie-avances',
       action: 'reject',
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Avance refusée: ${reason || 'Motif non spécifié'}`,
-      status: 'warning',
     });
     addToast('Demande refusée', 'error');
   };

@@ -15,12 +15,14 @@ export default function OrganigrammePage() {
 
   const handleUpdatePosition = (position: string) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'organigramme',
       action: 'update_position',
       targetId: position,
       targetType: 'Position',
       details: `Demande modification poste: ${position}`,
-      status: 'info',
     });
     addToast('Demande de modification soumise au DG', 'success');
   };

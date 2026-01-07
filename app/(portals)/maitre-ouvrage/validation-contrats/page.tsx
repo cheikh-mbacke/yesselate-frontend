@@ -10,6 +10,35 @@ import { BureauTag } from '@/components/features/bmo/BureauTag';
 import { contractsToSign, raciMatrix, employees } from '@/lib/data';
 import type { Contract } from '@/lib/types/bmo.types';
 
+// =========================
+// Utils robustes (money/date)
+// =========================
+const parseMoney = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const raw = String(v ?? '')
+    .replace(/\s/g, '')
+    .replace(/FCFA|XOF|F\s?CFA/gi, '')
+    .replace(/[^\d,.-]/g, '');
+  const normalized = raw.replace(/,/g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const formatFCFA = (v: unknown): string => {
+  const n = parseMoney(v);
+  return `${n.toLocaleString('fr-FR')} FCFA`;
+};
+
+const parseFRDate = (d?: string | null): Date | null => {
+  if (!d || d === '—') return null;
+  const parts = d.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yy] = parts.map((x) => Number(x));
+  if (!dd || !mm || !yy) return null;
+  // IMPORTANT: neutraliser l'heure pour éviter les écarts de J- selon l'heure locale
+  return new Date(yy, mm - 1, dd, 0, 0, 0, 0);
+};
+
 // Utilitaire pour générer un hash SHA3-256 simulé
 const generateSHA3Hash = (data: string): string => {
   let hash = 0;
@@ -26,10 +55,10 @@ const generateSHA3Hash = (data: string): string => {
 
 // Calculer les jours avant expiration
 const getDaysToExpiry = (expiryStr: string): number | null => {
-  if (expiryStr === '—' || !expiryStr) return null;
-  const [day, month, year] = expiryStr.split('/').map(Number);
-  const expiryDate = new Date(year, month - 1, day);
-  const today = new Date();
+  const expiryDate = parseFRDate(expiryStr);
+  if (!expiryDate) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const diffTime = expiryDate.getTime() - today.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
@@ -71,6 +100,7 @@ export default function ValidationContratsPage() {
     return contractsToSign.map((c) => ({
       ...c,
       daysToExpiry: getDaysToExpiry(c.expiry),
+      amountValue: parseMoney(c.amount),
     }));
   }, []);
 
@@ -106,9 +136,16 @@ export default function ValidationContratsPage() {
   const handleSign = (contract: Contract) => {
     // Vérifier RACI
     const raciCheck = checkRACIPermission(currentUser.bureau);
+
+    // ✅ RACI réellement appliqué
+    if (!raciCheck.allowed) {
+      addToast(`❌ RACI: Votre bureau (${currentUser.bureau}) n'est pas autorisé. Rôle: ${raciCheck.role}`, 'error');
+      return;
+    }
     
-    // Double contrôle obligatoire : BJ doit valider d'abord
-    if (!bjValidation && contract.bureau !== 'BMO') {
+    // ✅ Logique métier: Double contrôle BJ requis pour TOUT contrat à signer (sauf si explicitement dispensé)
+    // Si tu veux des exemptions: ajoute un champ contract.requiresBJValidation (ou type) plus tard.
+    if (!bjValidation) {
       setSelectedContract(contract);
       setDoubleValidationRequired(true);
       setShowSignModal(true);
@@ -134,6 +171,7 @@ export default function ValidationContratsPage() {
 
     addToast(`✓ ${contract.id} signé - Hash: ${hash.slice(0, 25)}...`, 'success');
     setShowSignModal(false);
+    setSelectedContract(null);
     setBjValidation(false);
     setDoubleValidationRequired(false);
   };
@@ -278,6 +316,7 @@ export default function ValidationContratsPage() {
                     onSign={() => handleSign(contract)}
                     onSendToBJ={() => handleSendToBJ(contract)}
                     onArbitrage={() => handleRequestArbitrage(contract)}
+                    onClose={() => {}}
                   />
                 ))}
               </CardContent>
@@ -297,6 +336,7 @@ export default function ValidationContratsPage() {
               onSign={() => handleSign(contract)}
               onSendToBJ={() => handleSendToBJ(contract)}
               onArbitrage={() => handleRequestArbitrage(contract)}
+              onClose={() => {}}
             />
           ))}
         </div>
@@ -305,7 +345,7 @@ export default function ValidationContratsPage() {
       {/* Modal double validation */}
       {showSignModal && selectedContract && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg">
+          <Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 🔐 Double contrôle requis
@@ -315,7 +355,7 @@ export default function ValidationContratsPage() {
               <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
                 <p className="font-bold text-sm">{selectedContract.subject}</p>
                 <p className="text-xs text-slate-400">{selectedContract.partner}</p>
-                <p className="font-mono text-amber-400 mt-2">{selectedContract.amount}</p>
+                <p className="font-mono text-amber-400 mt-2">{formatFCFA(selectedContract.amount)}</p>
               </div>
 
               {/* Étape 1: Validation BJ */}
@@ -369,6 +409,8 @@ export default function ValidationContratsPage() {
                 <Button variant="secondary" onClick={() => {
                   setShowSignModal(false);
                   setBjValidation(false);
+                  setDoubleValidationRequired(false);
+                  setSelectedContract(null);
                 }}>
                   Annuler
                 </Button>
@@ -415,12 +457,14 @@ function ContractCard({
   onSign,
   onSendToBJ,
   onArbitrage,
+  onClose,
 }: {
   contract: Contract & { daysToExpiry?: number | null };
   darkMode: boolean;
   onSign: () => void;
   onSendToBJ: () => void;
   onArbitrage: () => void;
+  onClose: () => void;
 }) {
   const isUrgent = contract.daysToExpiry !== null && contract.daysToExpiry <= 7;
   const isExpired = contract.daysToExpiry !== null && contract.daysToExpiry < 0;
@@ -448,7 +492,7 @@ function ContractCard({
             <h3 className="font-bold text-sm mt-1">{contract.subject}</h3>
           </div>
           <span className="font-mono font-bold text-lg text-amber-400">
-            {contract.amount}
+            {formatFCFA(contract.amount)}
           </span>
         </div>
 
@@ -486,7 +530,7 @@ function ContractCard({
           <Button variant="warning" onClick={onArbitrage}>
             ⚖️ Arbitrage
           </Button>
-          <Button variant="destructive">
+          <Button variant="destructive" onClick={onClose} title="Fermer / ignorer">
             ✕
           </Button>
         </div>

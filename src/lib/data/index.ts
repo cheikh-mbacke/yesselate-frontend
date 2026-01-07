@@ -64,6 +64,8 @@ export {
   missions,
   evaluations,
   criticalSkills,
+  // Factures avec décision BMO
+  facturesRecues,
 } from './bmo-mock-3';
 
 // Partie 4 - Projets & Clients - Écosystème vivant
@@ -107,3 +109,10 @@ export {
   arbitragesVivants,
   coordinationStats,
 } from './bmo-mock-6';
+
+// Avenants avec décision BMO
+export {
+  type Avenant,
+  type AvenantStatut,
+  avenants,
+} from './avenants';

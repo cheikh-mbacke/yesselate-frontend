@@ -66,7 +66,7 @@ interface BCModalTabsProps {
   onAuditComplete?: (bcId: string, report: BCAuditReport) => void; // WHY: Propager le rapport d'audit au parent
 }
 
-export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProps) {
+export function BCModalTabs({ bc, onDecision }: BCModalTabsProps) {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
   const [tab, setTab] = useState<TabKey>("analyse");
@@ -330,6 +330,10 @@ export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProp
             
             const report = await runBCAudit(bc, context);
             setAuditReport(report);
+            // WHY: Propager le rapport d'audit au parent pour mise à jour de l'état global
+            if (onAuditComplete) {
+              onAuditComplete(bc.id, report);
+            }
             setTab("analyse"); // Revenir à l'onglet Analyse pour voir les résultats
             
             addToast(
@@ -797,9 +801,43 @@ function DetailsTab({
         <CardContent>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Info label="BC" value={bc.id} darkMode={darkMode} />
-            <Info label="Date" value={safeFormatDate(bc.dateEmission)} darkMode={darkMode} />
+            <Info 
+              label="Date" 
+              value={bc.dateEmission ? (() => {
+                try {
+                  const date = new Date(bc.dateEmission);
+                  return isNaN(date.getTime()) ? '—' : date.toLocaleDateString('fr-FR');
+                } catch {
+                  return '—';
+                }
+              })() : '—'} 
+              darkMode={darkMode} 
+            />
             <Info label="Fournisseur" value={bc.fournisseur} darkMode={darkMode} />
-            <Info label="Statut" value={getStatusLabel(bc.status)} darkMode={darkMode} />
+            <Info 
+              label="Statut" 
+              value={(() => {
+                const statusMap: Record<string, string> = {
+                  pending: 'En attente',
+                  anomaly_detected: 'Anomalie détectée',
+                  correction_requested: 'Correction demandée',
+                  correction_in_progress: 'Correction en cours',
+                  corrected: 'Corrigé',
+                  validated: 'Validé',
+                  rejected: 'Refusé',
+                  draft_ba: 'Brouillon BA',
+                  pending_bmo: 'En attente BMO',
+                  audit_required: 'Audit requis',
+                  in_audit: 'Audit en cours',
+                  approved_bmo: 'Approuvé BMO',
+                  rejected_bmo: 'Refusé BMO',
+                  sent_supplier: 'Envoyé fournisseur',
+                  needs_complement: 'Complément requis',
+                };
+                return statusMap[bc.status] || bc.status;
+              })()} 
+              darkMode={darkMode} 
+            />
             <Info label="Mode de paiement" value={bc.paiement?.mode || "—"} darkMode={darkMode} />
             <Info label="Adresse de livraison" value={bc.livraison?.adresse || "—"} darkMode={darkMode} />
           </div>

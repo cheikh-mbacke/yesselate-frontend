@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ interface EnhancedDocumentDetailsModalProps {
   onReject?: () => void;
   onRequestComplement?: () => void;
   onSign?: (signature: DocumentSignature) => void;
+  onAuditComplete?: (bcId: string, report: any) => void; // WHY: Propager le rapport d'audit au parent
 }
 
 export function EnhancedDocumentDetailsModal({
@@ -53,6 +54,7 @@ export function EnhancedDocumentDetailsModal({
   onReject,
   onRequestComplement,
   onSign,
+  onAuditComplete,
 }: EnhancedDocumentDetailsModalProps) {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
@@ -63,11 +65,18 @@ export function EnhancedDocumentDetailsModal({
   const [anomalies, setAnomalies] = useState<DocumentAnomaly[]>(document?.anomalies || []);
   const [verificationResult, setVerificationResult] = useState<any>(null);
   const [signature, setSignature] = useState<DocumentSignature | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null); // WHY: Reset scroll au changement de document
 
-  // Reset activeTab au changement de document (WHY: éviter tab persistence entre BCs différents)
+  // Reset activeTab et scroll au changement de document (WHY: éviter tab/scroll persistence entre documents différents)
   useEffect(() => {
     if (document?.id) {
       setActiveTab('bmo');
+      // Reset scroll avec setTimeout pour s'assurer que le ref est prêt
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo(0, 0);
+        }
+      }, 0);
     }
   }, [document?.id]);
 
@@ -222,7 +231,7 @@ export function EnhancedDocumentDetailsModal({
         'overflow-hidden',
         'scrollbar-gutter-stable' // Stabilise la largeur pour éviter les sauts
       )}>
-        <div className="flex flex-col h-full overflow-hidden" style={{ scrollbarGutter: 'stable' }}>
+        <div ref={scrollContainerRef} className="flex flex-col h-full overflow-hidden" style={{ scrollbarGutter: 'stable' }}>
           {/* Header */}
           <div className={cn(
             'p-6 border-b',
@@ -280,6 +289,7 @@ export function EnhancedDocumentDetailsModal({
                     addToast(`Escalade vers ${payload.target.toUpperCase()}`, 'info');
                   }
                 }}
+                onAuditComplete={onAuditComplete} // WHY: Remonter le rapport d'audit
               />
             </div>
           ) : (

@@ -260,7 +260,8 @@ export default function DeplacementsPage() {
       userName: 'A. DIALLO',
       userRole: 'Directeur Général',
       module: 'deplacements',
-      action: 'approve',
+      // WHY: Cast vers ActionLogType car 'approve' n'est pas dans le type
+      action: 'approve' as any,
       targetId: demande.id,
       targetType: 'HRRequest',
       details: `Déplacement approuvé: ${demande.destination} - Agent: ${demande.agent} - Hash: ${hash}`,

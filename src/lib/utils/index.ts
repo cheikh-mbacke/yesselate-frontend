@@ -15,3 +15,5 @@ export {
   calculateBMOStats,
   type BMOStats,
 } from './bmo-stats';
+export { buildWorkInboxItems } from './work-inbox-builder';
+export { verifyDecisionHash, useHashVerification } from './verifyHash';

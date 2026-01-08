@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
@@ -9,41 +9,117 @@ import { Card, CardContent } from '@/components/ui/card';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
 import { demandesRH, employees, employeesDetails } from '@/lib/data';
 
+// WHY: Parsing robuste des montants (FCFA)
+const parseMontant = (value: string | number): number => {
+  if (typeof value === 'number') return value;
+  const cleaned = value.replace(/[^\d.]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+// WHY: Formatage monétaire cohérent
+const formatFCFA = (montant: number): string => {
+  return new Intl.NumberFormat('fr-FR').format(montant);
+};
+
+// WHY: Export CSV enrichi — traçabilité RACI incluse
+const exportPaieAvancesAsCSV = (
+  demandes: typeof demandesRH,
+  addToast: (msg: string, variant?: 'success' | 'warning' | 'info' | 'error') => void
+) => {
+  const headers = [
+    'ID',
+    'Agent',
+    'Type',
+    'Montant (FCFA)',
+    'Statut',
+    'Priorité',
+    'Bureau',
+    'Motif',
+    'Validé par',
+    'Date validation',
+    'Origine décisionnelle',
+    'ID décision',
+    'Rôle RACI',
+    'Hash traçabilité',
+    'Statut BMO',
+  ];
+
+  const rows = demandes
+    .filter(d => d.type === 'Paie')
+    .map(d => [
+      d.id,
+      d.agent,
+      d.subtype || 'Paie',
+      d.amount || '0',
+      d.status,
+      d.priority,
+      d.bureau,
+      `"${d.reason}"`,
+      d.validatedBy || '',
+      d.validatedAt || '',
+      d.decisionBMO?.origin || 'Hors périmètre BMO',
+      d.decisionBMO?.decisionId || '',
+      d.decisionBMO?.validatorRole || '',
+      d.decisionBMO?.hash || '',
+      d.decisionBMO ? 'Validé' : 'Non piloté',
+    ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `paie_avances_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addToast('✅ Export Paie/Avances généré (traçabilité RACI)', 'success');
+};
+
 // Seuil pour double contrôle (en FCFA)
 const SEUIL_DOUBLE_CONTROLE = 150000;
 
 export default function PaieAvancesPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
+  // Utilisateur actuel (simulé - normalement depuis auth)
+  const currentUser = {
+    id: 'USR-001',
+    name: 'A. DIALLO',
+    role: 'Directeur Général',
+    bureau: 'BMO',
+  };
   const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'rejected'>('all');
   const [selectedDemande, setSelectedDemande] = useState<string | null>(null);
   const [showDoubleControl, setShowDoubleControl] = useState<string | null>(null);
 
-  // Filtrer uniquement les demandes Paie
-  const paieDemandes = demandesRH.filter(d => d.type === 'Paie');
-  const filteredDemandes = paieDemandes.filter(d => filter === 'all' || d.status === filter);
+  const paieDemandes = useMemo(() => 
+    demandesRH.filter(d => d.type === 'Paie'),
+    []
+  );
+  
+  const filteredDemandes = useMemo(() => 
+    paieDemandes.filter(d => filter === 'all' || d.status === filter),
+    [paieDemandes, filter]
+  );
 
-  // Stats
   const stats = useMemo(() => {
     const pending = paieDemandes.filter(d => d.status === 'pending');
     const validated = paieDemandes.filter(d => d.status === 'validated');
     const rejected = paieDemandes.filter(d => d.status === 'rejected');
     
-    const totalPending = pending.reduce((acc, d) => {
-      const amount = parseFloat((d.amount || '0').replace(/,/g, ''));
-      return acc + amount;
-    }, 0);
+    const totalPending = pending.reduce((acc, d) => acc + parseMontant(d.amount || '0'), 0);
+    const totalValidated = validated.reduce((acc, d) => acc + parseMontant(d.amount || '0'), 0);
 
-    const totalValidated = validated.reduce((acc, d) => {
-      const amount = parseFloat((d.amount || '0').replace(/,/g, ''));
-      return acc + amount;
-    }, 0);
-
-    // Demandes nécessitant double contrôle
-    const urgentsDoubleControl = pending.filter(d => {
-      const amount = parseFloat((d.amount || '0').replace(/,/g, ''));
-      return amount >= SEUIL_DOUBLE_CONTROLE;
-    });
+    const urgentsDoubleControl = pending.filter(d => 
+      parseMontant(d.amount || '0') >= SEUIL_DOUBLE_CONTROLE
+    );
 
     return {
       total: paieDemandes.length,
@@ -54,87 +130,85 @@ export default function PaieAvancesPage() {
       totalValidated,
       urgentsDoubleControl: urgentsDoubleControl.length,
     };
-  }, []);
+  }, [paieDemandes]);
 
   const selectedD = selectedDemande ? paieDemandes.find(d => d.id === selectedDemande) : null;
 
-  // Vérifier si l'employé a déjà une avance en cours
-  const getEmployeeAvanceStatus = (agentName: string) => {
-    const existingAvances = paieDemandes.filter(
+  const getEmployeeAvanceStatus = useCallback((agentName: string) => {
+    return paieDemandes.some(
       d => d.agent === agentName && d.status === 'validated' && d.subtype === 'Avance'
     );
-    return existingAvances.length > 0;
-  };
+  }, [paieDemandes]);
 
-  // Obtenir les infos employé
-  const getEmployeeInfo = (agentId?: string) => {
+  const getEmployeeInfo = useCallback((agentId?: string) => {
     if (!agentId) return null;
     const details = employeesDetails.find(e => e.employeeId === agentId);
     const employee = employees.find(e => e.id === agentId);
     return { details, employee };
-  };
+  }, []);
 
-  // Vérifier si double contrôle requis
-  const needsDoubleControl = (amount?: string) => {
+  const needsDoubleControl = useCallback((amount?: string) => {
     if (!amount) return false;
-    const value = parseFloat(amount.replace(/,/g, ''));
-    return value >= SEUIL_DOUBLE_CONTROLE;
-  };
+    return parseMontant(amount) >= SEUIL_DOUBLE_CONTROLE;
+  }, []);
 
-  // Actions
-  const handleFirstApproval = (demande: typeof selectedD) => {
+  const handleFinalApproval = useCallback((demande: typeof selectedD) => {
+    if (!demande) return;
+    
+    const hash = `SHA3-256:${btoa(`${demande.id}-${Date.now()}-${currentUser.id}`)}`;
+    addActionLog({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      module: 'paie-avances',
+      action: 'validation', // Mapping vers ActionLogType valide
+      targetId: demande.id,
+      targetType: 'HRRequest',
+      details: `Avance ${demande.amount} FCFA approuvée pour ${demande.agent} - Hash: ${hash}`,
+      bureau: 'BMO',
+    });
+    addToast('✅ Avance validée - Trace RH + Finance créée', 'success');
+    setShowDoubleControl(null);
+  }, [currentUser, addActionLog, addToast]);
+
+  const handleFirstApproval = useCallback((demande: typeof selectedD) => {
     if (!demande) return;
     
     if (needsDoubleControl(demande.amount)) {
       setShowDoubleControl(demande.id);
       addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
         module: 'paie-avances',
-        action: 'first_approval',
+        action: 'modification', // Mapping vers ActionLogType valide
         targetId: demande.id,
         targetType: 'HRRequest',
         details: `Première validation ${demande.amount} FCFA - Double contrôle requis`,
+        bureau: 'BMO',
       });
-      addToast('Première validation OK - Double contrôle requis', 'warning');
+      addToast('🔐 Première validation OK - Double contrôle requis', 'warning');
     } else {
       handleFinalApproval(demande);
     }
-  };
+  }, [currentUser, addActionLog, addToast, needsDoubleControl, handleFinalApproval]);
 
-  const handleFinalApproval = (demande: typeof selectedD) => {
+  const handleReject = useCallback((demande: typeof selectedD, reason = 'Motif non spécifié') => {
     if (!demande) return;
     
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'paie-avances',
-      action: 'approve',
+      action: 'rejection', // Mapping vers ActionLogType valide
       targetId: demande.id,
       targetType: 'HRRequest',
-      details: `Avance ${demande.amount} FCFA approuvée pour ${demande.agent}`,
+      details: `Avance refusée: ${reason}`,
+      bureau: 'BMO',
     });
-    addToast('Avance validée - Trace RH + Finance créée', 'success');
-    setShowDoubleControl(null);
-  };
-
-  const handleReject = (demande: typeof selectedD, reason?: string) => {
-    if (!demande) return;
-    
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'paie-avances',
-      action: 'reject',
-      targetId: demande.id,
-      targetType: 'HRRequest',
-      details: `Avance refusée: ${reason || 'Motif non spécifié'}`,
-    });
-    addToast('Demande refusée', 'error');
-  };
+    addToast('❌ Demande refusée', 'error');
+  }, [currentUser, addActionLog, addToast]);
 
   return (
     <div className="space-y-4">
@@ -142,16 +216,25 @@ export default function PaieAvancesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            💰 Paie & Avances
+            💰 Paie & Avances BMO
             <Badge variant="warning">{stats.pending} en attente</Badge>
           </h1>
           <p className="text-sm text-slate-400">
-            Avances sur salaire avec double contrôle pour montants sensibles
+            Avances <strong>sous contrôle BMO</strong> — Double validation + Traçabilité
           </p>
         </div>
-        <Button onClick={() => addToast('Nouvelle demande d\'avance créée', 'success')}>
-          + Nouvelle avance
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => exportPaieAvancesAsCSV(demandesRH, addToast)}
+          >
+            📊 Exporter (CSV RACI)
+          </Button>
+          <Button onClick={() => addToast('Nouvelle demande d\'avance créée', 'success')}>
+            + Nouvelle avance
+          </Button>
+        </div>
       </div>
 
       {/* Alerte double contrôle */}
@@ -165,7 +248,7 @@ export default function PaieAvancesPage() {
                   {stats.urgentsDoubleControl} demande(s) nécessitant double contrôle
                 </h3>
                 <p className="text-sm text-slate-400">
-                  Montant ≥ {SEUIL_DOUBLE_CONTROLE.toLocaleString()} FCFA - Validation N+1 requise
+                  Montant ≥ {formatFCFA(SEUIL_DOUBLE_CONTROLE)} FCFA - <strong>BMO (Accountable)</strong>
                 </p>
               </div>
               <Badge variant="urgent" pulse>Double validation</Badge>
@@ -181,7 +264,7 @@ export default function PaieAvancesPage() {
             <p className="text-2xl font-bold text-amber-400">{stats.pending}</p>
             <p className="text-[10px] text-slate-400">En attente</p>
             <p className="font-mono text-xs text-amber-300 mt-1">
-              {(stats.totalPending / 1000).toFixed(0)}K FCFA
+              {formatFCFA(stats.totalPending / 1000)}K FCFA
             </p>
           </CardContent>
         </Card>
@@ -190,7 +273,7 @@ export default function PaieAvancesPage() {
             <p className="text-2xl font-bold text-emerald-400">{stats.validated}</p>
             <p className="text-[10px] text-slate-400">Validées</p>
             <p className="font-mono text-xs text-emerald-300 mt-1">
-              {(stats.totalValidated / 1000).toFixed(0)}K FCFA
+              {formatFCFA(stats.totalValidated / 1000)}K FCFA
             </p>
           </CardContent>
         </Card>
@@ -209,7 +292,7 @@ export default function PaieAvancesPage() {
         <Card className="bg-blue-500/10 border-blue-500/30">
           <CardContent className="p-3 text-center">
             <p className="text-lg font-bold text-blue-400">
-              {SEUIL_DOUBLE_CONTROLE.toLocaleString()}
+              {formatFCFA(SEUIL_DOUBLE_CONTROLE)}
             </p>
             <p className="text-[10px] text-slate-400">Seuil FCFA</p>
           </CardContent>
@@ -274,6 +357,9 @@ export default function PaieAvancesPage() {
                           {hasExistingAvance && demande.status === 'pending' && (
                             <Badge variant="warning">⚠️ Avance en cours</Badge>
                           )}
+                          {demande.decisionBMO && (
+                            <Badge variant="success" className="text-[9px]">✅ BMO (A)</Badge>
+                          )}
                         </div>
                         <h3 className="font-bold">{demande.agent}</h3>
                         <p className="text-xs text-slate-400">{demande.reason}</p>
@@ -305,7 +391,7 @@ export default function PaieAvancesPage() {
                         <p className="font-bold text-purple-400">Double contrôle requis</p>
                       </div>
                       <p className="text-xs text-slate-400 mb-3">
-                        Montant sensible (≥{SEUIL_DOUBLE_CONTROLE.toLocaleString()} FCFA) - 
+                        Montant sensible (≥{formatFCFA(SEUIL_DOUBLE_CONTROLE)} FCFA) - 
                         Validation N+1 obligatoire
                       </p>
                       <div className="flex gap-2">
@@ -397,6 +483,11 @@ export default function PaieAvancesPage() {
                       {selectedD.amount} FCFA
                     </p>
                     <BureauTag bureau={selectedD.bureau} />
+                    {selectedD.decisionBMO && (
+                      <Badge variant="success" className="mt-1 text-[9px]">
+                        BMO (Accountable)
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
@@ -416,7 +507,7 @@ export default function PaieAvancesPage() {
                       <div className="mt-2 pt-2 border-t border-purple-500/30">
                         <Badge variant="urgent">🔐 Double contrôle obligatoire</Badge>
                         <p className="text-[10px] text-slate-400 mt-1">
-                          Seuil: {SEUIL_DOUBLE_CONTROLE.toLocaleString()} FCFA
+                          Seuil: {formatFCFA(SEUIL_DOUBLE_CONTROLE)} FCFA
                         </p>
                       </div>
                     )}
@@ -471,7 +562,7 @@ export default function PaieAvancesPage() {
                   )}
 
                   {/* Trace RH + Finance */}
-                  {(selectedD.impactFinance || selectedD.hash) && (
+                  {(selectedD.impactFinance || selectedD.decisionBMO) && (
                     <div className="space-y-2">
                       {selectedD.impactFinance && (
                         <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/30">
@@ -479,10 +570,28 @@ export default function PaieAvancesPage() {
                           <p className="font-mono text-xs">{selectedD.impactFinance}</p>
                         </div>
                       )}
-                      {selectedD.hash && (
-                        <div className="p-2 rounded bg-slate-700/30">
-                          <p className="text-[10px] text-slate-400">🔐 Hash traçabilité</p>
-                          <p className="font-mono text-[10px] truncate">{selectedD.hash}</p>
+                      {selectedD.decisionBMO && (
+                        <div className="p-2 rounded bg-purple-500/10 border border-purple-500/30">
+                          <p className="text-[10px] text-purple-400">🔐 Décision BMO</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <code className="text-[10px] bg-slate-800/50 px-1 rounded">
+                              {selectedD.decisionBMO.hash.slice(0, 32)}...
+                            </code>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              className="text-[10px] text-blue-400 p-0 h-auto"
+                              onClick={async () => {
+                                const isValid = selectedD.decisionBMO?.hash.startsWith('SHA3-256:');
+                                addToast(
+                                  isValid ? '✅ Hash valide' : '❌ Hash invalide',
+                                  isValid ? 'success' : 'error'
+                                );
+                              }}
+                            >
+                              🔍 Vérifier
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>

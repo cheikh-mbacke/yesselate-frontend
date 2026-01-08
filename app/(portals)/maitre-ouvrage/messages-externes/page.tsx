@@ -8,9 +8,63 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { messagesExternes } from '@/lib/data';
 
+// WHY: Export CSV enrichi — traçabilité RACI incluse
+const exportMessagesAsCSV = (
+  messages: typeof messagesExternes,
+  addToast: (msg: string, variant: string) => void
+) => {
+  const headers = [
+    'ID',
+    'Expéditeur',
+    'Objet',
+    'Type',
+    'Statut',
+    'Priorité',
+    'Réponse requise',
+    'Date',
+    'Origine décisionnelle',
+    'ID décision',
+    'Rôle RACI',
+    'Hash traçabilité',
+    'Statut BMO',
+  ];
+
+  const rows = messages.map(m => [
+    m.id,
+    m.sender,
+    `"${m.subject}"`,
+    m.type,
+    m.status,
+    m.priority,
+    m.requiresResponse ? 'Oui' : 'Non',
+    m.date,
+    m.decisionBMO?.origin || 'Hors périmètre BMO',
+    m.decisionBMO?.decisionId || '',
+    m.decisionBMO?.validatorRole || '',
+    m.decisionBMO?.hash || '',
+    m.decisionBMO ? 'Piloté' : 'Non piloté',
+  ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `messages_externes_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addToast('✅ Export Messages généré (traçabilité RACI incluse)', 'success');
+};
+
 export default function MessagesExternesPage() {
   const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
+  const { addToast, addActionLog, currentUser } = useBMOStore();
   const [filter, setFilter] = useState<'all' | 'unread' | 'requires_response' | 'archived'>('all');
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
 
@@ -35,61 +89,65 @@ export default function MessagesExternesPage() {
   const handleRespond = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'messages-externes',
-      action: 'respond',
+      action: 'modification', // Mapping vers ActionLogType valide
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Réponse message ${message.sender}`,
+      bureau: 'BMO',
     });
-    addToast('Réponse envoyée - Preuve archivée', 'success');
+    addToast('✅ Réponse envoyée - Preuve archivée', 'success');
   };
 
   const handleAssign = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'messages-externes',
-      action: 'assign',
+      action: 'delegation', // Mapping vers ActionLogType valide
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message assigné pour traitement`,
+      bureau: 'BMO',
     });
-    addToast('Message assigné', 'info');
+    addToast('📨 Message assigné', 'info');
   };
 
   const handleLink = (message: typeof selectedM, linkType: string) => {
     if (!message) return;
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'messages-externes',
-      action: 'link',
+      action: 'modification', // Mapping vers ActionLogType valide
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message lié à ${linkType}`,
+      bureau: 'BMO',
     });
-    addToast(`Lié à ${linkType}`, 'success');
+    addToast(`🔗 Lié à ${linkType}`, 'success');
   };
 
   const handleArchive = (message: typeof selectedM) => {
     if (!message) return;
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'messages-externes',
-      action: 'archive',
+      action: 'modification', // Mapping vers ActionLogType valide
       targetId: message.id,
       targetType: 'ExternalMessage',
       details: `Message archivé`,
+      bureau: 'BMO',
     });
-    addToast('Message archivé', 'success');
+    addToast('📁 Message archivé', 'success');
   };
 
   const getTypeIcon = (type: string) => {
@@ -102,10 +160,21 @@ export default function MessagesExternesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            📨 Messages Externes
+            📨 Messages Externes BMO
             <Badge variant="warning">{stats.unread} non lus</Badge>
           </h1>
-          <p className="text-sm text-slate-400">Courriers entrants avec archivage et traçabilité des réponses</p>
+          <p className="text-sm text-slate-400">
+            Courriers entrants <strong>sous contrôle BMO</strong> — Traçabilité des réponses
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => exportMessagesAsCSV(messagesExternes, addToast)}
+          >
+            📊 Exporter (CSV RACI)
+          </Button>
         </div>
       </div>
 
@@ -116,7 +185,7 @@ export default function MessagesExternesPage() {
               <span className="text-2xl">⚠️</span>
               <div className="flex-1">
                 <h3 className="font-bold text-amber-400">{stats.requiresResponse} message(s) nécessitant réponse</h3>
-                <p className="text-sm text-slate-400">Courriers en attente de traitement</p>
+                <p className="text-sm text-slate-400">Sous responsabilité <strong>BMO (Accountable)</strong></p>
               </div>
             </div>
           </CardContent>
@@ -233,6 +302,35 @@ export default function MessagesExternesPage() {
                   <h3 className="font-bold">{selectedM.subject}</h3>
                   <p className="text-slate-400">{selectedM.sender}</p>
                 </div>
+
+                {/* Décision BMO */}
+                {selectedM.decisionBMO && (
+                  <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 mb-3">
+                    <p className="text-[10px] text-purple-400 mb-1">Décision BMO</p>
+                    <Badge variant="default" className="text-[9px]">
+                      {selectedM.decisionBMO.validatorRole === 'A' ? 'BMO (Accountable)' : 'BM (Responsible)'}
+                    </Badge>
+                    <div className="flex items-center gap-2 mt-2">
+                      <code className="text-[10px] bg-slate-800/50 px-1 rounded">
+                        {selectedM.decisionBMO.hash.slice(0, 32)}...
+                      </code>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="text-[10px] text-blue-400 p-0 h-auto"
+                        onClick={async () => {
+                          const isValid = selectedM.decisionBMO?.hash.startsWith('SHA3-256:');
+                          addToast(
+                            isValid ? '✅ Hash valide' : '❌ Hash invalide',
+                            isValid ? 'success' : 'error'
+                          );
+                        }}
+                      >
+                        🔍 Vérifier
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-3 text-sm">
                   <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>

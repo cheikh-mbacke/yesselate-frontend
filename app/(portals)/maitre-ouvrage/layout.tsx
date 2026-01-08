@@ -4,9 +4,33 @@ import { BMOLayout } from '@/components/shared/layouts/BMOLayout';
 export default function MaitreOuvrageLayout({ children }: { children: ReactNode }) {
   return (
     <BMOLayout>
-      {/* Plein écran + scroll interne propre */}
-      <div className="h-dvh w-full overflow-hidden">
-        <main className="h-full min-h-0 overflow-y-auto">{children}</main>
+      {/* Skip link (accessibilité clavier) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[9999] focus:rounded focus:bg-black focus:px-3 focus:py-2 focus:text-white"
+      >
+        Aller au contenu
+      </a>
+
+      {/* Plein écran fiable + scroll interne stable */}
+      <div className="w-full min-h-screen h-[100dvh] overflow-hidden flex flex-col">
+        <main
+          id="main-content"
+          role="main"
+          tabIndex={-1}
+          className="
+            flex-1 min-h-0
+            overflow-y-auto overscroll-contain
+            pb-[env(safe-area-inset-bottom)]
+            focus:outline-none
+          "
+          style={{
+            // évite les sauts de layout quand la scrollbar apparaît/disparaît
+            scrollbarGutter: 'stable',
+          }}
+        >
+          {children}
+        </main>
       </div>
     </BMOLayout>
   );

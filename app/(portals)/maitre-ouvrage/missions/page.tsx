@@ -10,9 +10,80 @@ import { BureauTag } from '@/components/features/bmo/BureauTag';
 import { missions, employees, projects, litiges } from '@/lib/data';
 import type { MissionStatus } from '@/lib/types/bmo.types';
 
+// WHY: Export CSV enrichi — traçabilité RACI incluse
+const exportMissionsAsCSV = (
+  missionsData: typeof missions,
+  addToast: (msg: string, variant?: 'success' | 'warning' | 'info' | 'error') => void
+) => {
+  const headers = [
+    'ID',
+    'Titre',
+    'Statut',
+    'Priorité',
+    'Progression (%)',
+    'Début',
+    'Fin',
+    'Budget (FCFA)',
+    'Impact financier',
+    'Impact juridique',
+    'Projet lié',
+    'Litige lié',
+    'Participants',
+    'Origine décisionnelle',
+    'ID décision',
+    'Rôle RACI',
+    'Hash traçabilité',
+    'Statut BMO',
+  ];
+
+  const rows = missionsData.map((m: typeof missions[0]) => [
+    m.id,
+    `"${m.title}"`,
+    m.status,
+    m.priority,
+    m.progress.toString(),
+    m.startDate,
+    m.endDate,
+    (m.budget || '').toString(),
+    m.impactFinancier || '',
+    m.impactJuridique || '',
+    m.linkedProject || '',
+    m.linkedLitigation || '',
+    m.participants.map((p: typeof m.participants[0]) => `${p.employeeName}(${p.role})`).join(', '),
+    m.decisionBMO?.origin || 'Hors périmètre BMO',
+    m.decisionBMO?.decisionId || '',
+    m.decisionBMO?.validatorRole || '',
+    m.decisionBMO?.hash || '',
+    m.decisionBMO ? 'Piloté' : 'Non piloté',
+  ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map((row: string[]) => row.join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `missions_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addToast('✅ Export Missions généré (traçabilité RACI incluse)', 'success');
+};
+
 export default function MissionsPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
+  // Utilisateur actuel (simulé - normalement depuis auth)
+  const currentUser = {
+    id: 'USR-001',
+    name: 'A. DIALLO',
+    role: 'Directeur Général',
+    bureau: 'BMO',
+  };
   const [filter, setFilter] = useState<'all' | MissionStatus>('all');
   const [selectedMission, setSelectedMission] = useState<string | null>(null);
 
@@ -50,34 +121,36 @@ export default function MissionsPage() {
   // Actions
   const handleAssign = (missionId: string) => {
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'missions',
-      action: 'assign',
+      action: 'delegation', // Mapping vers ActionLogType valide
       targetId: missionId,
       targetType: 'Mission',
       details: 'Participant assigné',
+      bureau: 'BMO',
     });
-    addToast('Participant assigné à la mission', 'success');
+    addToast('👤 Participant assigné à la mission', 'success');
   };
 
   const handlePlanifier = (missionId: string) => {
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       module: 'missions',
-      action: 'planifier',
+      action: 'modification', // Mapping vers ActionLogType valide
       targetId: missionId,
       targetType: 'Mission',
       details: 'Mission planifiée',
+      bureau: 'BMO',
     });
-    addToast('Mission planifiée', 'success');
+    addToast('📅 Mission planifiée', 'success');
   };
 
   const handleLinkProject = (missionId: string) => {
-    addToast('Sélectionnez un projet à lier', 'info');
+    addToast('🔗 Sélectionnez un projet à lier', 'info');
   };
 
   const statusConfig: Record<MissionStatus, { label: string; color: string; variant: 'success' | 'warning' | 'urgent' | 'info' | 'default' }> = {
@@ -102,20 +175,25 @@ export default function MissionsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            🎯 Missions
+            🎯 Missions Pilotées
             <Badge variant="info">{stats.total}</Badge>
           </h1>
           <p className="text-sm text-slate-400">
-            Suivi des missions et preuves de réalisation
+            Suivi <strong>sous contrôle BMO</strong> — Preuves + Traçabilité
           </p>
         </div>
-        <Button onClick={() => addToast('Nouvelle mission créée', 'success')}>
-          + Nouvelle mission
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => exportMissionsAsCSV(missions, addToast)}>
+            📊 Exporter (CSV RACI)
+          </Button>
+          <Button onClick={() => addToast('Nouvelle mission créée', 'success')}>
+            + Nouvelle mission
+          </Button>
+        </div>
       </div>
 
-      {/* Résumé */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Résumé — avec indicateur BMO */}
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <Card className={cn(
           stats.tauxRetard > 20 ? "bg-red-500/20 border-red-500/50" : "bg-amber-500/10 border-amber-500/30"
         )}>
@@ -151,6 +229,14 @@ export default function MissionsPage() {
           <CardContent className="p-3 text-center">
             <p className="text-2xl font-bold text-emerald-400">{stats.terminees}</p>
             <p className="text-[10px] text-slate-400">Complétées</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-purple-500/10 border-purple-500/30">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-purple-400">
+              {missions.filter(m => m.decisionBMO).length}
+            </p>
+            <p className="text-[10px] text-slate-400">Pilotées par BMO</p>
           </CardContent>
         </Card>
       </div>
@@ -215,6 +301,9 @@ export default function MissionsPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-slate-400">{mission.startDate} → {mission.endDate}</p>
+                      {mission.decisionBMO && (
+                        <Badge variant="success" className="mt-1 text-[9px]">✅ Piloté</Badge>
+                      )}
                     </div>
                   </div>
 
@@ -326,6 +415,35 @@ export default function MissionsPage() {
                   <h3 className="font-bold">{selectedM.title}</h3>
                   <p className="text-xs text-slate-400">Créée le {selectedM.createdAt} par {selectedM.createdBy}</p>
                 </div>
+
+                {/* Décision BMO */}
+                {selectedM.decisionBMO && (
+                  <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 mb-4">
+                    <p className="text-[10px] text-purple-400 mb-1">Décision BMO</p>
+                    <Badge variant="default" className="text-[9px]">
+                      {selectedM.decisionBMO.validatorRole === 'A' ? 'BMO (Accountable)' : 'BM (Responsible)'}
+                    </Badge>
+                    <div className="flex items-center gap-2 mt-2">
+                      <code className="text-[10px] bg-slate-800/50 px-1 rounded">
+                        {selectedM.decisionBMO.hash.slice(0, 32)}...
+                      </code>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="text-[10px] text-blue-400 p-0 h-auto"
+                        onClick={async () => {
+                          const isValid = selectedM.decisionBMO?.hash.startsWith('SHA3-256:');
+                          addToast(
+                            isValid ? '✅ Hash valide' : '❌ Hash invalide',
+                            isValid ? 'success' : 'error'
+                          );
+                        }}
+                      >
+                        🔍 Vérifier
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Objectifs détaillés */}
                 <div className="mb-4">

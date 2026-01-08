@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
+import { Logger } from '@/lib/services/logger';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +25,8 @@ import {
   AIAssistantModal,
   EnhancedDocumentDetailsModal,
   EnhancedStatsBanner,
+  BCComparisonModal,
+  BatchActionsModal,
   type TabType,
 } from '@/components/features/bmo/validation-bc';
 import { BCRowActions } from '@/components/features/bmo/validation-bc/BCRowActions';
@@ -48,7 +51,7 @@ import type {
   DocumentSignature,
   DocumentStatus 
 } from '@/lib/types/document-validation.types';
-import { Eye, CheckCircle, XCircle, FileText, TrendingUp, AlertTriangle, MessageSquare, Clock, Search } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, FileText, TrendingUp, AlertTriangle, MessageSquare, Clock, Search, GitCompare, Layers } from 'lucide-react';
 import { usePageNavigation, useCrossPageLinks } from '@/hooks/usePageNavigation';
 import { useAutoSyncCounts } from '@/hooks/useAutoSync';
 import { runBCAudit, isAuditRequiredForValidation } from '@/lib/services/bc-audit.service';
@@ -154,6 +157,9 @@ export default function ValidationBCPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'en_attente' | 'corriges' | 'valides'>('all');
   const [factureStatusFilter, setFactureStatusFilter] = useState<'en_attente' | 'valides' | 'rejetes'>('en_attente');
   const [avenantStatusFilter, setAvenantStatusFilter] = useState<'en_attente' | 'valides' | 'rejetes'>('en_attente');
+  
+  // États pour l'audit BC (loupe)
+  const [auditReports, setAuditReports] = useState<Record<string, { report: any; passed: boolean }>>({});
 
   // Utilisateur actuel (simulé - normalement depuis auth)
   const currentUser = {
@@ -208,6 +214,12 @@ export default function ValidationBCPage() {
   const [selectedEnrichedDoc, setSelectedEnrichedDoc] = useState<EnrichedBC | EnrichedFacture | EnrichedAvenant | null>(null);
   const [showEnhancedDetailsModal, setShowEnhancedDetailsModal] = useState(false);
   const [selectedDocType, setSelectedDocType] = useState<'bc' | 'facture' | 'avenant'>('bc');
+  // WHY: Sélection multiple pour comparaison BC
+  // WHY: Sélection multiple pour comparaison BC et actions en lot
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedBCsForComparison, setSelectedBCsForComparison] = useState<string[]>([]);
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
+  const [showBatchActionsModal, setShowBatchActionsModal] = useState(false);
   
   // Hook pour l'audit BC
   const bcAudit = useBcAudit();
@@ -268,6 +280,13 @@ export default function ValidationBCPage() {
       return;
     }
 
+    // 4. Vérifier que l'audit "loupe" est requis et passé
+    const auditInfo = auditReports[bc.id];
+    if (!auditInfo || !auditInfo.passed) {
+      addToast('🔒 Audit "loupe" requis avant validation BMO', 'warning');
+      return;
+    }
+
     const hash = generateSHA3Hash(`${bc.id}-${currentUser.id}-validate`);
     const decisionId = `DEC-${Date.now().toString().slice(-8)}`;
 
@@ -281,7 +300,7 @@ export default function ValidationBCPage() {
       targetId: bc.id,
       targetType: 'Bon de commande',
       targetLabel: bc.subject,
-      details: `BC validé - Montant: ${bc.amount} FCFA - Decision: ${decisionId} - Hash: ${hash}`,
+      details: `BC validé - Montant: ${bc.amount} FCFA - Decision: ${decisionId} - Hash: ${hash} - Audit: OK`,
       bureau: bc.bureau,
     });
 
@@ -421,6 +440,28 @@ export default function ValidationBCPage() {
       // Convertir en BonCommande
       const bonCommande = convertEnrichedBCToBonCommande(bc);
       
+      // 1. Vérifier que le BC est homogène (toutes les lignes ont le même familyCode que le BC)
+      if (bonCommande.lines && bonCommande.lines.length > 0) {
+        const isHomogeneous = bonCommande.lines.every(line => line.familyCode === bonCommande.familyCode);
+        
+        if (!isHomogeneous) {
+          addToast('❌ BC non homogène — split requis', 'error');
+          addActionLog({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.role,
+            action: 'audit',
+            module: 'validation-bc',
+            targetId: bc.id,
+            targetType: 'Bon de commande',
+            targetLabel: bc.objet,
+            details: 'Tentative d\'audit bloquée : BC non homogène (lignes avec familyCode différents)',
+            bureau: 'BMO',
+          });
+          return;
+        }
+      }
+      
       // Préparer le contexte d'audit
       const auditContext = {
         seuilBmo: 5_000_000,
@@ -454,6 +495,13 @@ export default function ValidationBCPage() {
         } : undefined,
       });
       
+      // 3. Stocker le rapport et déterminer si l'audit est passé
+      const auditPassed = domainReport.recommendation === 'approve';
+      setAuditReports(prev => ({
+        ...prev,
+        [bc.id]: { report: legacyReport, passed: auditPassed },
+      }));
+      
       // Mettre à jour le BC avec le rapport d'audit (WHY: calculer nextDoc avant setState pour éviter stale closure)
       const nextDoc: EnrichedBC = {
         ...bc,
@@ -470,8 +518,10 @@ export default function ValidationBCPage() {
       addToast(
         domainReport.recommendation === 'reject' || domainReport.risk === 'critical'
           ? `🔍 Audit terminé : ${domainReport.anomalies.length} anomalie(s) bloquante(s) détectée(s)`
+          : auditPassed
+          ? `✅ Audit terminé : Validation autorisée`
           : `🔍 Audit terminé : Risque ${domainReport.risk}, Recommandation: ${domainReport.recommendation}`,
-        domainReport.recommendation === 'reject' || domainReport.risk === 'critical' ? 'error' : 'success'
+        domainReport.recommendation === 'reject' || domainReport.risk === 'critical' ? 'error' : auditPassed ? 'success' : 'warning'
       );
       
       addActionLog({
@@ -483,11 +533,12 @@ export default function ValidationBCPage() {
         targetId: bc.id,
         targetType: 'Bon de commande',
         targetLabel: bc.objet,
-        details: `Audit complet exécuté. Risque: ${domainReport.risk}, Recommandation: ${domainReport.recommendation}, Anomalies: ${domainReport.anomalies.length}`,
+        details: `Audit complet exécuté. Risque: ${domainReport.risk}, Recommandation: ${domainReport.recommendation}, Anomalies: ${domainReport.anomalies.length}, Homogène: oui`,
         bureau: 'BMO',
       });
     } catch (error) {
-      console.error('Erreur lors de l\'audit BC:', error);
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      Logger.error('Erreur lors de l\'audit BC', errorObj, { bcId: bc.id });
       addToast('Erreur lors de l\'exécution de l\'audit', 'error');
     }
   };
@@ -962,7 +1013,7 @@ export default function ValidationBCPage() {
       {/* Options de vue (seulement pour BC) */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
         {activeTab === 'bc' && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
             <Button size="xs" variant={groupMode === 'project' ? 'default' : 'ghost'} onClick={() => setGroupMode('project')}>
               Par projet
             </Button>
@@ -972,6 +1023,42 @@ export default function ValidationBCPage() {
             <Button size="xs" variant={groupMode === 'list' ? 'default' : 'ghost'} onClick={() => setGroupMode('list')}>
               Liste
             </Button>
+            {/* Mode sélection pour comparaison */}
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-700/30">
+              <Button
+                size="xs"
+                variant={selectionMode ? 'default' : 'ghost'}
+                onClick={() => {
+                  setSelectionMode(!selectionMode);
+                  if (selectionMode) {
+                    setSelectedBCsForComparison([]);
+                  }
+                }}
+              >
+                <GitCompare className="w-3 h-3 mr-1" />
+                Sélection ({selectedBCsForComparison.length})
+              </Button>
+              {selectedBCsForComparison.length >= 2 && selectedBCsForComparison.length <= 3 && (
+                <Button
+                  size="xs"
+                  variant="info"
+                  onClick={() => setShowComparisonModal(true)}
+                >
+                  <GitCompare className="w-3 h-3 mr-1" />
+                  Comparer ({selectedBCsForComparison.length})
+                </Button>
+              )}
+              {selectedBCsForComparison.length >= 1 && (
+                <Button
+                  size="xs"
+                  variant="default"
+                  onClick={() => setShowBatchActionsModal(true)}
+                >
+                  <Layers className="w-3 h-3 mr-1" />
+                  Actions en lot ({selectedBCsForComparison.length})
+                </Button>
+              )}
+            </div>
           </div>
         )}
         <Button
@@ -1429,7 +1516,25 @@ export default function ValidationBCPage() {
                   <table className="w-full text-xs min-w-[800px]">
                     <thead className="sticky top-0 z-10">
                       <tr className={darkMode ? 'bg-slate-700/90 backdrop-blur-sm' : 'bg-gray-100'}>
-                        <th className="px-3 py-3 text-left font-bold text-amber-500 sticky left-0 bg-inherit z-10 min-w-[120px]">BC</th>
+                        {selectionMode && (
+                          <th className="px-3 py-3 text-center font-bold text-amber-500 sticky left-0 bg-inherit z-10 min-w-[40px]">
+                            <input
+                              type="checkbox"
+                              checked={selectedBCsForComparison.length === filteredBCs.length && filteredBCs.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedBCsForComparison(filteredBCs.map(bc => bc.id));
+                                } else {
+                                  setSelectedBCsForComparison([]);
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                          </th>
+                        )}
+                        <th className="px-3 py-3 text-left font-bold text-amber-500 sticky left-0 bg-inherit z-10 min-w-[120px]" style={{ left: selectionMode ? '40px' : '0' }}>
+                          BC
+                        </th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[120px]">Projet</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[200px]">Objet</th>
                         <th className="px-3 py-3 text-left font-bold text-amber-500 min-w-[150px]">Fournisseur</th>
@@ -1451,9 +1556,30 @@ export default function ValidationBCPage() {
                           'border-t transition-colors hover:bg-slate-700/20',
                           darkMode ? 'border-slate-700/50' : 'border-gray-100',
                           status === 'anomaly_detected' && 'bg-red-500/5',
-                          status === 'validated' && 'bg-emerald-500/5'
+                          status === 'validated' && 'bg-emerald-500/5',
+                          selectedBCsForComparison.includes(bc.id) && 'bg-blue-500/10 border-blue-500/30'
                         )}>
-                          <td className="px-3 py-3 sticky left-0 bg-inherit z-10">
+                          {selectionMode && (
+                            <td className="px-3 py-3 text-center sticky left-0 bg-inherit z-10">
+                              <input
+                                type="checkbox"
+                                checked={selectedBCsForComparison.includes(bc.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    if (selectedBCsForComparison.length < 3) {
+                                      setSelectedBCsForComparison([...selectedBCsForComparison, bc.id]);
+                                    } else {
+                                      addToast('Maximum 3 BCs peuvent être comparés simultanément', 'warning');
+                                    }
+                                  } else {
+                                    setSelectedBCsForComparison(selectedBCsForComparison.filter(id => id !== bc.id));
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                            </td>
+                          )}
+                          <td className="px-3 py-3 sticky left-0 bg-inherit z-10" style={{ left: selectionMode ? '40px' : '0' }}>
                             <span className="font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[11px]">
                               {bc.id}
                             </span>
@@ -2009,6 +2135,47 @@ export default function ValidationBCPage() {
         }}
       />
 
+      {/* Modal de Comparaison BC */}
+      {activeTab === 'bc' && (
+        <BCComparisonModal
+          isOpen={showComparisonModal}
+          onClose={() => {
+            setShowComparisonModal(false);
+            setSelectionMode(false);
+            setSelectedBCsForComparison([]);
+          }}
+          selectedBCs={(() => {
+            // WHY: Récupérer les BCs sélectionnés (enriched ou raw) pour comparaison
+            return selectedBCsForComparison.map(id => {
+              const enriched = enrichedBCsState.find(bc => bc.id === id);
+              if (enriched) return enriched;
+              const raw = bcToValidate.find(bc => bc.id === id);
+              if (raw) return raw;
+              return null;
+            }).filter(Boolean) as (EnrichedBC | PurchaseOrder)[];
+          })()}
+          allBCs={[...bcToValidate, ...enrichedBCsState]}
+          onValidateBatch={(bcIds) => {
+            bcIds.forEach(id => {
+              const bc = bcToValidate.find(b => b.id === id);
+              if (bc) handleValidateBC(bc);
+            });
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowComparisonModal(false);
+          }}
+          onRejectBatch={(bcIds, reason) => {
+            bcIds.forEach(id => {
+              const bc = bcToValidate.find(b => b.id === id);
+              if (bc) handleRejectBC(bc, reason);
+            });
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowComparisonModal(false);
+          }}
+        />
+      )}
+
       {/* Modale de détails enrichie - key pour forcer reset au changement de BC */}
       {selectedEnrichedDoc && (
         <EnhancedDocumentDetailsModal
@@ -2020,6 +2187,7 @@ export default function ValidationBCPage() {
           }}
           document={selectedEnrichedDoc}
           documentType={selectedDocType}
+          allBCs={[...bcToValidate, ...enrichedBCsState]} // WHY: Pour recommandations contextuelles
           onAuditComplete={(bcId, report) => {
             // ✅ éviter stale state
             if (selectedDocType === 'bc') {
@@ -2079,6 +2247,85 @@ export default function ValidationBCPage() {
           }}
           onSign={(signature) => {
             addToast(`Document signé: ${signature.signatureHash.slice(0, 20)}...`, 'success');
+          }}
+        />
+      )}
+
+      {/* Modal de Batch Actions */}
+      {activeTab === 'bc' && (
+        <BatchActionsModal
+          isOpen={showBatchActionsModal}
+          onClose={() => {
+            setShowBatchActionsModal(false);
+            setSelectionMode(false);
+            setSelectedBCsForComparison([]);
+          }}
+          selectedBCIds={selectedBCsForComparison}
+          allBCs={[...bcToValidate, ...enrichedBCsState]}
+          onValidate={(ids) => {
+            ids.forEach(id => {
+              const bc = bcToValidate.find(b => b.id === id);
+              if (bc) handleValidateBC(bc);
+            });
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowBatchActionsModal(false);
+          }}
+          onReject={(ids, reason) => {
+            ids.forEach(id => {
+              const bc = bcToValidate.find(b => b.id === id);
+              if (bc) handleRejectBC(bc, reason);
+            });
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowBatchActionsModal(false);
+          }}
+          onRequestComplement={(ids, message) => {
+            ids.forEach(id => {
+              const bc = bcToValidate.find(b => b.id === id);
+              if (bc) {
+                handleRequestDocument(bc);
+                addActionLog({
+                  userId: currentUser.id,
+                  userName: currentUser.name,
+                  userRole: currentUser.role,
+                  action: 'modification',
+                  module: 'validation-bc',
+                  targetId: id,
+                  targetType: 'Bon de commande',
+                  targetLabel: bc.subject,
+                  details: `Demande de complément (lot): ${message}`,
+                  bureau: bc.bureau,
+                });
+              }
+            });
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowBatchActionsModal(false);
+          }}
+          onExport={(ids, format) => {
+            addToast(`Export ${format.toUpperCase()} lancé pour ${ids.length} BC(s)`, 'success');
+            // TODO: Implémenter l'export réel
+          }}
+          onAssign={(ids, assignee) => {
+            ids.forEach(id => {
+              addActionLog({
+                userId: currentUser.id,
+                userName: currentUser.name,
+                userRole: currentUser.role,
+                action: 'modification',
+                module: 'validation-bc',
+                targetId: id,
+                targetType: 'Bon de commande',
+                targetLabel: `BC ${id}`,
+                details: `Assigné à ${assignee} (action en lot)`,
+                bureau: 'BMO',
+              });
+            });
+            addToast(`${ids.length} BC(s) assigné(s) à ${assignee}`, 'success');
+            setSelectedBCsForComparison([]);
+            setSelectionMode(false);
+            setShowBatchActionsModal(false);
           }}
         />
       )}

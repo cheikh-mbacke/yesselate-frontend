@@ -267,7 +267,7 @@ export default function EchangesBureauxPage() {
     if (!echange) return;
 
     const reason =
-      window.prompt('Motif d'escalade (trace audit) :', 'Blocage inter-bureaux / arbitrage DG requis') ||
+      window.prompt('Motif d\'escalade (trace audit) :', 'Blocage inter-bureaux / arbitrage DG requis') ||
       'Arbitrage DG requis';
     const hash = generateHash(`${echange.id}-${Date.now()}-escalate-${reason}`);
 

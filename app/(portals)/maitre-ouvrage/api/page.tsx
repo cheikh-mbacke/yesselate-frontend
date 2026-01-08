@@ -61,7 +61,8 @@ const isEndpointIssue = (e: ApiEndpoint) =>
   e.status === 'error' || e.status === 'degraded';
 
 const isIntegrationIssue = (i: ApiIntegration) =>
-  i.status === 'error' || i.status === 'degraded' || (i as any)?.status === 'disconnected' || Boolean(i.credentials?.rotationRequired);
+  // WHY: Vérifier les statuts possibles avec cast pour 'degraded' qui n'est pas dans le type
+  i.status === 'error' || (i as any)?.status === 'degraded' || (i as any)?.status === 'disconnected' || Boolean(i.credentials?.rotationRequired);
 
 const safeCopy = async (text: string) => {
   try {
@@ -1057,7 +1058,7 @@ export default function ApiPage() {
                 />
                 <CmdItem
                   label="🔑 Rotation en masse"
-                  hint="Toutes les intégrations "rotationRequired""
+                  hint='Toutes les intégrations "rotationRequired"'
                   onClick={() => {
                     rotateAllRequired();
                     setCmdOpen(false);

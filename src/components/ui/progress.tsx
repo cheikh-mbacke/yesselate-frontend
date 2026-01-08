@@ -1,38 +1,38 @@
-import * as React from 'react';
+// ============================================
+// Composant Progress pour les barres de progression
+// ============================================
+
 import { cn } from '@/lib/utils';
 
-interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
-  value: number;
-  max?: number;
+interface ProgressProps {
+  value: number; // 0-100
+  className?: string;
+  variant?: 'default' | 'success' | 'warning' | 'error';
 }
 
-const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
-  ({ className, value, max = 100, ...props }, ref) => {
-    const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
+export function Progress({ value, className, variant = 'default' }: ProgressProps) {
+  const clampedValue = Math.min(100, Math.max(0, value));
 
-    return (
+  const variantClasses = {
+    default: 'bg-blue-500',
+    success: 'bg-emerald-500',
+    warning: 'bg-amber-500',
+    error: 'bg-red-500',
+  };
+
+  return (
+    <div
+      className={cn('w-full h-2 bg-slate-700 rounded-full overflow-hidden', className)}
+      role="progressbar"
+      aria-valuenow={clampedValue}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Progression: ${clampedValue}%`}
+    >
       <div
-        ref={ref}
-        className={cn(
-          'relative h-2 w-full overflow-hidden rounded-full bg-slate-700',
-          className
-        )}
-        {...props}
-      >
-        <div
-          className={cn(
-            'h-full w-full flex-1 transition-all duration-300',
-            percentage >= 80 ? 'bg-emerald-500' :
-            percentage >= 60 ? 'bg-amber-500' :
-            'bg-red-500'
-          )}
-          style={{ transform: `translateX(-${100 - percentage}%)` }}
-        />
-      </div>
-    );
-  }
-);
-Progress.displayName = 'Progress';
-
-export { Progress };
-
+        className={cn('h-full transition-all duration-300', variantClasses[variant])}
+        style={{ width: `${clampedValue}%` }}
+      />
+    </div>
+  );
+}

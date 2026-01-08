@@ -1,317 +1,4530 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useDeferredValue, memo, useRef, lazy, Suspense } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-
-import {
-  ActivityPlanningModal,
-  ActivityDetailsPanel,
-  RescheduleSimulator,
-  PilotingStatistics,
-} from '@/components/features/bmo/calendar';
-import { ModernStatistics } from '@/components/features/bmo/calendar/ModernStatistics';
-import { JournalCharts } from '@/components/features/bmo/calendar/JournalCharts';
-import { CalendarFilters } from '@/components/features/bmo/calendar/CalendarFilters';
-import { BMOResolveModal } from '@/components/features/bmo/calendar/BMOResolveModal';
-import { BureauTimelineView } from '@/components/features/bmo/calendar/BureauTimelineView';
-import { HeatmapView } from '@/components/features/bmo/calendar/HeatmapView';
-import { QuickActionsPanel } from '@/components/features/bmo/calendar/QuickActionsPanel';
-import { SmartSuggestions } from '@/components/features/bmo/calendar/SmartSuggestions';
-import { FocusModePanel } from '@/components/features/bmo/calendar/FocusModePanel';
-import { CalendarSidebar } from '@/components/features/bmo/calendar/CalendarSidebar';
-import { CalendarRibbon } from '@/components/features/bmo/calendar/CalendarRibbon';
-import { WorkWeekView } from '@/components/features/bmo/calendar/WorkWeekView';
-import { CalendarNavigationBar } from '@/components/features/bmo/calendar/CalendarNavigationBar';
-import {
-  ModernCalendarGrid,
-  IntelligentDashboard,
-  AlternativeCalendarView,
-} from '@/components/features/bmo/calendar';
-import { EscalateToBMOModal } from '@/components/features/bmo/alerts/EscalateToBMOModal';
-import { AdvancedSearch } from '@/components/features/bmo/calendar/AdvancedSearch';
-import { CalendarExport } from '@/components/features/bmo/calendar/CalendarExport';
-
-import {
-  agendaEvents,
-  plannedAbsences,
+import { Input } from '@/components/ui/input';
+import { 
+  agendaEvents, 
+  paymentsN1, 
+  contractsToSign, 
   blockedDossiers,
-  paymentsN1,
-  contractsToSign,
-  bureaux,
+  plannedAbsences 
 } from '@/lib/data';
 import type { CalendarEvent } from '@/lib/types/bmo.types';
-import { verifyDecisionHash } from '../../../../lib/utils/verifyHash';
+import { 
+  AlertTriangle, 
+  TrendingUp, 
+  Clock, 
+  Filter,
+  Download,
+  Search,
+  X,
+  CheckCircle2,
+  XCircle,
+  Calendar as CalendarIcon,
+  Users,
+  Building2,
+  Target,
+  Lightbulb,
+  BarChart3,
+  Eye,
+  EyeOff,
+  Sparkles,
+  GanttChart,
+  User,
+  Kanban,
+  TrendingDown,
+  CalendarDays,
+  Repeat,
+  FileUp,
+  Command,
+  Edit2,
+  Trash2,
+  Copy,
+  Clipboard,
+  Plus,
+  Wifi,
+  WifiOff,
+  Bell,
+  MessageSquare,
+  Share2,
+  BarChart2,
+  AtSign,
+  FileText,
+  Maximize2,
+  History as HistoryIcon,
+  GitCompare,
+  CalendarRange
+} from 'lucide-react';
+import { downloadICal } from '@/lib/utils/ical-export';
+import { generateSchedulingScenarios, type SchedulingScenario } from '@/lib/utils/auto-scheduler';
+import type { FocusMode } from '@/lib/types/calendar.types';
+import { EventModal } from './EventModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { useServiceWorker } from '@/hooks/useServiceWorker';
+import { addWeeks, addMonths, addQuarters, isBefore } from 'date-fns';
 
-type CalendarView = 'overview' | 'statistics' | 'timeline' | 'heatmap' | 'journal';
-type CalendarViewType = 'day' | 'workweek' | 'week' | 'month';
-
-type ImpactSeverity = 'critical' | 'high' | 'medium';
-
-type Blocker = {
-  id: string;
-  type: 'blocked' | 'contract' | 'payment' | 'other';
-  severity: ImpactSeverity;
-  title: string;
-  description: string;
-  bureau?: string;
-  project?: string;
-  supplier?: string;
-  situation?: string;
-  daysBlocked?: number;
-};
-
-// =============== TYPES STRONG POUR ORGA BREAKERS ===============
-interface OrgaBreakerBase {
-  id: string;
-  severity: 'critical' | 'high' | 'medium';
-  title: string;
-  description: string;
-  bureau?: string;
-  link: string;
-}
-
-interface BlockedDossierBreaker extends OrgaBreakerBase {
-  type: 'blocked';
-  daysBlocked: number;
-  project: string;
-}
-
-interface PaymentBreaker extends OrgaBreakerBase {
-  type: 'payment';
-  dueDate: string;
-}
-
-interface ContractBreaker extends OrgaBreakerBase {
-  type: 'contract';
-  supplier: string;
-}
-
-interface AbsenceBreaker extends OrgaBreakerBase {
-  type: 'absence';
-  employeeName: string;
-  startDate: string;
-  endDate: string;
-}
-
-type OrgaBreaker = BlockedDossierBreaker | PaymentBreaker | ContractBreaker | AbsenceBreaker;
-
-type BulkAction =
-  | 'complete'
-  | 'cancel'
-  | 'reschedule'
-  | 'set_priority_urgent'
-  | 'set_priority_normal'
-  | 'set_priority_critical';
-
-type SortMode =
-  | 'priority_desc'
-  | 'date_asc'
-  | 'date_desc'
-  | 'bureau'
-  | 'type'
-  | 'status';
-
-type RegisterEntry = {
-  at: string; // ISO
-  batchId?: string;
-  action: 'single' | 'bulk';
-  module: 'calendar';
-  kind: BulkAction | 'open_details' | 'create' | 'edit';
-  eventId: string;
-  title: string;
-  bureau?: string;
-  date: string;
-  time?: string;
-  priority?: string;
-  status?: string;
-  details: string;
-  hash: string; // SHA-256:...
-  userId: string;
-  userName: string;
-  userRole: string;
-};
-
-const PRIORITY_WEIGHT: Record<string, number> = {
-  critical: 120,
-  urgent: 80,
-  high: 40,
-  normal: 15,
-  low: 5,
-};
-
-function isoDate(d: Date) {
-  return d.toISOString().split('T')[0];
-}
-
-function parseHH(time?: string) {
-  if (!time) return 10;
-  const h = Number(time.split(':')[0] || 10);
-  return Number.isFinite(h) ? h : 10;
-}
-
-function daysUntil(dateIso: string) {
-  const now = new Date();
-  const d = new Date(dateIso);
-  const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  return diff;
-}
-
-function computeEventPriorityScore(e: CalendarEvent, overloadCountForDay = 0) {
-  // Score = poidsPriorité + bonus type deadline + proximité + surcharge + statut
-  const w = PRIORITY_WEIGHT[e.priority || 'normal'] ?? 10;
-
-  const isDeadline = e.type === 'deadline';
-  const d = daysUntil(e.date);
-
-  const proximity =
-    d <= 0 ? 60 : d <= 1 ? 45 : d <= 3 ? 30 : d <= 7 ? 18 : d <= 14 ? 10 : 0;
-
-  const deadlineBonus = isDeadline ? 35 : 0;
-
-  const overloadBonus = overloadCountForDay >= 5 ? 20 : overloadCountForDay >= 4 ? 12 : overloadCountForDay >= 3 ? 6 : 0;
-
-  const statusPenalty =
-    e.status === 'cancelled' ? -50 : e.status === 'completed' ? -30 : 0;
-
-  const score = Math.round(w + proximity + deadlineBonus + overloadBonus + statusPenalty);
-  return score;
-}
-
+// Helpers pour traçabilité avec hash
 async function sha256Hex(input: string) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(input));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  const enc = new TextEncoder().encode(input);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Utilitaire pour générer un hash SHA3-256 simulé
-function generateSHA3Hash(data: string): string {
-  let hash = 0;
-  const timestamp = Date.now();
-  const combined = `${data}-${timestamp}`;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+function stableStringify(obj: unknown) {
+  return JSON.stringify(obj, Object.keys(obj as any).sort());
+}
+
+function logWithHash(addActionLog: any, baseLog: any, payload: unknown) {
+  void (async () => {
+    try {
+      const h = await sha256Hex(stableStringify(payload));
+      addActionLog({ ...baseLog, details: `${baseLog.details ?? ''} | hash:${h}` });
+    } catch {
+      addActionLog(baseLog);
+    }
+  })();
+}
+
+type CalendarView = 'week' | 'day' | 'month' | 'agenda' | 'gantt' | 'resource' | 'kanban';
+export type Priority = 'critical' | 'urgent' | 'normal';
+export type Severity = 'critical' | 'warning' | 'info' | 'success';
+export type Status = 'open' | 'done' | 'snoozed' | 'ack' | 'blocked';
+
+export type CalendarKind =
+  | 'meeting'
+  | 'site-visit'
+  | 'validation'
+  | 'payment'
+  | 'contract'
+  | 'deadline'
+  | 'absence'
+  | 'project'
+  | 'event'
+  | 'sortie'
+  | 'other';
+
+type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'quarterly';
+
+type EventFormData = {
+  title: string;
+  description: string;
+  kind: CalendarKind;
+  bureau?: string;
+  assignees: { id: string; name: string }[];
+  start: Date;
+  end: Date;
+  priority: Priority;
+  severity: Severity;
+  status: Status;
+  project?: string;
+  recurrence: RecurrenceType;
+  recurrenceEnd?: Date;
+  notation?: number; // 0-5 étoiles
+  notes?: string;
+};
+
+export type CalendarItem = {
+  id: string;
+  title: string;
+  description?: string;
+  kind: CalendarKind;
+  bureau?: string;
+  assignees?: { id: string; name: string }[];
+  start: string; // ISO
+  end: string; // ISO
+  priority: Priority;
+  severity: Severity;
+  status: Status;
+  linkedTo?: { type: string; id: string; label?: string };
+  slaDueAt?: string; // ISO
+  project?: string;
+  originalSource?: 'agenda' | 'payment' | 'contract' | 'blocked' | 'absence';
+  reminders?: Reminder[]; // Rappels configurés
+  notes?: Note[]; // Notes/commentaires sur l'événement
+};
+
+type Reminder = {
+  id: string;
+  minutesBefore: number; // Minutes avant l'événement
+  notified: boolean; // Si la notification a déjà été envoyée
+};
+
+type Note = {
+  id: string;
+  content: string;
+  author: { id: string; name: string };
+  timestamp: string; // ISO
+  mentions?: string[]; // IDs des personnes mentionnées
+};
+
+type SLAStatus = {
+  itemId: string;
+  isOverdue: boolean;
+  daysOverdue: number;
+  status: 'ok' | 'warning' | 'blocked' | 'needs_substitution';
+  recommendation?: string;
+};
+
+const BUREAUX = ['BMO', 'BFC', 'BMCM', 'BAA', 'BCT', 'BACQ', 'BJ'] as const;
+const CAPACITY_BY_BUREAU: Record<string, number> = {
+  BMO: 8 * 60, // 8h en minutes
+  BFC: 6 * 60,
+  BMCM: 6 * 60,
+  BAA: 6 * 60,
+  BCT: 8 * 60,
+  BACQ: 6 * 60,
+  BJ: 6 * 60,
+};
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+const startOfWeek = (d: Date) => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Lundi = 1
+  return new Date(date.setDate(diff));
+};
+const getDaysInMonth = (d: Date) => endOfMonth(d).getDate();
+
+function iso(d: Date) {
+  if (!d || isNaN(d.getTime())) {
+    return new Date().toISOString(); // Retourne une date valide par défaut
   }
-  const hexHash = Math.abs(hash).toString(16).padStart(16, '0');
-  return `SHA3-256:${hexHash}${Math.random().toString(16).slice(2, 10)}`;
+  return d.toISOString();
+}
+function fmtDayLabel(d: Date) {
+  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+function fmtHour(h: number) {
+  return String(h).padStart(2, '0') + ':00';
+}
+function minutesSinceStartOfDay(date: Date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+function minutesDiff(a: Date, b: Date) {
+  return Math.round((b.getTime() - a.getTime()) / 60000);
+}
+function parseFRDate(dateStr: string): Date {
+  if (!dateStr || !dateStr.includes('/')) {
+    return new Date(); // Retourne la date actuelle si le format est invalide
+  }
+  const [d, m, y] = dateStr.split('/').map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y) || m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) {
+    return new Date(); // Retourne la date actuelle si le format est invalide
+  }
+  const date = new Date(y, m - 1, d);
+  // Vérifier si la date créée est valide
+  if (isNaN(date.getTime())) {
+    return new Date(); // Retourne la date actuelle si la date est invalide
+  }
+  return date;
 }
 
-function downloadJson(filename: string, payload: unknown) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json;charset=utf-8',
+function dayKeyLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function uid(prefix = 'EVT') {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// Ne jamais générer ?x=undefined
+function buildQuery(current: URLSearchParams, patch: Record<string, string | undefined | null>) {
+  const next = new URLSearchParams(current.toString());
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined || v === null || v === '') next.delete(k);
+    else next.set(k, v);
+  }
+  const s = next.toString();
+  return s ? `?${s}` : '';
+}
+
+// Mapper les vraies données vers CalendarItem
+function mapToCalendarItems(): CalendarItem[] {
+  const items: CalendarItem[] = [];
+  const now = new Date();
+
+  // Agenda events
+  agendaEvents.forEach((evt) => {
+    const date = new Date(evt.date);
+    const time = evt.time ? evt.time.split(':') : [9, 0];
+    const start = new Date(date);
+    start.setHours(Number(time[0]), Number(time[1]), 0, 0);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+
+    items.push({
+      id: evt.id,
+      title: evt.title,
+      description: evt.location,
+      kind: evt.type === 'meeting' ? 'meeting' : evt.type === 'site' ? 'site-visit' : evt.type === 'deadline' ? 'deadline' : 'other',
+      bureau: evt.bureau,
+      assignees: evt.participants?.map((p) => ({ id: p.employeeId, name: p.name })) || [],
+      start: iso(start),
+      end: iso(end),
+      priority: evt.priority === 'critical' ? 'critical' : evt.priority === 'urgent' ? 'urgent' : 'normal',
+      severity: evt.priority === 'critical' ? 'critical' : evt.priority === 'urgent' ? 'warning' : 'info',
+      status: evt.status === 'completed' ? 'done' : evt.status === 'cancelled' ? 'ack' : 'open',
+      project: evt.project,
+      slaDueAt: evt.type === 'deadline' ? iso(end) : undefined,
+      originalSource: 'agenda',
+    });
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+
+  // Payments
+  paymentsN1.forEach((pay) => {
+    const dueDate = parseFRDate(pay.dueDate);
+    const start = new Date(dueDate);
+    start.setHours(9, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(10, 0, 0, 0);
+
+    const daysUntil = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const isOverdue = daysUntil < 0;
+
+    items.push({
+      id: `PAY-${pay.id}`,
+      title: `Paiement ${isOverdue ? 'en retard' : 'à échéance'} — ${pay.beneficiary}`,
+      description: `${pay.amount || '—'} FCFA`,
+      kind: 'payment',
+      bureau: pay.bureau || 'BFC',
+      assignees: [{ id: 'compta', name: 'Comptabilité' }],
+      start: iso(start),
+      end: iso(end),
+      priority: isOverdue ? 'critical' : daysUntil <= 2 ? 'urgent' : 'normal',
+      severity: isOverdue ? 'critical' : daysUntil <= 2 ? 'warning' : 'info',
+      status: 'open',
+      linkedTo: { type: 'Facture', id: pay.id, label: pay.beneficiary },
+      slaDueAt: iso(dueDate),
+      originalSource: 'payment',
+    });
+  });
+
+  // Contracts
+  contractsToSign.filter((c) => c.status === 'pending').forEach((ctr) => {
+    const start = new Date();
+    start.setDate(start.getDate() + 1);
+    start.setHours(11, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(12, 0, 0, 0);
+
+    items.push({
+      id: `CTR-${ctr.id}`,
+      title: `Contrat à signer — ${ctr.subject}`,
+      description: ctr.partner,
+      kind: 'contract',
+      bureau: ctr.bureau,
+      assignees: [{ id: 'juriste', name: 'Juriste' }],
+      start: iso(start),
+      end: iso(end),
+      priority: 'urgent',
+      severity: 'warning',
+      status: 'open',
+      linkedTo: { type: 'Contrat', id: ctr.id, label: ctr.subject },
+      originalSource: 'contract',
+    });
+  });
+
+  // Blocked dossiers
+  blockedDossiers.filter((d) => d.delay >= 3).forEach((blk) => {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(11, 0, 0, 0);
+
+    items.push({
+      id: `BLK-${blk.id}`,
+      title: `Dossier bloqué ${blk.delay}j — ${blk.subject}`,
+      description: blk.reason,
+      kind: 'validation',
+      bureau: blk.bureau,
+      assignees: [{ id: blk.responsible, name: blk.responsible }],
+      start: iso(start),
+      end: iso(end),
+      priority: blk.impact === 'critical' ? 'critical' : blk.delay >= 5 ? 'urgent' : 'normal',
+      severity: blk.impact === 'critical' ? 'critical' : blk.delay >= 5 ? 'warning' : 'info',
+      status: 'blocked',
+      linkedTo: { type: blk.type, id: blk.id, label: blk.subject },
+      project: blk.project,
+      originalSource: 'blocked',
+    });
+  });
+
+  // Absences
+  plannedAbsences.forEach((abs) => {
+    const start = parseFRDate(abs.startDate);
+    const end = parseFRDate(abs.endDate);
+    end.setHours(23, 59, 59, 999);
+
+    items.push({
+      id: `ABS-${abs.id}`,
+      title: `Absence — ${abs.employeeName}`,
+      description: `${abs.type} • ${abs.startDate} → ${abs.endDate}`,
+      kind: 'absence',
+      bureau: abs.bureau,
+      assignees: [{ id: abs.employeeId, name: abs.employeeName }],
+      start: iso(start),
+      end: iso(end),
+      priority: abs.impact === 'high' ? 'urgent' : 'normal',
+      severity: abs.impact === 'high' ? 'warning' : 'info',
+      status: 'open',
+      originalSource: 'absence',
+    });
+  });
+
+  return items;
 }
 
-function dedupeById<T extends { id: string }>(arr: T[]): T[] {
-  const m = new Map<string, T>();
-  for (const item of arr) m.set(item.id, item);
-  return Array.from(m.values());
+// Conflit : overlap sur assignee OU bureau
+function detectConflicts(items: CalendarItem[]) {
+  const conflicts = new Set<string>();
+  const byDay = new Map<string, CalendarItem[]>();
+
+  for (const it of items) {
+    if (it.status === 'done' || it.status === 'ack') continue;
+    const d = dayKeyLocal(startOfDay(new Date(it.start)));
+    const arr = byDay.get(d) ?? [];
+    arr.push(it);
+    byDay.set(d, arr);
+  }
+
+  for (const arr of byDay.values()) {
+    const sorted = [...arr].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    for (let i = 0; i < sorted.length; i++) {
+      const A = sorted[i];
+      const aStart = new Date(A.start).getTime();
+      const aEnd = new Date(A.end).getTime();
+      for (let j = i + 1; j < sorted.length; j++) {
+        const B = sorted[j];
+        const bStart = new Date(B.start).getTime();
+        const bEnd = new Date(B.end).getTime();
+        if (bStart >= aEnd) break;
+
+        const overlap = bStart < aEnd && bEnd > aStart;
+        if (!overlap) continue;
+
+        const sameBureau = A.bureau && B.bureau && A.bureau === B.bureau;
+        const shareAssignee = (A.assignees ?? []).some((x) =>
+          (B.assignees ?? []).some((y) => y.id === x.id)
+        );
+
+        if (sameBureau || shareAssignee) {
+          conflicts.add(A.id);
+          conflicts.add(B.id);
+        }
+      }
+    }
+  }
+
+  return conflicts;
 }
 
-function getEventTypeMeta(type: string) {
-  const eventTypes: Record<string, { icon: string; label: string }> = {
-    meeting: { icon: '📅', label: 'Réunion' },
-    visio: { icon: '💻', label: 'Visio' },
-    deadline: { icon: '⏰', label: 'Échéance' },
-    site: { icon: '🏗️', label: 'Visite terrain' },
-    delivery: { icon: '📦', label: 'Livraison' },
-    legal: { icon: '⚖️', label: 'Juridique' },
-    inspection: { icon: '🔍', label: 'Inspection' },
-    training: { icon: '📚', label: 'Formation' },
-    hr: { icon: '👥', label: 'RH' },
-  };
-  return eventTypes[type] || { icon: '📌', label: type };
+// Charge par bureau/jour avec surcharge
+function computeLoad(items: CalendarItem[]) {
+  const load: Record<string, Record<string, { minutes: number; items: CalendarItem[] }>> = {};
+  for (const it of items) {
+    if (it.status === 'done' || it.status === 'ack') continue;
+    const bureau = it.bureau ?? 'N/A';
+    const day = dayKeyLocal(startOfDay(new Date(it.start)));
+    load[bureau] ??= {};
+    load[bureau][day] ??= { minutes: 0, items: [] };
+    load[bureau][day].minutes += Math.max(0, minutesDiff(new Date(it.start), new Date(it.end)));
+    load[bureau][day].items.push(it);
+  }
+  return load;
 }
 
-function getPriorityBadge(priority?: string) {
-  if (priority === 'critical') return 'urgent';
-  if (priority === 'urgent') return 'urgent';
-  if (priority === 'high') return 'warning';
-  return 'default';
+// Calcul SLA avec recommandations
+function computeSLA(items: CalendarItem[]): SLAStatus[] {
+  const now = new Date();
+  const slaStatuses: SLAStatus[] = [];
+
+  for (const it of items) {
+    if (!it.slaDueAt || it.status === 'done') continue;
+
+    const dueAt = new Date(it.slaDueAt);
+    const isOverdue = dueAt < now;
+    const daysOverdue = isOverdue ? Math.ceil((now.getTime() - dueAt.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+    let status: SLAStatus['status'] = 'ok';
+    let recommendation: string | undefined;
+
+    if (isOverdue) {
+      if (daysOverdue >= 3) {
+        status = 'blocked';
+        recommendation = 'Escalader immédiatement + substitution';
+      } else if (daysOverdue >= 1) {
+        status = 'needs_substitution';
+        recommendation = 'Replanifier ou substituer';
+      } else {
+        status = 'warning';
+        recommendation = 'Traiter en priorité';
+      }
+    }
+
+    slaStatuses.push({
+      itemId: it.id,
+      isOverdue,
+      daysOverdue,
+      status,
+      recommendation,
+    });
+  }
+
+  return slaStatuses;
 }
 
-function getSeverityBadge(sev: ImpactSeverity) {
+// Suggestions intelligentes
+function generateSuggestions(
+  items: CalendarItem[],
+  conflicts: Set<string>,
+  load: ReturnType<typeof computeLoad>,
+  slaStatuses: SLAStatus[]
+): Array<{ type: string; title: string; description: string; action?: () => void }> {
+  const suggestions: Array<{ type: string; title: string; description: string; action?: () => void }> = [];
+
+  // Conflits critiques
+  const criticalConflicts = Array.from(conflicts).slice(0, 3);
+  if (criticalConflicts.length > 0) {
+    suggestions.push({
+      type: 'conflict',
+      title: `${criticalConflicts.length} conflit(s) critique(s)`,
+      description: 'Replanifier pour éviter les overlaps',
+    });
+  }
+
+  // Surcharges
+  for (const [bureau, days] of Object.entries(load)) {
+    for (const [day, data] of Object.entries(days)) {
+      const capacity = CAPACITY_BY_BUREAU[bureau] || 480;
+      if (data.minutes > capacity) {
+        const percent = Math.round((data.minutes / capacity) * 100);
+        suggestions.push({
+          type: 'overload',
+          title: `Surcharge ${bureau} (${percent}%)`,
+          description: `${data.items.length} items le ${day}`,
+        });
+        break;
+      }
+    }
+  }
+
+  // SLA en retard
+  const overdueSLAs = slaStatuses.filter((s) => s.isOverdue && s.status === 'blocked');
+  if (overdueSLAs.length > 0) {
+    suggestions.push({
+      type: 'sla',
+      title: `${overdueSLAs.length} SLA bloqué(s)`,
+      description: 'Action immédiate requise',
+    });
+  }
+
+  return suggestions.slice(0, 5);
+}
+
+// Génération automatique des événements récurrents
+function generateRecurringEvents(
+  baseEvent: EventFormData,
+  recurrence: RecurrenceType,
+  recurrenceEnd?: Date
+): CalendarItem[] {
+  if (recurrence === 'none' || !recurrenceEnd) {
+    // Événement unique
+    return [
+      {
+        id: uid('EVT'),
+        title: baseEvent.title,
+        description: baseEvent.description,
+        kind: baseEvent.kind,
+        bureau: baseEvent.bureau,
+        assignees: baseEvent.assignees,
+        start: baseEvent.start.toISOString(),
+        end: baseEvent.end.toISOString(),
+        priority: baseEvent.priority,
+        severity: baseEvent.severity,
+        status: baseEvent.status,
+        project: baseEvent.project,
+      },
+    ];
+  }
+
+  const events: CalendarItem[] = [];
+  const duration = baseEvent.end.getTime() - baseEvent.start.getTime();
+  let currentDate = startOfDay(new Date(baseEvent.start));
+  const endDate = startOfDay(new Date(recurrenceEnd));
+  let occurrenceCount = 0;
+  const maxOccurrences = 365; // Limite de sécurité
+
+  while (isBefore(currentDate, endDate) && occurrenceCount < maxOccurrences) {
+    const start = new Date(currentDate);
+    start.setHours(baseEvent.start.getHours(), baseEvent.start.getMinutes(), 0, 0);
+    const end = new Date(start.getTime() + duration);
+
+    events.push({
+      id: uid('EVT'),
+      title: baseEvent.title,
+      description: baseEvent.description,
+      kind: baseEvent.kind,
+      bureau: baseEvent.bureau,
+      assignees: baseEvent.assignees,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      priority: baseEvent.priority,
+      severity: baseEvent.severity,
+      status: baseEvent.status,
+      project: baseEvent.project,
+    });
+
+    // Calculer la prochaine occurrence
+    switch (recurrence) {
+      case 'daily':
+        currentDate = addDays(currentDate, 1);
+        break;
+      case 'weekly':
+        currentDate = addWeeks(currentDate, 1);
+        break;
+      case 'monthly':
+        currentDate = addMonths(currentDate, 1);
+        break;
+      case 'quarterly':
+        currentDate = addQuarters(currentDate, 1);
+        break;
+      default:
+        break;
+    }
+
+    occurrenceCount++;
+  }
+
+  return events;
+}
+
+function severityBadgeVariant(sev: Severity) {
   if (sev === 'critical') return 'urgent';
-  if (sev === 'high') return 'warning';
+  if (sev === 'warning') return 'warning';
+  if (sev === 'success') return 'success';
   return 'info';
 }
 
-function getBreakerIconAndLabel(breaker: OrgaBreaker): { icon: string; label: string } {
-  switch (breaker.type) {
-    case 'blocked':
-      return { icon: '🚨', label: 'Dossier bloqué' };
-    case 'payment':
-      return { icon: '💳', label: 'Paiement urgent' };
-    case 'contract':
-      return { icon: '📜', label: 'Contrat en attente' };
-    case 'absence':
-      return { icon: '👤', label: 'Absence critique' };
-    default:
-      return { icon: '❓', label: 'Alerte' };
+export default function CalendrierPage() {
+  const { darkMode } = useAppStore();
+  const { addToast, addActionLog, addNotification } = useBMOStore();
+  const EventModalAny = EventModal as any;
+  
+  // Service Worker pour mode hors ligne
+  const { swState, isOnline, cacheData, getCachedData } = useServiceWorker();
+  
+  // Notifications proactives SLA - Track des notifications déjà envoyées
+  const notifiedSLAs = useRef<Set<string>>(new Set());
+  const notifiedReminders = useRef<Set<string>>(new Set());
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+
+  // Ouvrir automatiquement l'inspecteur si ?item=... dans l'URL
+  useEffect(() => {
+    const sharedId = sp.get('item');
+    if (!sharedId) return;
+    setInspectedId(sharedId);
+    setSelectedIds((prev) => ({ ...prev, [sharedId]: true }));
+  }, [sp]);
+
+  // État UI
+  const view = (sp.get('view') as CalendarView) || 'week';
+  const q = sp.get('q') || '';
+  const deferredQ = useDeferredValue(q); // Debouncing pour améliorer les performances
+  const bureauParam = sp.get('bureau') || 'ALL';
+  const priorityFilter = sp.get('priority') || 'ALL';
+  const kindFilter = sp.get('kind') || 'ALL';
+
+  const [cursorDate, setCursorDate] = useState(() => startOfDay(new Date()));
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+
+  // Presets de filtres sauvegardables
+  type FilterPreset = {
+    id: string;
+    name: string;
+    priority: Priority | 'ALL';
+    kind: CalendarKind | 'ALL';
+    bureaux: string[];
+  };
+  const [filterPresets, setFilterPresets] = useState<FilterPreset[]>(() => {
+    try {
+      const saved = localStorage.getItem('calendrier.filterPresets');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showPresetModal, setShowPresetModal] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showPresentationMode, setShowPresentationMode] = useState(false);
+  const [showPeriodComparison, setShowPeriodComparison] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
+  const [projectFilter, setProjectFilter] = useState<string>('ALL');
+  const [dateRangeFilter, setDateRangeFilter] = useState<{ start?: Date; end?: Date }>({});
+  
+  // Support mobile : gestes tactiles
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Détecter si on est sur mobile
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  const [focusMode, setFocusMode] = useState<FocusMode>({ enabled: false, showOnly: 'all' });
+  const [draggedItem, setDraggedItem] = useState<CalendarItem | null>(null);
+  const [showAutoSchedule, setShowAutoSchedule] = useState(false);
+  const [schedulingScenarios, setSchedulingScenarios] = useState<SchedulingScenario[]>([]);
+  const [items, setItems] = useState<CalendarItem[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showPredictions, setShowPredictions] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventModalDate, setEventModalDate] = useState<Date | null>(null);
+  const [editingItem, setEditingItem] = useState<CalendarItem | null>(null);
+  const [showMultiBureau, setShowMultiBureau] = useState(false);
+  
+  // Modales modernes pour remplacer window.prompt/confirm
+  const [showBureauPrompt, setShowBureauPrompt] = useState(false);
+  const [bureauPromptValue, setBureauPromptValue] = useState('');
+  const [bureauPromptCallback, setBureauPromptCallback] = useState<((value: string) => void) | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmCallback, setDeleteConfirmCallback] = useState<(() => void) | null>(null);
+  const [deleteConfirmTitle, setDeleteConfirmTitle] = useState('');
+  
+  // Historique de recherche
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('calendrier.searchHistory');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  
+  // Copier/Coller/Dupliquer
+  const [copiedItem, setCopiedItem] = useState<CalendarItem | null>(null);
+  
+  // Système Undo/Redo
+  const [history, setHistory] = useState<CalendarItem[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1);
+  
+  // Helper pour ajouter un état à l'historique
+  const addToHistory = useCallback((newItems: CalendarItem[]) => {
+    setHistory((prev) => {
+      const cutIndex = historyIndexRef.current;
+      const base = prev.slice(0, cutIndex + 1);
+
+      const snapshot = typeof structuredClone === 'function'
+        ? structuredClone(newItems)
+        : JSON.parse(JSON.stringify(newItems));
+
+      const nextHistory = [...base, snapshot].slice(-50);
+
+      historyIndexRef.current = nextHistory.length - 1;
+      setHistoryIndex(historyIndexRef.current);
+
+      return nextHistory;
+    });
+  }, []);
+  
+  // Fonction pour mettre à jour items avec historique
+  const updateItemsWithHistory = useCallback((updater: (prev: CalendarItem[]) => CalendarItem[]) => {
+    setItems((prev) => {
+      const newItems = updater(prev);
+      addToHistory(newItems);
+      return newItems;
+    });
+  }, [addToHistory]);
+  
+  // Undo
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      setItems(history[prevIndex]);
+      setHistoryIndex(prevIndex);
+      historyIndexRef.current = prevIndex;
+      addToast('↶ Action annulée', 'info');
+    }
+  }, [history, historyIndex, addToast]);
+  
+  // Redo
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      setItems(history[nextIndex]);
+      setHistoryIndex(nextIndex);
+      historyIndexRef.current = nextIndex;
+      addToast('↷ Action rétablie', 'info');
+    }
+  }, [history, historyIndex, addToast]);
+
+  // Données mappées - initialisation unique
+  const allItemsBase = useMemo(() => mapToCalendarItems(), []);
+  
+  // Validation des données CalendarItem
+  const isValidCalendarItem = useCallback((item: unknown): item is CalendarItem => {
+    if (typeof item !== 'object' || item === null) return false;
+    const it = item as Record<string, unknown>;
+    return (
+      typeof it.id === 'string' &&
+      typeof it.title === 'string' &&
+      typeof it.start === 'string' &&
+      typeof it.end === 'string' &&
+      !isNaN(new Date(it.start as string).getTime()) &&
+      !isNaN(new Date(it.end as string).getTime())
+    );
+  }, []);
+
+  // Sauvegarde automatique dans localStorage et cache Service Worker (avec debounce)
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    const t = window.setTimeout(() => {
+      try {
+        const validItems = items.filter(isValidCalendarItem);
+        if (validItems.length === 0) return;
+
+        localStorage.setItem('calendrier.items', JSON.stringify(validItems));
+        if (cacheData) cacheData(validItems);
+      } catch (error) {
+        addToast(`❌ Erreur de sauvegarde: ${error instanceof Error ? error.message : 'Inconnu'}`, 'error');
+      }
+    }, 600);
+
+    return () => window.clearTimeout(t);
+  }, [items, isValidCalendarItem, addToast, cacheData]);
+  
+  // Restaurer depuis localStorage ou cache Service Worker au montage
+  useEffect(() => {
+    let initial: CalendarItem[] | null = null;
+
+    const loadData = async () => {
+      try {
+        // Essayer localStorage d'abord
+        const saved = localStorage.getItem('calendrier.items');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const validItems = parsed.filter(isValidCalendarItem);
+            if (validItems.length > 0) {
+              initial = validItems;
+            }
+          }
+        }
+        
+        // Si pas de données dans localStorage, essayer le cache Service Worker
+        if (!initial && getCachedData) {
+          const cached = await getCachedData();
+          if (cached && Array.isArray(cached) && cached.length > 0) {
+            const validItems = cached.filter(isValidCalendarItem);
+            if (validItems.length > 0) {
+              initial = validItems;
+              // Synchroniser avec localStorage
+              localStorage.setItem('calendrier.items', JSON.stringify(validItems));
+            }
+          }
+        }
+      } catch (error) {
+        addToast(`❌ Erreur de lecture: ${error instanceof Error ? error.message : 'Inconnu'}`, 'error');
+      }
+
+      const fallback = allItemsBase.length > 0 ? allItemsBase : [];
+      const next = initial ?? fallback;
+
+      if (next.length > 0) {
+        setItems(next);
+        addToHistory(next); // Initialize history with the loaded items
+      }
+    };
+
+    loadData();
+  }, [allItemsBase, isValidCalendarItem, addToast, addToHistory, getCachedData]);
+  
+  // Afficher un indicateur de statut de connexion
+  useEffect(() => {
+    if (!isOnline) {
+      addToast('📡 Mode hors ligne activé - Les modifications seront synchronisées au retour en ligne', 'info');
+    }
+  }, [isOnline, addToast]);
+  
+  const allItems = items.length > 0 ? items : allItemsBase;
+  
+  const visibleBureaux = useMemo(() => {
+    if (showMultiBureau) return new Set<string>(BUREAUX);
+    if (bureauParam === 'ALL') return new Set<string>(BUREAUX);
+    return new Set<string>([bureauParam]);
+  }, [bureauParam, showMultiBureau]);
+
+  // Recherche sémantique améliorée
+  const parseNaturalDate = useCallback((query: string): Date | null => {
+    const q = query.toLowerCase().trim();
+    const today = startOfDay(new Date());
+    
+    if (q === 'aujourd\'hui' || q === 'today' || q === 'auj') return today;
+    if (q === 'demain' || q === 'tomorrow' || q === 'dem') return addDays(today, 1);
+    if (q === 'hier' || q === 'yesterday' || q === 'hie') return addDays(today, -1);
+    if (q === 'cette semaine' || q === 'this week') return today;
+    if (q === 'semaine prochaine' || q === 'next week') return addDays(today, 7);
+    if (q === 'semaine dernière' || q === 'last week') return addDays(today, -7);
+    if (q === 'ce mois' || q === 'this month') return today;
+    if (q === 'mois prochain' || q === 'next month') {
+      const d = new Date(today);
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    }
+    
+    return null;
+  }, []);
+  
+  // Filtrage de base (sans mode focus) - utilise deferredQ pour debouncing
+  const preFiltered = useMemo(() => {
+    const qq = deferredQ.trim().toLowerCase();
+    const naturalDate = parseNaturalDate(deferredQ);
+    
+    return allItems.filter((it) => {
+      if (visibleBureaux.size && it.bureau && !visibleBureaux.has(it.bureau)) return false;
+      if (priorityFilter !== 'ALL' && it.priority !== priorityFilter) return false;
+      if (kindFilter !== 'ALL' && it.kind !== kindFilter) return false;
+      
+      // Recherche par date naturelle
+      if (naturalDate) {
+        const itemDate = startOfDay(new Date(it.start));
+        const targetDate = startOfDay(naturalDate);
+        if (deferredQ.toLowerCase().includes('semaine')) {
+          // Pour "cette semaine", vérifier si dans la même semaine
+          const weekStart = startOfWeek(targetDate);
+          const weekEnd = addDays(weekStart, 6);
+          return itemDate >= weekStart && itemDate <= weekEnd;
+        }
+        if (deferredQ.toLowerCase().includes('mois')) {
+          // Pour "ce mois", vérifier si dans le même mois
+          return itemDate.getMonth() === targetDate.getMonth() && 
+                 itemDate.getFullYear() === targetDate.getFullYear();
+        }
+        // Pour les dates exactes (aujourd'hui, demain, etc.)
+        return dayKeyLocal(itemDate) === dayKeyLocal(targetDate);
+      }
+      
+      // Recherche textuelle
+      if (!qq) return true;
+      const hay = `${it.id} ${it.title} ${it.description ?? ''} ${it.bureau ?? ''} ${it.project ?? ''}`.toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [allItems, deferredQ, visibleBureaux, priorityFilter, kindFilter, parseNaturalDate]);
+
+  // Calculs optimisés avec cache granulaire (utilise preFiltered final)
+  const activeItems = useMemo(() => 
+    preFiltered.filter(it => it.status !== 'done' && it.status !== 'ack'),
+    [preFiltered]
+  );
+  
+  const conflicts = useMemo(() => {
+    if (activeItems.length === 0) return new Set<string>();
+    return detectConflicts(activeItems);
+  }, [activeItems]);
+  
+  const load = useMemo(() => {
+    if (activeItems.length === 0) return {};
+    return computeLoad(activeItems);
+  }, [activeItems]);
+  
+  const slaStatuses = useMemo(() => {
+    if (activeItems.length === 0) return [];
+    return computeSLA(activeItems);
+  }, [activeItems]);
+
+  // Notifications SLA en retard
+  useEffect(() => {
+    if (!slaStatuses.length) return;
+
+    for (const s of slaStatuses) {
+      if (!s.isOverdue) continue;
+      const key = `sla:${s.itemId}:${s.status}:${s.daysOverdue}`;
+      if (notifiedSLAs.current.has(key)) continue;
+
+      notifiedSLAs.current.add(key);
+
+      const it = allItems.find(x => x.id === s.itemId);
+      const title = it?.title ?? s.itemId;
+
+      addNotification?.({
+        id: uid('NOTIF'),
+        title: 'SLA en retard',
+        message: `${title} • ${s.daysOverdue}j • ${s.recommendation ?? 'Action requise'}`,
+        severity: s.status === 'blocked' ? 'critical' : 'warning',
+        module: 'calendrier',
+        targetId: s.itemId,
+        createdAt: new Date().toISOString(),
+      } as any);
+
+      addToast(`⏱️ SLA: ${title} (${s.daysOverdue}j)`, s.status === 'blocked' ? 'error' : 'warning');
+    }
+  }, [slaStatuses, allItems, addToast, addNotification]);
+
+  // Notifications pour les reminders (vérifie toutes les minutes)
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      
+      for (const it of allItems) {
+        if (!it.reminders || it.reminders.length === 0) continue;
+        if (it.status === 'done' || it.status === 'ack') continue;
+
+        const eventStart = new Date(it.start);
+        const minutesUntilEvent = (eventStart.getTime() - now.getTime()) / (1000 * 60);
+
+        for (const reminder of it.reminders) {
+          if (reminder.notified) continue;
+          
+          const key = `reminder:${it.id}:${reminder.id}`;
+          if (notifiedReminders.current.has(key)) continue;
+
+          // Vérifier si on est dans la fenêtre de notification (minutesBefore ± 1 minute)
+          if (minutesUntilEvent > 0 && minutesUntilEvent <= reminder.minutesBefore + 1 && minutesUntilEvent >= reminder.minutesBefore - 1) {
+            notifiedReminders.current.add(key);
+
+            addNotification?.({
+              id: uid('NOTIF'),
+              title: `Rappel: ${it.title}`,
+              message: `L'événement commence dans ${Math.round(minutesUntilEvent)} minute(s)`,
+              severity: 'info',
+              module: 'calendrier',
+              targetId: it.id,
+              createdAt: new Date().toISOString(),
+            } as any);
+
+            addToast(`🔔 Rappel: ${it.title} dans ${Math.round(minutesUntilEvent)} min`, 'info');
+          }
+        }
+      }
+    };
+
+    // Vérifier immédiatement
+    checkReminders();
+
+    // Puis vérifier toutes les minutes
+    const interval = setInterval(checkReminders, 60000);
+
+    return () => clearInterval(interval);
+  }, [allItems, addToast, addNotification]);
+
+  // Recherche sémantique améliorée - détecte des patterns intelligents
+  const parseSemanticQuery = useCallback((query: string) => {
+    const q = query.toLowerCase().trim();
+
+    const patterns: Record<string, (it: CalendarItem) => boolean> = {
+      'paiements en retard': (it) => it.kind === 'payment' && it.status !== 'done',
+      'paiements à échéance': (it) => it.kind === 'payment' && it.status === 'open',
+      'paiements critiques': (it) => it.kind === 'payment' && it.priority === 'critical',
+
+      'conflits': (it) => conflicts.has(it.id),
+      'surcharges': (it) => {
+        if (!it.bureau) return false;
+        const day = dayKeyLocal(startOfDay(new Date(it.start)));
+        const bureauLoad = load[it.bureau]?.[day];
+        if (!bureauLoad) return false;
+        const capacity = CAPACITY_BY_BUREAU[it.bureau] ?? 480;
+        return bureauLoad.minutes > capacity;
+      },
+
+      'sla en retard': (it) => {
+        const s = slaStatuses.find(x => x.itemId === it.id);
+        return !!s?.isOverdue;
+      },
+      'sla critiques': (it) => {
+        const s = slaStatuses.find(x => x.itemId === it.id);
+        return s?.status === 'blocked';
+      },
+
+      'terminés': (it) => it.status === 'done',
+      'annulés': (it) => it.status === 'ack',
+      'bloqués': (it) => it.status === 'blocked',
+      'en cours': (it) => it.status === 'open',
+
+      'critiques': (it) => it.priority === 'critical' || it.severity === 'critical',
+      'urgents': (it) => it.priority === 'urgent',
+
+      'réunions': (it) => it.kind === 'meeting',
+      'validations': (it) => it.kind === 'validation',
+      'contrats': (it) => it.kind === 'contract',
+      'échéances': (it) => it.kind === 'deadline',
+      'absences': (it) => it.kind === 'absence',
+    };
+
+    for (const [pattern, matcher] of Object.entries(patterns)) {
+      if (q.includes(pattern)) return matcher;
+    }
+    return null;
+  }, [conflicts, load, slaStatuses]);
+
+  // Filtrage final avec mode focus
+  const filtered = useMemo(() => {
+    let result = preFiltered;
+
+    // Recherche sémantique (si reconnue)
+    const semanticMatcher = parseSemanticQuery(deferredQ);
+    if (semanticMatcher) {
+      result = result.filter((it) => semanticMatcher(it));
+    }
+
+    // Mode Focus
+    if (focusMode.enabled) {
+      if (focusMode.showOnly === 'critical') {
+        result = result.filter((it) => it.priority === 'critical' || it.severity === 'critical');
+      } else if (focusMode.showOnly === 'my-items' && focusMode.myUserId) {
+        result = result.filter((it) =>
+          it.assignees?.some((a) => a.id === focusMode.myUserId)
+        );
+      } else if (focusMode.showOnly === 'conflicts') {
+        result = result.filter((it) => conflicts.has(it.id));
+      } else if (focusMode.showOnly === 'overdue-sla') {
+        const overdueIds = new Set(slaStatuses.filter((s) => s.isOverdue).map((s) => s.itemId));
+        result = result.filter((it) => overdueIds.has(it.id));
+      }
+    }
+
+    return result;
+  }, [preFiltered, deferredQ, parseSemanticQuery, focusMode, conflicts, slaStatuses]);
+  const suggestions = useMemo(
+    () => generateSuggestions(filtered, conflicts, load, slaStatuses),
+    [filtered, conflicts, load, slaStatuses]
+  );
+
+  // Range selon vue
+  const weekStart = useMemo(() => {
+    const d = new Date(cursorDate);
+    const dow = (d.getDay() + 6) % 7;
+    return startOfDay(addDays(d, -dow));
+  }, [cursorDate]);
+
+  const weekDays = useMemo(() => Array.from({ length: 5 }, (_, i) => startOfDay(addDays(weekStart, i))), [weekStart]);
+
+  const selectionCount = useMemo(() => Object.values(selectedIds).filter(Boolean).length, [selectedIds]);
+  const inspected = useMemo(() => filtered.find((x) => x.id === inspectedId) ?? null, [filtered, inspectedId]);
+
+  const setParam = useCallback(
+    (patch: Record<string, string | undefined | null>) => {
+      router.replace(pathname + buildQuery(sp, patch));
+    },
+    [router, pathname, sp]
+  );
+
+  // Prévisions (7 prochains jours)
+  const predictions = useMemo(() => {
+    const next7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() + i);
+      return dayKeyLocal(startOfDay(date));
+    });
+
+    return next7Days.map((day) => {
+      const dayLoad: Record<string, number> = {};
+      for (const [bureau, days] of Object.entries(load)) {
+        dayLoad[bureau] = days[day]?.minutes || 0;
+      }
+      const totalLoad = Object.values(dayLoad).reduce((sum, mins) => sum + mins, 0);
+      const maxBureauLoad = Math.max(...Object.values(dayLoad), 0);
+      const maxBureau = Object.entries(dayLoad).find(([, mins]) => mins === maxBureauLoad)?.[0] || 'N/A';
+      const capacity = CAPACITY_BY_BUREAU[maxBureau] || 480;
+      const isOverloaded = maxBureauLoad > capacity;
+
+      return {
+        date: day,
+        totalLoad,
+        maxBureau,
+        maxBureauLoad,
+        capacity,
+        isOverloaded,
+        overloadPercent: capacity > 0 ? Math.round((maxBureauLoad / capacity) * 100) : 0,
+      };
+    });
+  }, [load]);
+
+  // Vue ressource : groupement par assigné
+  const byAssignee = useMemo(() => {
+    const map = new Map<string, CalendarItem[]>();
+    for (const it of filtered) {
+      for (const assignee of it.assignees || []) {
+        if (!map.has(assignee.id)) map.set(assignee.id, []);
+        map.get(assignee.id)!.push(it);
+      }
+    }
+    return map;
+  }, [filtered]);
+
+  // Vue Kanban : groupement par statut
+  const byStatus = useMemo(() => {
+    const map = new Map<Status, CalendarItem[]>();
+    for (const it of filtered) {
+      if (!map.has(it.status)) map.set(it.status, []);
+      map.get(it.status)!.push(it);
+    }
+    return map;
+  }, [filtered]);
+
+  // Auto-scheduling
+  const handleAutoSchedule = useCallback(() => {
+    const scenarios = generateSchedulingScenarios(allItems, conflicts, load, CAPACITY_BY_BUREAU);
+    setSchedulingScenarios(scenarios);
+    setShowAutoSchedule(true);
+  }, [allItems, conflicts, load]);
+
+  // Export iCal
+  const handleExportICal = useCallback(() => {
+    downloadICal(filtered, `calendrier-${new Date().toISOString().split('T')[0]}.ics`);
+    addToast('📥 Calendrier exporté (iCal)', 'success');
+  }, [filtered, addToast]);
+  
+  // Export CSV
+  const handleExportCSV = useCallback(() => {
+    const headers = ['ID', 'Titre', 'Type', 'Bureau', 'Début', 'Fin', 'Priorité', 'Statut', 'Projet', 'Conflit', 'SLA', 'SLA_Jours'];
+    const rows = filtered.map((it) => {
+      const sla = slaStatuses.find(s => s.itemId === it.id);
+      return [
+        it.id,
+        it.title,
+        it.kind,
+        it.bureau || 'N/A',
+        new Date(it.start).toLocaleString('fr-FR'),
+        new Date(it.end).toLocaleString('fr-FR'),
+        it.priority,
+        it.status,
+        it.project || '',
+        conflicts.has(it.id) ? 'YES' : 'NO',
+        sla?.status ?? '',
+        sla?.daysOverdue ?? 0,
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `calendrier-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    addToast('📥 Calendrier exporté (CSV)', 'success');
+  }, [filtered, conflicts, slaStatuses, addToast]);
+  
+  // Export JSON
+  const handleExportJSON = useCallback(() => {
+    const payload = {
+      meta: {
+        exportedAt: new Date().toISOString(),
+        count: filtered.length,
+        filters: { q, bureau: bureauParam, priorityFilter, kindFilter, view },
+      },
+      data: filtered.map(it => ({
+        ...it,
+        conflict: conflicts.has(it.id),
+        sla: slaStatuses.find(s => s.itemId === it.id) ?? null,
+      })),
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `calendrier-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    addToast('📥 Calendrier exporté (JSON)', 'success');
+  }, [filtered, conflicts, slaStatuses, q, bureauParam, priorityFilter, kindFilter, view, addToast]);
+
+  // Gestion clic sur créneau horaire
+  const handleTimeSlotClick = useCallback((date: Date, hour: number) => {
+    const d = new Date(date);
+    d.setHours(hour, 0, 0, 0);
+    setEventModalDate(d);
+    setEditingItem(null);
+    setShowEventModal(true);
+  }, []);
+
+  // Raccourcis clavier avancés
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignorer si dans un input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (e.key !== 'Escape') return;
+      }
+
+      // Recherche
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const input = document.querySelector('input[placeholder*="Rechercher"]') as HTMLInputElement;
+        input?.focus();
+      }
+
+      // Navigation temporelle (adaptée à la vue)
+      if (e.key === 'ArrowLeft' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const offset = view === 'month' ? -30 : view === 'day' ? -1 : -7;
+        setCursorDate(addDays(cursorDate, offset));
+      }
+      if (e.key === 'ArrowRight' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const offset = view === 'month' ? 30 : view === 'day' ? 1 : 7;
+        setCursorDate(addDays(cursorDate, offset));
+      }
+      if (e.key === 'Home' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setCursorDate(startOfDay(new Date()));
+      }
+
+      // Vues
+      if (e.key === '1' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'week' });
+      }
+      if (e.key === '2' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'day' });
+      }
+      if (e.key === '3' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'gantt' });
+      }
+      if (e.key === '4' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'resource' });
+      }
+      if (e.key === '5' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'month' });
+      }
+      if (e.key === '6' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'agenda' });
+      }
+      if (e.key === '7' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setParam({ view: 'kanban' });
+      }
+
+      // Actions
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setFocusMode((prev) => ({ ...prev, enabled: !prev.enabled }));
+      }
+      if (e.key === 'o' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleAutoSchedule();
+      }
+      if (e.key === 'e' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleExportICal();
+      }
+
+      // Fermer modales
+      if (e.key === 'Escape') {
+        setInspectedId(null);
+        setShowFilters(false);
+        setShowAutoSchedule(false);
+        setShowTemplates(false);
+        setShowPredictions(false);
+        setShowShortcuts(false);
+      }
+
+      // Aide
+      if (e.key === '?' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setShowShortcuts(true);
+      }
+      
+      // Undo/Redo
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.key === 'y' && (e.ctrlKey || e.metaKey)) || (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cursorDate, setParam, handleAutoSchedule, handleExportICal, handleUndo, handleRedo, inspectedId, allItems, copiedItem, updateItemsWithHistory, addToast, view]);
+
+  // Gestion de l'événement personnalisé open-edit-modal
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ item?: CalendarItem }>;
+      const it = ce.detail?.item;
+      if (!it) return;
+      setEditingItem(it);
+      setEventModalDate(new Date(it.start));
+      setShowEventModal(true);
+    };
+
+    window.addEventListener('open-edit-modal', handler as EventListener);
+    return () => window.removeEventListener('open-edit-modal', handler as EventListener);
+  }, []);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const openInspector = (id: string) => {
+    setInspectedId(id);
+    setSelectedIds((prev) => ({ ...prev, [id]: true }));
+  };
+
+  const doMass = (action: 'done' | 'cancel' | 'replan') => {
+    if (!selectionCount) return;
+
+    const selected = new Set(Object.entries(selectedIds).filter(([, v]) => v).map(([k]) => k));
+
+    updateItemsWithHistory((prev) => prev.map((it) => {
+      if (!selected.has(it.id)) return it;
+
+      if (action === 'done') return { ...it, status: 'done' as Status };
+      if (action === 'cancel') return { ...it, status: 'ack' as Status };
+      // replan = on ne change rien ici (tu peux ouvrir la modale d'édition via scénario ensuite)
+      return it;
+    }));
+
+    addToast(`✓ Action masse: ${action} sur ${selectionCount} item(s)`, 'success');
+
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      action: `mass-${action}` as any,
+      module: 'calendrier',
+      targetId: `selection:${selectionCount}`,
+      targetType: 'CalendarItem',
+      targetLabel: 'Sélection calendrier',
+      details: `Action masse '${action}' sur ${selectionCount} items: ${Array.from(selected).slice(0, 20).join(', ')}${selectionCount > 20 ? '…' : ''}`,
+      bureau: 'BMO',
+    });
+  };
+
+  // Drag & Drop handlers avec preview amélioré
+  const [dragPreview, setDragPreview] = useState<{ x: number; y: number; item: CalendarItem | null }>({ x: 0, y: 0, item: null });
+  
+  const handleDragStart = (e: React.DragEvent, item: CalendarItem) => {
+    setDraggedItem(item);
+    setDragPreview({ x: e.clientX, y: e.clientY, item });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.id);
+    
+    // Créer une image personnalisée pour le drag
+    const dragImage = document.createElement('div');
+    dragImage.className = cn(
+      'px-3 py-2 rounded-lg border shadow-lg',
+      darkMode ? 'bg-slate-800 border-orange-500/50' : 'bg-white border-orange-500',
+      'text-sm font-semibold'
+    );
+    dragImage.textContent = item.title;
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-1000px';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedItem) {
+      setDragPreview({ x: e.clientX, y: e.clientY, item: draggedItem });
+    }
+  };
+  
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragPreview({ x: 0, y: 0, item: null });
+  };
+
+  const handleDrop = (e: React.DragEvent, targetDate: Date, targetHour?: number) => {
+    e.preventDefault();
+    if (!draggedItem) return;
+
+    const newStart = new Date(targetDate);
+    if (targetHour !== undefined) {
+      newStart.setHours(targetHour, 0, 0, 0);
+    } else {
+      // Pour la vue mois, conserver l'heure originale
+      const originalStart = new Date(draggedItem.start);
+      newStart.setHours(originalStart.getHours(), originalStart.getMinutes(), 0, 0);
+    }
+    const duration = new Date(draggedItem.end).getTime() - new Date(draggedItem.start).getTime();
+    const newEnd = new Date(newStart.getTime() + duration);
+
+    // Vérifier conflits avant de déplacer
+    const hasConflict = allItems.some((it) => {
+      if (it.id === draggedItem.id) return false;
+      if (it.status === 'done' || it.status === 'ack') return false;
+      const itStart = new Date(it.start);
+      const itEnd = new Date(it.end);
+      return (
+        (newStart < itEnd && newEnd > itStart) &&
+        (draggedItem.bureau === it.bureau ||
+         (draggedItem.assignees || []).some((a) => (it.assignees || []).some((o) => o.id === a.id)))
+      );
+    });
+
+    if (hasConflict) {
+      addToast('⚠️ Conflit détecté à ce créneau', 'warning');
+      setDraggedItem(null);
+      return;
+    }
+
+    // Mettre à jour l'item avec historique
+    updateItemsWithHistory((prev) =>
+      prev.map((it) =>
+        it.id === draggedItem.id
+          ? { ...it, start: newStart.toISOString(), end: newEnd.toISOString() }
+          : it
+      )
+    );
+
+    addToast(`✓ ${draggedItem.title} déplacé`, 'success');
+    
+    // Traçabilité avec hash pour drag & drop
+    const updatedItem = { ...draggedItem, start: newStart.toISOString(), end: newEnd.toISOString() };
+    logWithHash(addActionLog, {
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      action: 'replanifier' as any,
+      module: 'calendrier',
+      targetId: draggedItem.id,
+      targetType: 'CalendarItem',
+      targetLabel: draggedItem.title,
+      details: `Déplacé vers ${newStart.toLocaleString('fr-FR')}`,
+      bureau: draggedItem.bureau ?? 'BMO',
+    }, { before: draggedItem, after: updatedItem });
+
+    setDraggedItem(null);
+  };
+
+  const applySchedulingScenario = (scenario: SchedulingScenario) => {
+    updateItemsWithHistory((prev) => {
+      const byId = new Map(scenario.changes.map(c => [c.itemId, c]));
+      return prev.map((it) => {
+        const ch = byId.get(it.id);
+        return ch ? { ...it, start: ch.newStart, end: ch.newEnd } : it;
+      });
+    });
+
+    addToast(`✓ Scénario "${scenario.name}" appliqué`, 'success');
+    setShowAutoSchedule(false);
+  };
+
+  // Handler pour sauvegarder un événement (avec génération récurrente)
+  const handleSaveEvent = useCallback((formData: EventFormData) => {
+    if (editingItem) {
+      // Modification d'un événement existant
+      updateItemsWithHistory((prev) =>
+        prev.map((it) =>
+          it.id === editingItem.id
+            ? {
+                ...it,
+                title: formData.title,
+                description: formData.description,
+                kind: formData.kind,
+                bureau: formData.bureau,
+                assignees: formData.assignees,
+                start: formData.start.toISOString(),
+                end: formData.end.toISOString(),
+                priority: formData.priority,
+                severity: formData.severity,
+                status: formData.status,
+                project: formData.project,
+              }
+            : it
+        )
+      );
+      // Traçabilité avec hash pour modification
+      const updatedItem = {
+        ...editingItem,
+        title: formData.title,
+        description: formData.description,
+        kind: formData.kind,
+        bureau: formData.bureau,
+        assignees: formData.assignees,
+        start: formData.start.toISOString(),
+        end: formData.end.toISOString(),
+        priority: formData.priority,
+        severity: formData.severity,
+        status: formData.status,
+        project: formData.project,
+      };
+      logWithHash(addActionLog, {
+        userId: 'USR-001',
+        userName: 'A. DIALLO',
+        userRole: 'Directeur Général',
+        action: 'modifier' as any,
+        module: 'calendrier',
+        targetId: editingItem.id,
+        targetType: 'CalendarItem',
+        targetLabel: formData.title,
+        details: '',
+        bureau: formData.bureau ?? 'BMO',
+      }, { before: editingItem, after: updatedItem });
+      
+      addToast(`✓ ${formData.title} modifié`, 'success');
+    } else {
+      // Création d'un nouvel événement (avec récurrence si nécessaire)
+      const newEvents = generateRecurringEvents(formData, formData.recurrence, formData.recurrenceEnd);
+      updateItemsWithHistory((prev) => [...prev, ...newEvents]);
+      
+      if (newEvents.length > 1) {
+        addToast(`✓ ${newEvents.length} occurrences créées pour "${formData.title}"`, 'success');
+      } else {
+        addToast(`✓ ${formData.title} créé`, 'success');
+      }
+      
+      // Traçabilité avec hash pour création
+      logWithHash(addActionLog, {
+        userId: 'USR-001',
+        userName: 'A. DIALLO',
+        userRole: 'Directeur Général',
+        action: 'creer' as any,
+        module: 'calendrier',
+        targetId: newEvents[0]?.id || 'N/A',
+        targetType: 'CalendarItem',
+        targetLabel: formData.title,
+        details: formData.recurrence !== 'none' ? `Récurrence: ${formData.recurrence}` : '',
+        bureau: formData.bureau ?? 'BMO',
+      }, { before: null, after: newEvents[0] || newEvents });
+    }
+    
+    setShowEventModal(false);
+    setEditingItem(null);
+  }, [editingItem, updateItemsWithHistory, addToast, addActionLog]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const overdue = slaStatuses.filter((s) => s.isOverdue).length;
+
+    const overloaded = Object.entries(load).some(([bureau, days]) => {
+      const capacity = CAPACITY_BY_BUREAU[bureau] ?? 480;
+      return Object.values(days).some((d) => d.minutes > capacity);
+    });
+
+    return { conflicts: conflicts.size, overdue, overloaded };
+  }, [conflicts, slaStatuses, load]);
+
+  return (
+    <div
+      className={cn(
+        'min-h-screen w-full',
+        darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
+      )}
+    >
+      <div className="mx-auto max-w-[1800px] px-4 py-4">
+        <div className="flex gap-4">
+          {/* Sidebar */}
+          <aside className="hidden lg:flex w-[320px] shrink-0 flex-col gap-3">
+            <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Building2 className="w-4 h-4" />
+                  Bureaux
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={bureauParam === 'ALL' ? 'default' : 'secondary'}
+                    onClick={() => setParam({ bureau: 'ALL' })}
+                  >
+                    Tous
+                  </Button>
+                  {BUREAUX.map((b) => (
+                    <Button
+                      key={b}
+                      size="sm"
+                      variant={bureauParam === b ? 'default' : 'secondary'}
+                      onClick={() => setParam({ bureau: b })}
+                    >
+                      {b}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Stats widgets */}
+            <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Indicateurs
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className={cn('rounded-lg p-3', darkMode ? 'bg-slate-950/40' : 'bg-white')}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className={cn('w-4 h-4', stats.conflicts ? 'text-red-400' : 'text-emerald-400')} />
+                      <p className="text-xs text-slate-400">Conflits</p>
+                    </div>
+                    <p className={cn('text-2xl font-bold', stats.conflicts ? 'text-red-400' : 'text-emerald-400')}>
+                      {stats.conflicts}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={cn('rounded-lg p-3', darkMode ? 'bg-slate-950/40' : 'bg-white')}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className={cn('w-4 h-4', stats.overdue ? 'text-red-400' : 'text-slate-400')} />
+                      <p className="text-xs text-slate-400">SLA en retard</p>
+                    </div>
+                    <p className={cn('text-2xl font-bold', stats.overdue ? 'text-red-400' : 'text-slate-400')}>
+                      {stats.overdue}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={cn('rounded-lg p-3', darkMode ? 'bg-slate-950/40' : 'bg-white')}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className={cn('w-4 h-4', stats.overloaded ? 'text-amber-400' : 'text-slate-400')} />
+                      <p className="text-xs text-slate-400">Surcharges</p>
+                    </div>
+                    <p className={cn('text-2xl font-bold', stats.overloaded ? 'text-amber-400' : 'text-slate-400')}>
+                      {stats.overloaded ? 'Oui' : 'Non'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Charge par bureau */}
+            <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Charge (aujourd'hui)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {Array.from(visibleBureaux).map((b) => {
+                  const dayKey = dayKeyLocal(startOfDay(new Date()));
+                  const data = load[b]?.[dayKey];
+                  const mins = data?.minutes ?? 0;
+                  const hours = (mins / 60).toFixed(1);
+                  const capacity = CAPACITY_BY_BUREAU[b] || 480;
+                  const percent = Math.round((mins / capacity) * 100);
+                  const isOverloaded = mins > capacity;
+
+                  return (
+                    <div key={b} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-300">{b}</span>
+                        <span className={cn('font-mono', isOverloaded ? 'text-red-400' : 'text-slate-200')}>
+                          {hours}h / {(capacity / 60).toFixed(0)}h
+                        </span>
+                      </div>
+                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={cn('h-full transition-all', isOverloaded ? 'bg-red-500' : percent > 80 ? 'bg-amber-500' : 'bg-emerald-500')}
+                          style={{ width: `${Math.min(100, percent)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            {/* Mode Focus */}
+            {focusMode.enabled && (
+              <Card className={cn('border-orange-500/30', darkMode ? 'bg-orange-500/5' : 'bg-orange-50')}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-orange-400" />
+                      Mode Focus
+                    </div>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setFocusMode({ enabled: false, showOnly: 'all' })}>
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <select
+                    value={focusMode.showOnly}
+                    onChange={(e) => setFocusMode((prev) => ({ ...prev, showOnly: e.target.value as any }))}
+                    className={cn(
+                      'w-full h-8 rounded-lg px-3 text-sm border',
+                      darkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
+                    )}
+                  >
+                    <option value="all">Tout afficher</option>
+                    <option value="critical">Priorités critiques uniquement</option>
+                    <option value="my-items">Mes items</option>
+                    <option value="conflicts">Conflits uniquement</option>
+                    <option value="overdue-sla">SLA en retard</option>
+                  </select>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Suggestions */}
+            {showSuggestions && suggestions.length > 0 && (
+              <Card className={cn('border-amber-500/30', darkMode ? 'bg-amber-500/5' : 'bg-amber-50')}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Lightbulb className="w-4 h-4 text-amber-400" />
+                      Suggestions
+                    </div>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowSuggestions(false)}>
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {suggestions.map((s, idx) => (
+                    <div key={idx} className="text-xs p-2 rounded bg-amber-500/10 border border-amber-500/20">
+                      <p className="font-semibold text-amber-300">{s.title}</p>
+                      <p className="text-slate-400 mt-1">{s.description}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </aside>
+
+          {/* Main */}
+          <main className="flex-1 flex flex-col gap-3">
+            {/* Command bar sticky */}
+            <div
+              className={cn(
+                'sticky top-0 z-30 rounded-xl border p-3 backdrop-blur',
+                darkMode ? 'bg-slate-950/70 border-slate-700/60' : 'bg-white/80 border-slate-200'
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2 justify-between">
+                <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+                  <div className="relative flex-1 max-w-[520px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      value={q}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setParam({ q: value });
+                        setShowSearchSuggestions(value.length > 0 && searchHistory.length > 0);
+                      }}
+                      onFocus={() => {
+                        if (q.length > 0 && searchHistory.length > 0) {
+                          setShowSearchSuggestions(true);
+                        }
+                      }}
+                      onBlur={() => {
+                        // Délai pour permettre le clic sur une suggestion
+                        setTimeout(() => setShowSearchSuggestions(false), 200);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && q.trim()) {
+                          // Ajouter à l'historique
+                          const trimmed = q.trim();
+                          if (!searchHistory.includes(trimmed)) {
+                            const newHistory = [trimmed, ...searchHistory].slice(0, 10);
+                            setSearchHistory(newHistory);
+                            try {
+                              localStorage.setItem('calendrier.searchHistory', JSON.stringify(newHistory));
+                            } catch {}
+                          }
+                          setShowSearchSuggestions(false);
+                        }
+                      }}
+                      placeholder="Rechercher (id, titre, bureau, projet...) [Appuyez sur /]"
+                      className={cn(
+                        'pl-9',
+                        darkMode
+                          ? 'bg-slate-900/60 border-slate-700/60 placeholder:text-slate-500'
+                          : 'bg-white border-slate-200'
+                      )}
+                      aria-label="Rechercher dans le calendrier"
+                      role="searchbox"
+                      aria-autocomplete="list"
+                      aria-expanded={showSearchSuggestions}
+                    />
+                    {q !== deferredQ && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                    )}
+                    
+                    {/* Suggestions de recherche */}
+                    {showSearchSuggestions && searchHistory.length > 0 && (
+                      <div className={cn(
+                        'absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-lg z-50 max-h-60 overflow-y-auto',
+                        darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                      )}>
+                        {searchHistory
+                          .filter((h) => h.toLowerCase().includes(q.toLowerCase()))
+                          .slice(0, 5)
+                          .map((hist, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setParam({ q: hist });
+                                setShowSearchSuggestions(false);
+                              }}
+                              className={cn(
+                                'w-full text-left px-3 py-2 text-sm hover:bg-slate-800/50 transition-colors',
+                                darkMode ? 'text-slate-200' : 'text-slate-900'
+                              )}
+                            >
+                              <Search className="w-3 h-3 inline mr-2 text-slate-400" />
+                              {hist}
+                            </button>
+                          ))}
+                        {q.trim() && !searchHistory.includes(q.trim()) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const trimmed = q.trim();
+                              const newHistory = [trimmed, ...searchHistory].slice(0, 10);
+                              setSearchHistory(newHistory);
+                              try {
+                                localStorage.setItem('calendrier.searchHistory', JSON.stringify(newHistory));
+                              } catch {}
+                              setShowSearchSuggestions(false);
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-sm hover:bg-slate-800/50 transition-colors border-t',
+                              darkMode ? 'text-slate-200 border-slate-700' : 'text-slate-900 border-slate-200'
+                            )}
+                          >
+                            <FileUp className="w-3 h-3 inline mr-2 text-slate-400" />
+                            Ajouter "{q.trim()}" à l'historique
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1" role="group" aria-label="Navigation calendrier">
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      variant="secondary" 
+                      onClick={() => setCursorDate(startOfDay(new Date()))}
+                      aria-label="Aller à aujourd'hui"
+                      title="Aller à aujourd'hui (Ctrl+Home)"
+                    >
+                      Aujourd'hui
+                    </Button>
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      variant="secondary" 
+                      onClick={() => {
+                        const offset = view === 'month' ? -30 : view === 'day' ? -1 : -7;
+                        setCursorDate(addDays(cursorDate, offset));
+                      }}
+                      aria-label={view === 'month' ? 'Mois précédent' : view === 'day' ? 'Jour précédent' : 'Semaine précédente'}
+                      title={view === 'month' ? 'Mois précédent (Ctrl+←)' : view === 'day' ? 'Jour précédent (Ctrl+←)' : 'Semaine précédente (Ctrl+←)'}
+                    >
+                      ←
+                    </Button>
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      variant="secondary" 
+                      onClick={() => {
+                        const offset = view === 'month' ? 30 : view === 'day' ? 1 : 7;
+                        setCursorDate(addDays(cursorDate, offset));
+                      }}
+                      aria-label={view === 'month' ? 'Mois suivant' : view === 'day' ? 'Jour suivant' : 'Semaine suivante'}
+                      title={view === 'month' ? 'Mois suivant (Ctrl+→)' : view === 'day' ? 'Jour suivant (Ctrl+→)' : 'Semaine suivante (Ctrl+→)'}
+                    >
+                      →
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <ViewPill label="Semaine" active={view === 'week'} onClick={() => setParam({ view: 'week' })} />
+                  <ViewPill label="Jour" active={view === 'day'} onClick={() => setParam({ view: 'day' })} />
+                  <ViewPill label="Mois" active={view === 'month'} onClick={() => setParam({ view: 'month' })} />
+                  <ViewPill label="Agenda" active={view === 'agenda'} onClick={() => setParam({ view: 'agenda' })} />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setParam({ view: 'gantt' });
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
+                      view === 'gantt'
+                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
+                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
+                    )}
+                  >
+                    <GanttChart className="w-3 h-3" />
+                    Gantt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setParam({ view: 'resource' });
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
+                      view === 'resource'
+                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
+                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
+                    )}
+                    title="Vue par ressource (personne)"
+                  >
+                    <User className="w-3 h-3" />
+                    Ressource
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setParam({ view: 'kanban' });
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
+                      view === 'kanban'
+                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
+                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
+                    )}
+                    title="Vue Kanban par statut"
+                  >
+                    <Kanban className="w-3 h-3" />
+                    Kanban
+                  </button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowShortcuts(true)}
+                    title="Raccourcis clavier (Ctrl+?)"
+                  >
+                    <Command className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={focusMode.enabled ? 'default' : 'secondary'}
+                    onClick={() => setFocusMode((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                    title="Mode Focus"
+                  >
+                    {focusMode.enabled ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setShowFilters(!showFilters)}>
+                    <Filter className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filtres avancés */}
+              {showFilters && (
+                <div className="mt-3 pt-3 border-t border-slate-700/60 space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                  <select
+                    value={priorityFilter}
+                    onChange={(e) => setParam({ priority: e.target.value === 'ALL' ? undefined : e.target.value })}
+                    className={cn(
+                      'h-8 rounded-lg px-3 text-sm border',
+                      darkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
+                    )}
+                  >
+                    <option value="ALL">Toutes priorités</option>
+                    <option value="critical">Critical</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="normal">Normal</option>
+                  </select>
+                  <select
+                    value={kindFilter}
+                    onChange={(e) => setParam({ kind: e.target.value === 'ALL' ? undefined : e.target.value })}
+                    className={cn(
+                      'h-8 rounded-lg px-3 text-sm border',
+                      darkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
+                    )}
+                  >
+                    <option value="ALL">Tous types</option>
+                    <option value="meeting">Réunion</option>
+                    <option value="validation">Validation</option>
+                    <option value="payment">Paiement</option>
+                    <option value="contract">Contrat</option>
+                    <option value="deadline">Échéance</option>
+                    <option value="absence">Absence</option>
+                  </select>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-700/40">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const presetId = e.target.value;
+                        if (presetId && presetId !== '') {
+                          const preset = filterPresets.find((p) => p.id === presetId);
+                          if (preset) {
+                            setParam({
+                              priority: preset.priority === 'ALL' ? undefined : preset.priority,
+                              kind: preset.kind === 'ALL' ? undefined : preset.kind,
+                            });
+                            addToast(`✓ Preset "${preset.name}" chargé`, 'success');
+                          }
+                        }
+                        e.target.value = '';
+                      }}
+                      className={cn(
+                        'h-8 rounded-lg px-3 text-sm border flex-1',
+                        darkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
+                      )}
+                    >
+                      <option value="">Charger un preset...</option>
+                      {filterPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPresetName('');
+                        setShowPresetModal(true);
+                      }}
+                      title="Sauvegarder le preset actuel"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                    {filterPresets.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setDeleteConfirmTitle('tous les presets');
+                          setDeleteConfirmCallback(() => {
+                            setFilterPresets([]);
+                            localStorage.removeItem('calendrier.filterPresets');
+                            addToast('✓ Presets supprimés', 'success');
+                          });
+                          setShowDeleteConfirm(true);
+                        }}
+                        title="Supprimer tous les presets"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions masse */}
+              <div className="mt-3 flex flex-wrap gap-2 items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="info">Sélection: {selectionCount}</Badge>
+                  <Button type="button" size="sm" disabled={!selectionCount} onClick={() => doMass('done')}>
+                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                    Terminer
+                  </Button>
+                  <Button type="button" size="sm" variant="destructive" disabled={!selectionCount} onClick={() => doMass('cancel')}>
+                    <XCircle className="w-4 h-4 mr-1" />
+                    Annuler
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" disabled={!selectionCount} onClick={() => doMass('replan')}>
+                    <CalendarIcon className="w-4 h-4 mr-1" />
+                    Replanifier
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Badge 
+                    variant={isOnline ? 'success' : 'warning'} 
+                    className="flex items-center gap-1"
+                    title={isOnline ? 'En ligne' : 'Hors ligne - Mode cache activé'}
+                  >
+                    {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                    {isOnline ? 'En ligne' : 'Hors ligne'}
+                  </Badge>
+                  <Badge variant={stats.conflicts ? 'urgent' : 'success'}>Conflits: {stats.conflicts}</Badge>
+                  <Badge variant={stats.overdue ? 'urgent' : 'default'}>SLA: {stats.overdue}</Badge>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => { setSelectedIds({}); setInspectedId(null); }}>
+                    Vider
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={handleExportICal} title="Exporter iCal (Ctrl+E)">
+                    <Download className="w-4 h-4" />
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={handleExportCSV} title="Exporter CSV">
+                    <Download className="w-4 h-4" />
+                    CSV
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={handleExportJSON} title="Exporter JSON">
+                    <Download className="w-4 h-4" />
+                    JSON
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAnalytics(true)}
+                    title="Analytics avancés"
+                  >
+                    <BarChart2 className="w-4 h-4" />
+                    Analytics
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.ics';
+                      input.onchange = async (e) => {
+                        try {
+                          const file = (e.target as HTMLInputElement).files?.[0];
+                          if (!file) return;
+
+                          const content = await file.text();
+                          const mod = await import('@/lib/utils/ical-export');
+                          const parseICal = mod.parseICal;
+
+                          if (!parseICal) {
+                            addToast("⚠️ Import iCal indisponible (parseICal manquant)", 'warning');
+                            return;
+                          }
+
+                          const importedRaw = parseICal(content);
+                          if (!Array.isArray(importedRaw) || importedRaw.length === 0) {
+                            addToast("⚠️ Aucun événement valide trouvé dans le fichier", 'warning');
+                            return;
+                          }
+
+                          const imported = importedRaw.map((it: any) => ({
+                            ...it,
+                            id: uid('EVT'),
+                            kind: (it.kind || 'event') as CalendarKind,
+                            priority: (it.priority || 'normal') as Priority,
+                            severity: (it.severity || 'info') as Severity,
+                            status: (it.status || 'open') as Status,
+                          } as CalendarItem));
+
+                          updateItemsWithHistory((prev) => [...prev, ...imported]);
+                          addToast(`✓ ${imported.length} événement(s) importé(s)`, 'success');
+                        } catch (error) {
+                          const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+                          addToast(`❌ Erreur lors de l'import du fichier iCal: ${errorMessage}`, 'error');
+                        }
+                      };
+                      input.click();
+                    }}
+                    title="Importer iCal"
+                  >
+                    <FileUp className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    onClick={handleAutoSchedule}
+                    className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+                    title="Auto-scheduling intelligent (Ctrl+O)"
+                  >
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    Optimiser
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowTemplates(true)}
+                    title="Templates & événements récurrents"
+                  >
+                    <Repeat className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowPredictions(!showPredictions)}
+                    title="Prévisions charge"
+                  >
+                    <TrendingDown className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    onClick={() => {
+                      setEventModalDate(new Date());
+                      setEditingItem(null);
+                      setShowEventModal(true);
+                    }}
+                    title="Créer un événement"
+                  >
+                    <CalendarDays className="w-4 h-4 mr-1" />
+                    Nouveau
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowMultiBureau(!showMultiBureau)}
+                    title="Vue multi-bureaux"
+                  >
+                    <Building2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Canvas avec transitions */}
+            <div
+              className={cn(
+                'rounded-xl border overflow-hidden transition-all duration-300 ease-in-out',
+                darkMode ? 'border-slate-700/60 bg-slate-900/30' : 'border-slate-200 bg-white'
+              )}
+              style={{ height: 'calc(100vh - 220px)' }}
+            >
+              <div className="h-full flex">
+                <div className="flex-1 h-full overflow-auto">
+                  <div className={cn(
+                    'transition-opacity duration-300 ease-in-out',
+                    'opacity-100'
+                  )}>
+                  {view === 'week' && (
+                    <WeekView
+                      days={weekDays}
+                      items={filtered}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      onOpen={openInspector}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      darkMode={darkMode}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      onTimeSlotClick={handleTimeSlotClick}
+                    />
+                  )}
+                  {view === 'agenda' && (
+                    <AgendaView
+                      items={filtered}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      onOpen={openInspector}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      darkMode={darkMode}
+                    />
+                  )}
+                  {view === 'day' && (
+                    <DayView
+                      day={cursorDate}
+                      items={filtered}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      onOpen={openInspector}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      darkMode={darkMode}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      onTimeSlotClick={handleTimeSlotClick}
+                    />
+                  )}
+                  {view === 'gantt' && (
+                    <GanttView
+                      items={filtered}
+                      conflicts={conflicts}
+                      weekStart={weekStart}
+                      onOpen={openInspector}
+                      darkMode={darkMode}
+                    />
+                  )}
+                  {view === 'month' && (
+                    <MonthView
+                      cursorDate={cursorDate}
+                      items={filtered}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      selectedIds={selectedIds}
+                      onOpen={openInspector}
+                      onToggleSelect={toggleSelect}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      darkMode={darkMode}
+                    />
+                  )}
+                  {view === 'resource' && (
+                    <ResourceView
+                      byAssignee={byAssignee}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      weekDays={weekDays}
+                      onOpen={openInspector}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      darkMode={darkMode}
+                    />
+                  )}
+                  {view === 'kanban' && (
+                    <KanbanView
+                      byStatus={byStatus}
+                      conflicts={conflicts}
+                      slaStatuses={slaStatuses}
+                      onOpen={openInspector}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      onMoveItem={(itemId, newStatus) => {
+                        updateItemsWithHistory((prev) =>
+                          prev.map((it) => (it.id === itemId ? { ...it, status: newStatus } : it))
+                        );
+                        addToast(`✓ Statut mis à jour: ${newStatus}`, 'success');
+                        addActionLog({
+                          userId: 'USR-001',
+                          userName: 'A. DIALLO',
+                          userRole: 'Directeur Général',
+                          action: 'changer-statut' as any,
+                          module: 'calendrier',
+                          targetId: itemId,
+                          targetType: 'CalendarItem',
+                          targetLabel: itemId,
+                          details: `Kanban: ${newStatus}`,
+                          bureau: 'BMO',
+                        });
+                      }}
+                      darkMode={darkMode}
+                    />
+                  )}
+                  </div>
+                </div>
+
+                {/* Inspector */}
+                <div
+                  className={cn(
+                    'hidden xl:flex w-[420px] shrink-0 border-l h-full',
+                    darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white'
+                  )}
+                >
+                  <Inspector
+                    item={inspected}
+                    conflicts={conflicts}
+                    slaStatuses={slaStatuses}
+                    onClose={() => setInspectedId(null)}
+                    onAction={(a) => {
+                      if (!inspected) return;
+                      
+                      // Gérer les actions spécifiques
+                      if (a === 'modifier') {
+                        setEditingItem(inspected);
+                        setEventModalDate(new Date(inspected.start));
+                        setShowEventModal(true);
+                        return;
+                      }
+                      
+                      if (a === 'replanifier') {
+                        setEditingItem(inspected);
+                        setEventModalDate(new Date(inspected.start));
+                        setShowEventModal(true);
+                        return;
+                      }
+                      
+                      if (a === 'assigner-bureau') {
+                        setBureauPromptValue(inspected.bureau || 'BMO');
+                        setBureauPromptCallback((value: string) => {
+                          if (value && value.trim()) {
+                            updateItemsWithHistory((prev) =>
+                              prev.map((it) => (it.id === inspected.id ? { ...it, bureau: value.trim() } : it))
+                            );
+                            addToast(`✓ Bureau assigné: ${value}`, 'success');
+                            addActionLog({
+                              userId: 'USR-001',
+                              userName: 'A. DIALLO',
+                              userRole: 'Directeur Général',
+                              action: 'assigner-bureau' as any,
+                              module: 'calendrier',
+                              targetId: inspected.id,
+                              targetType: 'CalendarItem',
+                              targetLabel: inspected.title,
+                              details: `Bureau assigné: ${value}`,
+                              bureau: value.trim(),
+                            });
+                          }
+                        });
+                        setShowBureauPrompt(true);
+                        return;
+                      }
+                      
+                      if (a === 'copier') {
+                        setCopiedItem(inspected);
+                        addToast(`✓ "${inspected.title}" copié (Ctrl+V pour coller)`, 'success');
+                        return;
+                      }
+                      
+                      if (a === 'dupliquer') {
+                        const newItem: CalendarItem = {
+                          ...inspected,
+                          id: uid('EVT'),
+                          title: `${inspected.title} (copie)`,
+                          start: new Date(new Date(inspected.start).getTime() + 86400000).toISOString(), // +1 jour
+                          end: new Date(new Date(inspected.end).getTime() + 86400000).toISOString(),
+                        };
+                        updateItemsWithHistory((prev) => [...prev, newItem]);
+                        addToast(`✓ "${newItem.title}" dupliqué`, 'success');
+                        return;
+                      }
+                      
+                      if (a === 'escalader') {
+                        addToast(`⚠️ Escalade de "${inspected.title}" vers BMO`, 'warning');
+                        addActionLog({
+                          userId: 'USR-001',
+                          userName: 'A. DIALLO',
+                          userRole: 'Directeur Général',
+                          action: 'escalader' as any,
+                          module: 'calendrier',
+                          targetId: inspected.id,
+                          targetType: 'CalendarItem',
+                          targetLabel: inspected.title,
+                          details: 'Escalade vers BMO',
+                          bureau: inspected.bureau ?? 'BMO',
+                        });
+                        return;
+                      }
+                      
+                      if (a === 'terminer') {
+                        setItems((prev) =>
+                          prev.map((it) => (it.id === inspected.id ? { ...it, status: 'done' as Status } : it))
+                        );
+                        addToast(`✓ ${inspected.title} marqué comme terminé`, 'success');
+                        addActionLog({
+                          userId: 'USR-001',
+                          userName: 'A. DIALLO',
+                          userRole: 'Directeur Général',
+                          action: 'terminer' as any,
+                          module: 'calendrier',
+                          targetId: inspected.id,
+                          targetType: 'CalendarItem',
+                          targetLabel: inspected.title,
+                          details: 'Événement terminé',
+                          bureau: inspected.bureau ?? 'BMO',
+                        });
+                        return;
+                      }
+                      
+                      if (a === 'annuler' || a === 'supprimer') {
+                        setDeleteConfirmTitle(inspected.title);
+                        setDeleteConfirmCallback(() => {
+                          updateItemsWithHistory((prev) => prev.filter((it) => it.id !== inspected.id));
+                          addToast(`✓ ${inspected.title} supprimé`, 'success');
+                          setInspectedId(null);
+                          addActionLog({
+                            userId: 'USR-001',
+                            userName: 'A. DIALLO',
+                            userRole: 'Directeur Général',
+                            action: 'supprimer' as any,
+                            module: 'calendrier',
+                            targetId: inspected.id,
+                            targetType: 'CalendarItem',
+                            targetLabel: inspected.title,
+                            details: 'Événement supprimé',
+                            bureau: inspected.bureau ?? 'BMO',
+                          });
+                        });
+                        setShowDeleteConfirm(true);
+                        return;
+                      }
+                      
+                      addToast(`Action: ${a} sur ${inspected.id}`, 'success');
+                      addActionLog({
+                        userId: 'USR-001',
+                        userName: 'A. DIALLO',
+                        userRole: 'Directeur Général',
+                        action: a as any,
+                        module: 'calendrier',
+                        targetId: inspected.id,
+                        targetType: 'CalendarItem',
+                        targetLabel: inspected.title,
+                        details: `Action '${a}' depuis inspector`,
+                        bureau: inspected.bureau ?? 'BMO',
+                      });
+                    }}
+                    darkMode={darkMode}
+                    onEdit={() => {
+                      if (!inspected) return;
+                      setEditingItem(inspected);
+                      setEventModalDate(new Date(inspected.start));
+                      setShowEventModal(true);
+                    }}
+                    onDelete={() => {
+                      if (!inspected) return;
+                      setDeleteConfirmTitle(inspected.title);
+                      setDeleteConfirmCallback(() => {
+                        // Traçabilité avec hash pour suppression
+                        logWithHash(addActionLog, {
+                          userId: 'USR-001',
+                          userName: 'A. DIALLO',
+                          userRole: 'Directeur Général',
+                          action: 'supprimer' as any,
+                          module: 'calendrier',
+                          targetId: inspected.id,
+                          targetType: 'CalendarItem',
+                          targetLabel: inspected.title,
+                          details: 'Événement supprimé',
+                          bureau: inspected.bureau ?? 'BMO',
+                        }, { before: inspected, after: null });
+                        
+                        updateItemsWithHistory((prev) => prev.filter((it) => it.id !== inspected.id));
+                        addToast(`✓ ${inspected.title} supprimé`, 'success');
+                        setInspectedId(null);
+                      });
+                      setShowDeleteConfirm(true);
+                    }}
+                    onUpdateItem={(itemId, updates) => {
+                      updateItemsWithHistory((prev) =>
+                        prev.map((it) => (it.id === itemId ? { ...it, ...updates } : it))
+                      );
+                      addToast('✓ Note ajoutée', 'success');
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+
+      {/* Modale Auto-scheduling */}
+      {showAutoSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className={cn('w-full max-w-3xl', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center justify-between">
+                <span>Auto-scheduling</span>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setShowAutoSchedule(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {schedulingScenarios.length === 0 ? (
+                <p className="text-sm text-slate-400">Aucun scénario proposé (ou données insuffisantes).</p>
+              ) : (
+                <div className="space-y-2">
+                  {schedulingScenarios.map((sc, idx) => (
+                    <div key={idx} className={cn('p-3 rounded-lg border', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-slate-50')}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{sc.name}</p>
+                          <p className="text-xs text-slate-400">{sc.changes?.length ?? 0} déplacement(s) proposé(s)</p>
+                        </div>
+                        <Button type="button" size="sm" onClick={() => applySchedulingScenario(sc)}>
+                          Appliquer
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Panneau Prévisions */}
+      {showPredictions && (
+        <PredictionsPanel
+          predictions={predictions}
+          onClose={() => setShowPredictions(false)}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Panneau Analytics */}
+      {showAnalytics && (
+        <AnalyticsPanel
+          items={filtered}
+          conflicts={conflicts}
+          load={load}
+          slaStatuses={slaStatuses}
+          stats={stats}
+          onClose={() => setShowAnalytics(false)}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Mode Présentation */}
+      {showPresentationMode && (
+        <PresentationMode
+          items={filtered}
+          onClose={() => setShowPresentationMode(false)}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Comparaison de périodes */}
+      {showPeriodComparison && (
+        <PeriodComparisonPanel
+          items={allItems}
+          onClose={() => setShowPeriodComparison(false)}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Historique des modifications */}
+      {showHistory && (
+        <HistoryPanel
+          history={history}
+          historyIndex={historyIndex}
+          onClose={() => setShowHistory(false)}
+          onRestore={(idx) => {
+            setItems(history[idx]);
+            setHistoryIndex(idx);
+            addToast(`✓ État #${history.length - idx} restauré`, 'success');
+          }}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Modale Templates */}
+      <TemplatesModal
+        isOpen={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onApply={(template) => {
+          const base = eventModalDate ?? new Date();
+          const start = new Date(base);
+          const end = new Date(start.getTime() + 60 * 60000);
+
+          setItems((prev) => [
+            ...prev,
+            {
+              ...template,
+              id: uid('EVT'),
+              start: start.toISOString(),
+              end: end.toISOString(),
+              status: 'open',
+            },
+          ]);
+
+          addToast('✓ Template ajouté au calendrier', 'success');
+        }}
+        darkMode={darkMode}
+      />
+
+      {/* Modale Raccourcis */}
+      <ShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        darkMode={darkMode}
+      />
+
+      {/* Modale Événement */}
+      {showEventModal && (
+        <EventModal
+          isOpen={showEventModal}
+          onClose={() => {
+            setShowEventModal(false);
+            setEditingItem(null);
+          }}
+          initialDate={eventModalDate}
+          editingItem={editingItem}
+          onSave={handleSaveEvent}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* Modale Assigner Bureau */}
+      <Dialog open={showBureauPrompt} onOpenChange={setShowBureauPrompt}>
+        <DialogContent className={cn(darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+          <DialogHeader>
+            <DialogTitle className={cn(darkMode ? 'text-white' : 'text-slate-900')}>
+              Assigner à quel bureau ?
+            </DialogTitle>
+            <DialogDescription className={cn(darkMode ? 'text-slate-400' : 'text-slate-600')}>
+              Saisissez le nom du bureau (ex: BMO, BFC, BTP, etc.)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={bureauPromptValue}
+              onChange={(e) => setBureauPromptValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && bureauPromptValue.trim()) {
+                  bureauPromptCallback?.(bureauPromptValue);
+                  setShowBureauPrompt(false);
+                  setBureauPromptCallback(null);
+                } else if (e.key === 'Escape') {
+                  setShowBureauPrompt(false);
+                  setBureauPromptCallback(null);
+                }
+              }}
+              autoFocus
+              className={cn(darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900')}
+              placeholder="BMO"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setShowBureauPrompt(false);
+                setBureauPromptCallback(null);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (bureauPromptValue.trim()) {
+                  bureauPromptCallback?.(bureauPromptValue);
+                  setShowBureauPrompt(false);
+                  setBureauPromptCallback(null);
+                }
+              }}
+              disabled={!bureauPromptValue.trim()}
+            >
+              Confirmer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modale Confirmation Suppression */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className={cn(darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+          <DialogHeader>
+            <DialogTitle className={cn(darkMode ? 'text-white' : 'text-slate-900')}>
+              Confirmer la suppression
+            </DialogTitle>
+            <DialogDescription className={cn(darkMode ? 'text-slate-400' : 'text-slate-600')}>
+              Êtes-vous sûr de vouloir supprimer "{deleteConfirmTitle}" ? Cette action est irréversible.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDeleteConfirmCallback(null);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                deleteConfirmCallback?.();
+                setShowDeleteConfirm(false);
+                setDeleteConfirmCallback(null);
+              }}
+            >
+              Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modale Sauvegarder Preset */}
+      <Dialog open={showPresetModal} onOpenChange={setShowPresetModal}>
+        <DialogContent className={cn(darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+          <DialogHeader>
+            <DialogTitle className={cn(darkMode ? 'text-white' : 'text-slate-900')}>
+              Sauvegarder un preset de filtres
+            </DialogTitle>
+            <DialogDescription className={cn(darkMode ? 'text-slate-400' : 'text-slate-600')}>
+              Donnez un nom à ce preset pour le réutiliser plus tard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && presetName.trim()) {
+                  const newPreset: FilterPreset = {
+                    id: uid('PRESET'),
+                    name: presetName.trim(),
+                    priority: priorityFilter as Priority | 'ALL',
+                    kind: kindFilter as CalendarKind | 'ALL',
+                    bureaux: Array.from(visibleBureaux),
+                  };
+                  const updated = [...filterPresets, newPreset];
+                  setFilterPresets(updated);
+                  try {
+                    localStorage.setItem('calendrier.filterPresets', JSON.stringify(updated));
+                  } catch (error) {
+                    addToast('❌ Erreur de sauvegarde du preset', 'error');
+                  }
+                  addToast(`✓ Preset "${presetName.trim()}" sauvegardé`, 'success');
+                  setShowPresetModal(false);
+                  setPresetName('');
+                } else if (e.key === 'Escape') {
+                  setShowPresetModal(false);
+                  setPresetName('');
+                }
+              }}
+              autoFocus
+              className={cn(darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900')}
+              placeholder="Nom du preset (ex: Paiements urgents)"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setShowPresetModal(false);
+                setPresetName('');
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (presetName.trim()) {
+                  const newPreset: FilterPreset = {
+                    id: uid('PRESET'),
+                    name: presetName.trim(),
+                    priority: priorityFilter as Priority | 'ALL',
+                    kind: kindFilter as CalendarKind | 'ALL',
+                    bureaux: Array.from(visibleBureaux),
+                  };
+                  const updated = [...filterPresets, newPreset];
+                  setFilterPresets(updated);
+                  try {
+                    localStorage.setItem('calendrier.filterPresets', JSON.stringify(updated));
+                  } catch (error) {
+                    addToast('❌ Erreur de sauvegarde du preset', 'error');
+                    return;
+                  }
+                  addToast(`✓ Preset "${presetName.trim()}" sauvegardé`, 'success');
+                  setShowPresetModal(false);
+                  setPresetName('');
+                }
+              }}
+              disabled={!presetName.trim()}
+            >
+              Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Preview visuel pendant drag & drop */}
+      {dragPreview.item && draggedItem && (
+        <div
+          className={cn(
+            'fixed pointer-events-none z-[100] px-3 py-2 rounded-lg border shadow-2xl',
+            'bg-slate-800/95 border-orange-500/50 backdrop-blur-sm',
+            'transform -translate-x-1/2 -translate-y-1/2'
+          )}
+          style={{
+            left: `${dragPreview.x}px`,
+            top: `${dragPreview.y}px`,
+            transition: 'none',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              'w-2 h-2 rounded-full',
+              draggedItem.priority === 'critical' ? 'bg-red-500' :
+              draggedItem.priority === 'urgent' ? 'bg-amber-500' : 'bg-blue-500'
+            )} />
+            <span className="text-sm font-semibold text-white">{draggedItem.title}</span>
+            <Badge variant="default" className="text-xs">
+              {draggedItem.kind}
+            </Badge>
+          </div>
+          <div className="text-xs text-slate-400 mt-1">
+            Glissez vers un créneau pour replanifier
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ViewPill = memo(function ViewPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        'px-3 py-1.5 rounded-lg text-sm border transition',
+        active
+          ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
+          : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
+      )}
+      aria-pressed={active}
+      aria-label={`Vue ${label}`}
+    >
+      {label}
+    </button>
+  );
+});
+
+const WeekView = memo(function WeekView({
+  days,
+  items,
+  conflicts,
+  slaStatuses,
+  onOpen,
+  selectedIds,
+  onToggleSelect,
+  darkMode,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onTimeSlotClick,
+}: {
+  days: Date[];
+  items: CalendarItem[];
+  conflicts: Set<string>;
+  slaStatuses: SLAStatus[];
+  onOpen: (id: string) => void;
+  selectedIds: Record<string, boolean>;
+  onToggleSelect: (id: string) => void;
+  darkMode: boolean;
+  onDragStart: (e: React.DragEvent, item: CalendarItem) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, targetDate: Date, targetHour?: number) => void;
+  onDragEnd: () => void;
+  onTimeSlotClick?: (date: Date, hour: number) => void;
+}) {
+  const HOUR_HEIGHT = 56;
+  const START_HOUR = 6;
+  const END_HOUR = 20;
+
+  const byDay = useMemo(() => {
+    const map = new Map<string, CalendarItem[]>();
+    for (const d of days) map.set(dayKeyLocal(d), []);
+    for (const it of items) {
+      const k = dayKeyLocal(startOfDay(new Date(it.start)));
+      if (!map.has(k)) continue;
+      map.get(k)!.push(it);
+    }
+    for (const [k, arr] of map) {
+      map.set(k, [...arr].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+    }
+    return map;
+  }, [days, items]);
+
+  const gridCols = `72px repeat(${days.length}, minmax(220px, 1fr))`;
+
+  return (
+    <div className="min-w-[980px]">
+      <div className={cn('grid border-b', darkMode ? 'border-slate-700/60' : 'border-slate-200')} style={{ gridTemplateColumns: gridCols }}>
+        <div className="p-2 text-xs text-slate-500">Heure</div>
+        {days.map((d) => (
+          <div key={d.toISOString()} className="p-2 text-sm font-semibold">
+            {fmtDayLabel(d)}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid" style={{ gridTemplateColumns: gridCols }}>
+        <div className={cn('border-r', darkMode ? 'border-slate-700/60' : 'border-slate-200')}>
+          <div style={{ height: (END_HOUR - START_HOUR) * HOUR_HEIGHT }} className="relative">
+            {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
+              <div
+                key={i}
+                className={cn('px-2 text-[11px] text-slate-500', i ? 'border-t' : '', darkMode ? 'border-slate-800/60' : 'border-slate-100')}
+                style={{ height: HOUR_HEIGHT }}
+              >
+                <div className="pt-1">{fmtHour(START_HOUR + i)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {days.map((d) => {
+          const k = dayKeyLocal(d);
+          const dayItems = byDay.get(k) ?? [];
+          return (
+            <div key={k} className={cn('relative border-r', darkMode ? 'border-slate-700/60' : 'border-slate-200')}>
+              <div
+                style={{ height: (END_HOUR - START_HOUR) * HOUR_HEIGHT }}
+                className="relative"
+                onDragOver={onDragOver}
+                onDrop={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const y = e.clientY - rect.top;
+                  const hour = Math.floor(y / HOUR_HEIGHT) + START_HOUR;
+                  onDrop(e, d, hour);
+                }}
+                onClick={(e) => {
+                  if (onTimeSlotClick && e.target === e.currentTarget) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const y = e.clientY - rect.top;
+                    const hour = Math.floor(y / HOUR_HEIGHT) + START_HOUR;
+                    if (hour >= START_HOUR && hour < END_HOUR) {
+                      onTimeSlotClick(d, hour);
+                    }
+                  }
+                }}
+              >
+                {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
+                  <div
+                    key={i}
+                    className={cn('absolute left-0 right-0 border-t', darkMode ? 'border-slate-800/60' : 'border-slate-100')}
+                    style={{ top: i * HOUR_HEIGHT }}
+                  />
+                ))}
+
+                {dayItems.map((it) => {
+                  const s = new Date(it.start);
+                  const e = new Date(it.end);
+                  const top = ((minutesSinceStartOfDay(s) - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                  const height = clamp((minutesDiff(s, e) / 60) * HOUR_HEIGHT, 26, 6 * HOUR_HEIGHT);
+                  const isConflict = conflicts.has(it.id);
+                  const isSelected = !!selectedIds[it.id];
+                  const slaStatus = slaStatuses.find((s) => s.itemId === it.id);
+
+                  return (
+                    <div
+                      key={it.id}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, it)}
+                      onDragEnd={onDragEnd}
+                      className={cn(
+                        'absolute left-2 right-2 rounded-lg border p-2 cursor-move select-none transition-all',
+                        darkMode ? 'bg-slate-950/60' : 'bg-white',
+                        isConflict ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-slate-700/40',
+                        isSelected ? 'ring-2 ring-orange-500/60' : '',
+                        slaStatus?.isOverdue ? 'bg-red-500/10' : '',
+                        'hover:shadow-lg hover:scale-[1.02]'
+                      )}
+                      style={{ top: Math.max(0, top), height, zIndex: 10 }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onOpen(it.id);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const customEvent = new CustomEvent('open-edit-modal', { detail: { item: it } });
+                        window.dispatchEvent(customEvent);
+                      }}
+                      title={`${it.title} - Clic: voir détails | Double-clic: modifier | Glisser: déplacer`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Événement ${it.title}, ${it.kind}, ${it.bureau || 'non assigné'}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onOpen(it.id);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(ev) => {
+                              ev.stopPropagation();
+                              onToggleSelect(it.id);
+                            }}
+                            className="accent-orange-500"
+                          />
+                          <span className="font-mono text-[10px] text-slate-400 truncate">{it.id}</span>
+                        </div>
+                        <Badge variant={severityBadgeVariant(it.severity)} className="text-[10px]">
+                          {it.severity}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold line-clamp-2">{it.title}</div>
+                      <div className="mt-1 text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
+                        <span>{it.bureau ?? '—'}</span>
+                        <span>•</span>
+                        <span className="font-mono">
+                          {s.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isConflict && <span className="text-red-400 font-bold">⚠</span>}
+                        {slaStatus?.isOverdue && <span className="text-red-400 font-bold">SLA</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+const DayView = memo(function DayView(props: Omit<Parameters<typeof WeekView>[0], 'days'> & { day: Date }) {
+  return <WeekView {...props} days={[props.day]} />;
+});
+
+const GanttView = memo(function GanttView({
+  items,
+  conflicts,
+  weekStart,
+  onOpen,
+  darkMode,
+}: {
+  items: CalendarItem[];
+  conflicts: Set<string>;
+  weekStart: Date;
+  onOpen: (id: string) => void;
+  darkMode: boolean;
+}) {
+  const days = Array.from({ length: 14 }, (_, i) => startOfDay(addDays(weekStart, i)));
+  const byBureau = useMemo(() => {
+    const map = new Map<string, CalendarItem[]>();
+    for (const it of items) {
+      const bureau = it.bureau || 'N/A';
+      if (!map.has(bureau)) map.set(bureau, []);
+      map.get(bureau)!.push(it);
+    }
+    return map;
+  }, [items]);
+
+  const dayWidth = 120;
+  const rowHeight = 60;
+  const gridCols = `200px repeat(${days.length}, minmax(120px, 1fr))`;
+
+  return (
+    <div className="p-4 overflow-auto" style={{ minWidth: days.length * dayWidth + 200 }}>
+      <div className="inline-block min-w-full">
+        {/* Header */}
+        <div className={cn('grid border-b sticky top-0 z-10', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')} style={{ gridTemplateColumns: gridCols }}>
+          <div className="p-3 font-semibold text-sm">Bureau</div>
+          {days.map((d) => (
+            <div key={d.toISOString()} className="p-2 text-center border-l text-xs" style={{ width: dayWidth }}>
+              <div className="font-semibold">{fmtDayLabel(d)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {Array.from(byBureau.entries()).map(([bureau, bureauItems]) => (
+          <div key={bureau} className={cn('grid border-b', darkMode ? 'border-slate-700' : 'border-slate-200')} style={{ gridTemplateColumns: gridCols, height: rowHeight }}>
+            <div className="p-3 font-semibold text-sm border-r flex items-center">{bureau}</div>
+            {days.map((day) => {
+              const dayKey = dayKeyLocal(day);
+              const dayItems = bureauItems.filter((it) => {
+                const itDay = dayKeyLocal(startOfDay(new Date(it.start)));
+                return itDay === dayKey;
+              });
+
+              return (
+                <div
+                  key={dayKey}
+                  className={cn('relative border-l p-1', darkMode ? 'border-slate-700' : 'border-slate-200')}
+                  style={{ width: dayWidth }}
+                >
+                  {dayItems.map((it) => {
+                    const isConflict = conflicts.has(it.id);
+                    const start = new Date(it.start);
+                    const end = new Date(it.end);
+                    const left = parseFloat((((start.getHours() * 60 + start.getMinutes()) / (24 * 60)) * 100).toFixed(2));
+                    const width = parseFloat((((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) * 100).toFixed(2));
+
+                    return (
+                      <div
+                        key={it.id}
+                        className={cn(
+                          'absolute rounded px-2 py-1 text-xs cursor-pointer truncate',
+                          darkMode ? 'bg-slate-800' : 'bg-slate-100',
+                          isConflict ? 'border-2 border-red-500' : 'border border-slate-400',
+                          it.priority === 'critical' ? 'bg-red-500/20' : it.priority === 'urgent' ? 'bg-amber-500/20' : ''
+                        )}
+                        style={{ left: `${left}%`, width: `${Math.max(5, width)}%`, top: 2, height: rowHeight - 4 }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpen(it.id);
+                        }}
+                        title={it.title}
+                      >
+                        <div className="font-semibold truncate">{it.title}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {start.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const AgendaView = memo(function AgendaView({
+  items,
+  conflicts,
+  slaStatuses,
+  onOpen,
+  selectedIds,
+  onToggleSelect,
+  darkMode,
+}: {
+  items: CalendarItem[];
+  conflicts: Set<string>;
+  slaStatuses: SLAStatus[];
+  onOpen: (id: string) => void;
+  selectedIds: Record<string, boolean>;
+  onToggleSelect: (id: string) => void;
+  darkMode: boolean;
+}) {
+  const sorted = useMemo(() => {
+    return [...items].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  }, [items]);
+
+  if (!sorted.length) {
+    return (
+      <div className="p-6">
+        <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : '')}>
+          <CardContent className="p-6">
+            <p className="text-sm font-semibold">Aucun élément dans cette vue</p>
+            <p className="text-xs text-slate-400 mt-1">Change les filtres ou la période.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
-}
 
-function getRangeDates(selectedDate: Date, viewType: CalendarViewType) {
-  const start = new Date(selectedDate);
-  const end = new Date(selectedDate);
+  // Virtualisation simple : limiter le rendu initial et charger plus au scroll
+  const [visibleCount, setVisibleCount] = useState(50);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || sorted.length <= visibleCount) return;
+    
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // Charger 20 items de plus quand on approche de la fin
+      if (scrollTop + clientHeight > scrollHeight - 200 && visibleCount < sorted.length) {
+        setVisibleCount((prev) => Math.min(prev + 20, sorted.length));
+      }
+    };
+    
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [sorted.length, visibleCount]);
+  
+  const visibleItems = sorted.slice(0, visibleCount);
 
-  if (viewType === 'day') {
-    // même jour
-  } else if (viewType === 'month') {
-    start.setDate(1);
-    end.setMonth(end.getMonth() + 1);
-    end.setDate(0);
-  } else {
-    // workweek/week = semaine ISO simple (lundi -> dimanche)
-    const day = start.getDay(); // 0 dim
-    const diffToMonday = (day + 6) % 7; // lundi=0
-    start.setDate(start.getDate() - diffToMonday);
-    end.setDate(start.getDate() + 6);
+  return (
+    <div ref={containerRef} className="p-4 space-y-3 h-full overflow-auto">
+      {visibleItems.map((it) => {
+        const isConflict = conflicts.has(it.id);
+        const isSelected = !!selectedIds[it.id];
+        const slaStatus = slaStatuses.find((s) => s.itemId === it.id);
+        const s = new Date(it.start);
+        const e = new Date(it.end);
+
+        return (
+          <Card
+            key={it.id}
+            className={cn(
+              'cursor-pointer hover:border-orange-500/40 transition',
+              darkMode ? 'bg-slate-950/30 border-slate-700/60' : '',
+              isConflict ? 'border-red-500/50' : '',
+              isSelected ? 'ring-2 ring-orange-500/60' : '',
+              slaStatus?.isOverdue ? 'bg-red-500/5' : ''
+            )}
+            onClick={(e) => {
+              // Ne pas ouvrir si on clique sur un bouton ou un input
+              if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input[type="checkbox"]')) {
+                return;
+              }
+              onOpen(it.id);
+            }}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(ev) => {
+                        ev.stopPropagation();
+                        onToggleSelect(it.id);
+                      }}
+                      className="accent-orange-500"
+                    />
+                    <span className="font-mono text-xs text-slate-400">{it.id}</span>
+                    <Badge variant={severityBadgeVariant(it.severity)}>{it.severity}</Badge>
+                    <Badge variant="info">{it.kind}</Badge>
+                    {it.bureau && <Badge variant="default">{it.bureau}</Badge>}
+                    {isConflict && <Badge variant="urgent">CONFLIT</Badge>}
+                    {slaStatus?.isOverdue && <Badge variant="urgent">SLA {slaStatus.daysOverdue}j</Badge>}
+                  </div>
+                  <div className="mt-1 font-semibold">{it.title}</div>
+                  {it.description && <div className="mt-1 text-xs text-slate-400">{it.description}</div>}
+                  <div className="mt-1 text-xs text-slate-400 font-mono">
+                    {s.toLocaleDateString('fr-FR')} • {s.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}–{e.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onOpen(it.id);
+                  }}
+                >
+                  Détails
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+});
+
+function Inspector({
+  item,
+  conflicts,
+  slaStatuses,
+  onClose,
+  onAction,
+  darkMode,
+  onEdit,
+  onDelete,
+  onUpdateItem,
+}: {
+  item: CalendarItem | null;
+  conflicts: Set<string>;
+  slaStatuses: SLAStatus[];
+  onClose: () => void;
+  onAction: (a: string) => void;
+  darkMode: boolean;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onUpdateItem?: (itemId: string, updates: Partial<CalendarItem>) => void;
+}) {
+  const [showNotes, setShowNotes] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [showShare, setShowShare] = useState(false);
+  const [shareLink, setShareLink] = useState('');
+  
+  // Extraire les mentions @personne dans une note
+  const extractMentions = (text: string): string[] => {
+    const mentionRegex = /@(\w+)/g;
+    const matches = text.matchAll(mentionRegex);
+    return Array.from(matches, m => m[1]);
+  };
+  
+  // Ajouter une note
+  const handleAddNote = () => {
+    if (!item || !newNote.trim() || !onUpdateItem) return;
+    
+    const mentions = extractMentions(newNote);
+    const note: Note = {
+      id: uid('NOTE'),
+      content: newNote.trim(),
+      author: { id: 'USR-001', name: 'A. DIALLO' },
+      timestamp: new Date().toISOString(),
+      mentions: mentions.length > 0 ? mentions : undefined,
+    };
+    
+    const updatedNotes = [...(item.notes || []), note];
+    onUpdateItem(item.id, { notes: updatedNotes });
+    setNewNote('');
+    setShowNotes(false);
+  };
+  
+  // Générer un lien de partage
+  const handleGenerateShareLink = () => {
+    if (!item) return;
+    if (typeof window === 'undefined') return; // Guard pour SSR
+
+    const params = new URLSearchParams({
+      view: 'week',
+      item: item.id,
+    });
+
+    const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    setShareLink(link);
+    setShowShare(true);
+    
+    // Copier dans le presse-papiers avec gestion d'erreur
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(link).catch(() => {
+        // Fallback silencieux si clipboard API n'est pas disponible
+      });
+    }
+  };
+  if (!item) {
+    return (
+      <div className="h-full p-4">
+        <div className={cn('h-full rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/40' : 'border-slate-200 bg-white')}>
+          <p className="text-sm font-semibold">Inspecteur</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Clique un item pour voir détails, actions, pièces, log.
+          </p>
+        </div>
+      </div>
+    );
   }
 
-  return { startIso: isoDate(start), endIso: isoDate(end) };
+  const isConflict = conflicts.has(item.id);
+  const slaStatus = slaStatuses.find((s) => s.itemId === item.id);
+  const s = new Date(item.start);
+  const e = new Date(item.end);
+
+  return (
+    <div className="h-full p-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={cn('rounded-xl border p-4 flex flex-col gap-3', darkMode ? 'border-slate-700/60 bg-slate-950/40' : 'border-slate-200 bg-white')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span className="font-mono text-xs text-slate-400">{item.id}</span>
+              <Badge variant={severityBadgeVariant(item.severity)}>{item.severity}</Badge>
+              <Badge variant="info">{item.kind}</Badge>
+              {item.bureau && <Badge variant="default">{item.bureau}</Badge>}
+              {isConflict && <Badge variant="urgent">CONFLIT</Badge>}
+              {slaStatus?.isOverdue && <Badge variant="urgent">SLA {slaStatus.daysOverdue}j</Badge>}
+            </div>
+            <div className="mt-2 font-bold text-base">{item.title}</div>
+            {item.description && <div className="mt-1 text-sm text-slate-400">{item.description}</div>}
+            <div className="mt-1 text-xs text-slate-400 font-mono">
+              {s.toLocaleDateString('fr-FR')} • {s.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}–{e.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {onEdit && item.status !== 'done' && item.status !== 'ack' && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                title="Modifier (Ctrl+E)"
+              >
+                <Edit2 className="w-4 h-4" />
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                title="Supprimer (Suppr)"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              title="Fermer (ESC)"
+            >
+            <X className="w-4 h-4" />
+          </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+            <CardContent className="p-3">
+              <p className="text-xs text-slate-400">Statut</p>
+              <p className="font-semibold">{item.status}</p>
+            </CardContent>
+          </Card>
+          <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+            <CardContent className="p-3">
+              <p className="text-xs text-slate-400">Priorité</p>
+              <p className="font-semibold">{item.priority}</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {item.assignees && item.assignees.length > 0 && (
+          <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Assignés
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3">
+              {item.assignees.map((a, idx) => (
+                <div key={idx} className="text-sm">{a.name}</div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {item.linkedTo && (
+          <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Lien</CardTitle>
+            </CardHeader>
+            <CardContent className="p-3">
+              <p className="text-sm font-semibold">{item.linkedTo.type}</p>
+              <p className="text-xs text-slate-400">{item.linkedTo.label || item.linkedTo.id}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {slaStatus && (
+          <div className={cn('rounded-lg p-3 border', darkMode ? 'border-amber-500/30 bg-amber-500/10' : 'border-amber-200 bg-amber-50')}>
+            <p className="text-sm font-semibold text-amber-300 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              SLA
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {item.slaDueAt && (
+                <>À traiter avant : <span className="font-mono">{new Date(item.slaDueAt).toLocaleString('fr-FR')}</span></>
+              )}
+            </p>
+            {slaStatus.isOverdue && (
+              <p className="text-xs text-red-400 mt-1 font-semibold">
+                ⚠️ En retard de {slaStatus.daysOverdue} jour(s)
+              </p>
+            )}
+            {slaStatus.recommendation && (
+              <p className="text-xs text-amber-300 mt-1">{slaStatus.recommendation}</p>
+            )}
+          </div>
+        )}
+
+        {isConflict && (
+          <div className={cn('rounded-lg p-3 border', darkMode ? 'border-red-500/30 bg-red-500/10' : 'border-red-200 bg-red-50')}>
+            <p className="text-sm font-semibold text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Conflit détecté
+            </p>
+            <p className="text-xs text-slate-400 mt-1">Chevauchement avec une autre activité</p>
+          </div>
+        )}
+
+        <div className="mt-auto space-y-2">
+          {item.status !== 'done' && item.status !== 'ack' && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (onEdit) {
+                    onEdit();
+                  } else {
+                    onAction('modifier');
+                  }
+                }}
+                variant="default"
+                size="sm"
+              >
+                <Edit2 className="w-4 h-4 mr-1" />
+                Modifier
+              </Button>
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAction('replanifier');
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                <CalendarIcon className="w-4 h-4 mr-1" />
+                Replanifier
+              </Button>
+        </div>
+          )}
+          
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAction('copier');
+              }}
+              variant="outline"
+              size="sm"
+              title="Copier (Ctrl+C)"
+            >
+              <Copy className="w-4 h-4 mr-1" />
+              Copier
+            </Button>
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAction('dupliquer');
+              }}
+              variant="outline"
+              size="sm"
+              title="Dupliquer (Ctrl+D)"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Dupliquer
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2">
+            {item.status !== 'done' && item.status !== 'ack' && (
+              <>
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onAction('terminer');
+                  }}
+                  variant="success"
+                  size="sm"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  Terminer
+                </Button>
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onDelete) {
+                      onDelete();
+                    } else {
+                      onAction('annuler');
+                    }
+                  }}
+                  variant="destructive"
+                  size="sm"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Supprimer
+                </Button>
+              </>
+            )}
+            {item.status === 'done' && (
+              <div className="col-span-2 flex items-center justify-center gap-2 text-emerald-400 py-2">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">Événement terminé</span>
+              </div>
+            )}
+            {item.status === 'ack' && (
+              <div className="col-span-2 flex items-center justify-center gap-2 text-red-400 py-2">
+                <XCircle className="w-5 h-5" />
+                <span className="font-medium">Événement annulé</span>
+              </div>
+            )}
+          </div>
+
+          {item.status !== 'done' && item.status !== 'ack' && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAction('assigner-bureau');
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <Building2 className="w-4 h-4 mr-1" />
+                Assigner bureau
+              </Button>
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAction('escalader');
+                }}
+                variant="warning"
+                size="sm"
+              >
+                <AlertTriangle className="w-4 h-4 mr-1" />
+                Escalader
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function withinRange(dateIso: string, startIso: string, endIso: string) {
-  return dateIso >= startIso && dateIso <= endIso;
+function MonthView({
+  cursorDate,
+  items,
+  conflicts,
+  slaStatuses,
+  selectedIds,
+  onOpen,
+  onToggleSelect,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  darkMode,
+}: {
+  cursorDate: Date;
+  items: CalendarItem[];
+  conflicts: Set<string>;
+  slaStatuses: Array<{ itemId: string; isOverdue: boolean }>;
+  selectedIds: Record<string, boolean>;
+  onOpen: (id: string) => void;
+  onToggleSelect: (id: string) => void;
+  onDragStart: (e: React.DragEvent, item: CalendarItem) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, date: Date, hour?: number) => void;
+  darkMode: boolean;
+}) {
+  const monthStart = startOfMonth(cursorDate);
+  const monthEnd = endOfMonth(cursorDate);
+  const calendarStart = startOfWeek(monthStart);
+  const calendarEnd = addDays(startOfWeek(monthEnd), 6);
+  
+  const days: Date[] = [];
+  for (let d = new Date(calendarStart); d <= calendarEnd; d = addDays(d, 1)) {
+    days.push(d);
+  }
+
+  const byDay = useMemo(() => {
+    const map = new Map<string, CalendarItem[]>();
+    for (const d of days) map.set(dayKeyLocal(d), []);
+    for (const it of items) {
+      const k = dayKeyLocal(startOfDay(new Date(it.start)));
+      if (map.has(k)) {
+        map.get(k)!.push(it);
+      }
+    }
+    for (const [k, arr] of map) {
+      map.set(k, [...arr].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+    }
+    return map;
+  }, [days, items]);
+
+  const weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  const isCurrentMonth = (d: Date) => d.getMonth() === cursorDate.getMonth();
+  const isToday = (d: Date) => dayKeyLocal(d) === dayKeyLocal(new Date());
+
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <div className="grid grid-cols-7 gap-1 min-w-[800px]">
+        {/* En-têtes jours */}
+        {weekDays.map((day) => (
+          <div
+            key={day}
+            className={cn(
+              'p-2 text-center text-xs font-semibold',
+              darkMode ? 'text-slate-400' : 'text-slate-600'
+            )}
+          >
+            {day}
+          </div>
+        ))}
+
+        {/* Grille calendrier */}
+        {days.map((d) => {
+          const k = dayKeyLocal(d);
+          const dayItems = byDay.get(k) ?? [];
+          const inMonth = isCurrentMonth(d);
+          const today = isToday(d);
+          const itemCount = dayItems.length;
+          const hasConflict = dayItems.some((it) => conflicts.has(it.id));
+          const hasOverdue = dayItems.some((it) => slaStatuses.some((s) => s.itemId === it.id && s.isOverdue));
+
+          return (
+            <div
+              key={k}
+              className={cn(
+                'min-h-[120px] border rounded-lg p-2 transition-colors',
+                darkMode ? 'border-slate-700/60' : 'border-slate-200',
+                !inMonth && (darkMode ? 'opacity-30' : 'opacity-40'),
+                today && 'ring-2 ring-orange-500/50',
+                hasConflict && 'bg-red-500/10',
+                hasOverdue && 'bg-red-500/5'
+              )}
+              onDragOver={onDragOver}
+              onDrop={(e) => onDrop(e, d)}
+            >
+              <div
+                className={cn(
+                  'text-sm font-semibold mb-1',
+                  today ? 'text-orange-500' : inMonth ? (darkMode ? 'text-slate-200' : 'text-slate-900') : (darkMode ? 'text-slate-500' : 'text-slate-400')
+                )}
+              >
+                {d.getDate()}
+              </div>
+              <div className="space-y-1">
+                {dayItems.slice(0, 3).map((it) => {
+                  const isConflict = conflicts.has(it.id);
+                  const isSelected = !!selectedIds[it.id];
+                  const slaStatus = slaStatuses.find((s) => s.itemId === it.id);
+
+                  return (
+                    <div
+                      key={it.id}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, it)}
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded cursor-move truncate',
+                        darkMode ? 'bg-slate-800/60' : 'bg-slate-100',
+                        isConflict && 'border-l-2 border-red-500',
+                        isSelected && 'ring-1 ring-orange-500',
+                        slaStatus?.isOverdue && 'bg-red-500/20'
+                      )}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onOpen(it.id);
+                      }}
+                      title={it.title}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${it.title}, ${it.kind}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onOpen(it.id);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedIds[it.id]}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            onToggleSelect(it.id);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-3 h-3"
+                        />
+                        <span className="truncate">{it.title}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {itemCount > 3 && (
+                  <div className={cn('text-[10px] px-1.5 text-center', darkMode ? 'text-slate-400' : 'text-slate-500')}>
+                    +{itemCount - 3} autre{itemCount - 3 > 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
-function BulkRescheduleModal({
+// Vue Ressource (par personne)
+function ResourceView({
+  byAssignee,
+  conflicts,
+  slaStatuses,
+  weekDays,
+  onOpen,
+  selectedIds,
+  onToggleSelect,
+  darkMode,
+}: {
+  byAssignee: Map<string, CalendarItem[]>;
+  conflicts: Set<string>;
+  slaStatuses: SLAStatus[];
+  weekDays: Date[];
+  onOpen: (id: string) => void;
+  selectedIds: Record<string, boolean>;
+  onToggleSelect: (id: string) => void;
+  darkMode: boolean;
+}) {
+  const HOUR_HEIGHT = 56;
+  const START_HOUR = 6;
+  const END_HOUR = 20;
+
+  if (byAssignee.size === 0) {
+  return (
+    <div className="p-6">
+      <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : '')}>
+        <CardContent className="p-6">
+            <p className="text-sm font-semibold">Aucune ressource assignée</p>
+            <p className="text-xs text-slate-400 mt-1">Les événements sans assigné n'apparaissent pas ici.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4 overflow-auto">
+      {Array.from(byAssignee.entries()).map(([assigneeId, assigneeItems]) => {
+        const assigneeName = assigneeItems[0]?.assignees?.find((a) => a.id === assigneeId)?.name || assigneeId;
+        const byDay = new Map<string, CalendarItem[]>();
+        for (const it of assigneeItems) {
+          const k = dayKeyLocal(startOfDay(new Date(it.start)));
+          if (!byDay.has(k)) byDay.set(k, []);
+          byDay.get(k)!.push(it);
+        }
+
+        const totalHours = assigneeItems.reduce((sum, it) => {
+          return sum + minutesDiff(new Date(it.start), new Date(it.end)) / 60;
+        }, 0);
+
+        return (
+          <Card key={assigneeId} className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  <span>{assigneeName}</span>
+                  <Badge variant="info">{assigneeItems.length} item(s)</Badge>
+                  <Badge variant="default">{totalHours.toFixed(1)}h</Badge>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-[100px_repeat(5,1fr)] gap-2">
+                <div className="text-xs text-slate-400 p-2">Heure</div>
+                {weekDays.map((d) => (
+                  <div key={d.toISOString()} className="text-xs font-semibold p-2 text-center">
+                    {fmtDayLabel(d)}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-[100px_repeat(5,1fr)] gap-2">
+                <div className={cn('border-r p-2', darkMode ? 'border-slate-700' : 'border-slate-200')}>
+                  <div style={{ height: (END_HOUR - START_HOUR) * HOUR_HEIGHT }} className="relative">
+                    {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
+                      <div
+                        key={i}
+                        className={cn('text-[10px] text-slate-500', i ? 'border-t' : '', darkMode ? 'border-slate-800' : 'border-slate-100')}
+                        style={{ height: HOUR_HEIGHT, paddingTop: 4 }}
+                      >
+                        {fmtHour(START_HOUR + i)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {weekDays.map((d) => {
+                  const k = dayKeyLocal(d);
+                  const dayItems = byDay.get(k) || [];
+                  return (
+                    <div
+                      key={k}
+                      className={cn('relative border-r', darkMode ? 'border-slate-700' : 'border-slate-200')}
+                      style={{ height: (END_HOUR - START_HOUR) * HOUR_HEIGHT }}
+                    >
+                      {dayItems.map((it) => {
+                        const s = new Date(it.start);
+                        const top = ((minutesSinceStartOfDay(s) - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                        const height = clamp((minutesDiff(s, new Date(it.end)) / 60) * HOUR_HEIGHT, 20, 6 * HOUR_HEIGHT);
+                        const isConflict = conflicts.has(it.id);
+                        return (
+                          <div
+                            key={it.id}
+                            className={cn(
+                              'absolute left-1 right-1 rounded p-1 text-xs cursor-pointer',
+                              darkMode ? 'bg-slate-800' : 'bg-white',
+                              isConflict ? 'border-2 border-red-500' : 'border border-slate-400'
+                            )}
+                            style={{ top: Math.max(0, top), height }}
+                            onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpen(it.id);
+                        }}
+                            title={it.title}
+                          >
+                            <div className="font-semibold truncate">{it.title}</div>
+                            <div className="text-[10px] text-slate-400">
+                              {s.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// Vue Kanban
+function KanbanView({
+  byStatus,
+  conflicts,
+  slaStatuses,
+  onOpen,
+  selectedIds,
+  onToggleSelect,
+  onMoveItem,
+  darkMode,
+}: {
+  byStatus: Map<Status, CalendarItem[]>;
+  conflicts: Set<string>;
+  slaStatuses: SLAStatus[];
+  onOpen: (id: string) => void;
+  selectedIds: Record<string, boolean>;
+  onToggleSelect: (id: string) => void;
+  onMoveItem: (itemId: string, newStatus: Status) => void;
+  darkMode: boolean;
+}) {
+  const columns: Array<{ status: Status; label: string; color: string }> = [
+    { status: 'open', label: 'Ouvert', color: 'blue' },
+    { status: 'done', label: 'Terminé', color: 'green' },
+    { status: 'blocked', label: 'Bloqué', color: 'red' },
+    { status: 'ack', label: 'Annulé', color: 'gray' },
+    { status: 'snoozed', label: 'Reporté', color: 'amber' },
+  ];
+
+  return (
+    <div className="p-4 overflow-x-auto">
+      <div className="flex gap-4 min-w-max">
+        {columns.map((col) => {
+          const items = byStatus.get(col.status) || [];
+          return (
+            <div
+              key={col.status}
+              data-status={col.status}
+              className={cn('w-80 shrink-0 rounded-lg border p-3', darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white border-slate-200')}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">{col.label}</h3>
+                <Badge variant="info">{items.length}</Badge>
+              </div>
+              <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+                {items.map((it) => {
+                  const isConflict = conflicts.has(it.id);
+                  const slaStatus = slaStatuses.find((s) => s.itemId === it.id);
+                  return (
+                    <Card
+                      key={it.id}
+                      draggable
+                      onDragEnd={(e) => {
+                        const target = document.elementFromPoint(e.clientX, e.clientY);
+                        const targetColumn = target?.closest('[data-status]')?.getAttribute('data-status');
+                        if (targetColumn && targetColumn !== it.status) {
+                          onMoveItem(it.id, targetColumn as Status);
+                        }
+                      }}
+                      className={cn(
+                        'cursor-move hover:shadow-md transition',
+                        darkMode ? 'bg-slate-800/50' : 'bg-slate-50',
+                        isConflict ? 'border-red-500/50' : '',
+                        selectedIds[it.id] ? 'ring-2 ring-orange-500' : ''
+                      )}
+                      onClick={() => onOpen(it.id)}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!selectedIds[it.id]}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              onToggleSelect(it.id);
+                            }}
+                            className="accent-orange-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="font-mono text-[10px] text-slate-400">{it.id}</span>
+                              <Badge variant={severityBadgeVariant(it.severity)} className="text-[10px]">
+                                {it.severity}
+                              </Badge>
+                              {isConflict && <Badge variant="urgent" className="text-[10px]">CONFLIT</Badge>}
+                              {slaStatus?.isOverdue && <Badge variant="urgent" className="text-[10px]">SLA</Badge>}
+                            </div>
+                            <p className="font-semibold text-sm truncate">{it.title}</p>
+          <p className="text-xs text-slate-400 mt-1">
+                              {new Date(it.start).toLocaleDateString('fr-FR')} • {it.bureau || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+                {items.length === 0 && (
+                  <div className="text-center py-8 text-xs text-slate-400">Aucun item</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Panel Prévisions
+function PredictionsPanel({
+  predictions,
+  onClose,
+  darkMode,
+}: {
+  predictions: Array<{
+    date: string;
+    totalLoad: number;
+    maxBureau: string;
+    maxBureauLoad: number;
+    capacity: number;
+    isOverloaded: boolean;
+    overloadPercent: number;
+  }>;
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  return (
+    <div className="fixed bottom-4 right-4 w-96 z-40">
+      <Card className={cn('shadow-2xl', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingDown className="w-4 h-4 text-amber-400" />
+              Prévisions (7j)
+            </div>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-3 h-3" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+          {predictions.map((pred, idx) => (
+            <div
+              key={pred.date}
+              className={cn(
+                'p-3 rounded-lg border',
+                pred.isOverloaded
+                  ? 'border-red-500/30 bg-red-500/10'
+                  : pred.overloadPercent > 80
+                  ? 'border-amber-500/30 bg-amber-500/10'
+                  : darkMode
+                  ? 'bg-slate-800/50 border-slate-700'
+                  : 'bg-slate-50 border-slate-200'
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-semibold">
+                  {idx === 0 ? "Aujourd'hui" : idx === 1 ? 'Demain' : new Date(pred.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+                </span>
+                <Badge variant={pred.isOverloaded ? 'urgent' : pred.overloadPercent > 80 ? 'warning' : 'default'}>
+                  {pred.overloadPercent}%
+                </Badge>
+              </div>
+              <div className="text-xs text-slate-400">
+                {pred.maxBureau}: {(pred.maxBureauLoad / 60).toFixed(1)}h / {(pred.capacity / 60).toFixed(0)}h
+              </div>
+              {pred.isOverloaded && (
+                <div className="text-xs text-red-400 mt-1">⚠️ Surcharge prévue</div>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Panneau Analytics Avancés
+function AnalyticsPanel({
+  items,
+  conflicts,
+  load,
+  slaStatuses,
+  stats,
+  onClose,
+  darkMode,
+}: {
+  items: CalendarItem[];
+  conflicts: Set<string>;
+  load: ReturnType<typeof computeLoad>;
+  slaStatuses: SLAStatus[];
+  stats: { conflicts: number; overdue: number; overloaded: boolean };
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  // Calculs de performance
+  const analytics = useMemo(() => {
+    const totalItems = items.length;
+    const doneItems = items.filter(it => it.status === 'done').length;
+    const completionRate = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+    
+    // Taux de respect SLA
+    const slaItems = slaStatuses.length;
+    const slaRespected = slaStatuses.filter(s => !s.isOverdue).length;
+    const slaRate = slaItems > 0 ? Math.round((slaRespected / slaItems) * 100) : 100;
+    
+    // Charge moyenne par bureau
+    const bureauLoads: Record<string, { total: number; days: number; avg: number }> = {};
+    for (const [bureau, days] of Object.entries(load)) {
+      const totalMinutes = Object.values(days).reduce((sum, d) => sum + d.minutes, 0);
+      const dayCount = Object.keys(days).length;
+      bureauLoads[bureau] = {
+        total: totalMinutes,
+        days: dayCount,
+        avg: dayCount > 0 ? Math.round(totalMinutes / dayCount) : 0,
+      };
+    }
+    
+    // Répartition par type
+    const byKind: Record<string, number> = {};
+    items.forEach(it => {
+      byKind[it.kind] = (byKind[it.kind] || 0) + 1;
+    });
+    
+    // Répartition par priorité
+    const byPriority: Record<string, number> = {};
+    items.forEach(it => {
+      byPriority[it.priority] = (byPriority[it.priority] || 0) + 1;
+    });
+    
+    return {
+      totalItems,
+      doneItems,
+      completionRate,
+      slaItems,
+      slaRespected,
+      slaRate,
+      bureauLoads,
+      byKind,
+      byPriority,
+    };
+  }, [items, slaStatuses, load]);
+  
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <Card className={cn('w-full max-w-4xl max-h-[90vh] overflow-auto', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-5 h-5" />
+              Analytics & Performance
+            </div>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* KPIs Principaux */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">Taux de complétion</p>
+                <p className="text-2xl font-bold">{analytics.completionRate}%</p>
+                <p className="text-xs text-slate-400 mt-1">{analytics.doneItems}/{analytics.totalItems}</p>
+              </CardContent>
+            </Card>
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">Respect SLA</p>
+                <p className={cn('text-2xl font-bold', analytics.slaRate >= 90 ? 'text-emerald-400' : analytics.slaRate >= 70 ? 'text-amber-400' : 'text-red-400')}>
+                  {analytics.slaRate}%
+                </p>
+                <p className="text-xs text-slate-400 mt-1">{analytics.slaRespected}/{analytics.slaItems}</p>
+              </CardContent>
+            </Card>
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">Conflits</p>
+                <p className={cn('text-2xl font-bold', stats.conflicts === 0 ? 'text-emerald-400' : 'text-red-400')}>
+                  {stats.conflicts}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">SLA en retard</p>
+                <p className={cn('text-2xl font-bold', stats.overdue === 0 ? 'text-emerald-400' : 'text-red-400')}>
+                  {stats.overdue}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* Charge par bureau */}
+          <div>
+            <CardTitle className="text-sm mb-3">Charge moyenne par bureau</CardTitle>
+            <div className="space-y-2">
+              {Object.entries(analytics.bureauLoads).map(([bureau, data]) => {
+                const capacity = CAPACITY_BY_BUREAU[bureau] ?? 480;
+                const percent = Math.round((data.avg / capacity) * 100);
+                return (
+                  <div key={bureau} className="flex items-center gap-3">
+                    <div className="w-24 text-sm font-semibold">{bureau}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-400">{data.avg} min/jour</span>
+                        <span className={cn('text-xs font-semibold', percent > 100 ? 'text-red-400' : percent > 80 ? 'text-amber-400' : 'text-emerald-400')}>
+                          {percent}%
+                        </span>
+                      </div>
+                      <div className={cn('h-2 rounded-full overflow-hidden', darkMode ? 'bg-slate-800' : 'bg-slate-200')}>
+                        <div
+                          className={cn('h-full transition-all', percent > 100 ? 'bg-red-500' : percent > 80 ? 'bg-amber-500' : 'bg-emerald-500')}
+                          style={{ width: `${Math.min(percent, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* Répartition par type */}
+          <div>
+            <CardTitle className="text-sm mb-3">Répartition par type</CardTitle>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.entries(analytics.byKind).map(([kind, count]) => (
+                <Card key={kind} className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-slate-400">{kind}</p>
+                    <p className="text-lg font-bold">{count}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+          
+          {/* Répartition par priorité */}
+          <div>
+            <CardTitle className="text-sm mb-3">Répartition par priorité</CardTitle>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(analytics.byPriority).map(([priority, count]) => (
+                <Card key={priority} className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-slate-400">{priority}</p>
+                    <p className={cn('text-lg font-bold', priority === 'critical' ? 'text-red-400' : priority === 'urgent' ? 'text-amber-400' : 'text-slate-400')}>
+                      {count}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Modale Templates
+function TemplatesModal({
   isOpen,
   onClose,
-  onConfirm,
-  targetCount,
+  onApply,
   darkMode,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (newDate: string, newTime: string) => void;
-  targetCount: number;
+  onApply: (template: CalendarItem) => void;
   darkMode: boolean;
 }) {
-  const [newDate, setNewDate] = useState(isoDate(new Date()));
-  const [newTime, setNewTime] = useState('10:00');
-
-  useEffect(() => {
-    if (isOpen) {
-      setNewDate(isoDate(new Date()));
-      setNewTime('10:00');
-    }
-  }, [isOpen]);
+  const templates: CalendarItem[] = [
+    {
+      id: 'TMP-1',
+      title: 'Réunion hebdo BMO',
+      description: 'Point hebdomadaire',
+      kind: 'meeting',
+      bureau: 'BMO',
+      assignees: [{ id: 'USR-001', name: 'A. DIALLO' }],
+      start: new Date().toISOString(),
+      end: new Date(Date.now() + 60 * 60000).toISOString(),
+      priority: 'normal',
+      severity: 'info',
+      status: 'open',
+    },
+    {
+      id: 'TMP-2',
+      title: 'Point projet',
+      description: 'Suivi projet',
+      kind: 'meeting',
+      bureau: 'BCT',
+      assignees: [{ id: 'u4', name: 'Chef de projet' }],
+      start: new Date().toISOString(),
+      end: new Date(Date.now() + 90 * 60000).toISOString(),
+      priority: 'normal',
+      severity: 'info',
+      status: 'open',
+    },
+  ];
 
   if (!isOpen) return null;
 
@@ -322,49 +4535,42 @@ function BulkRescheduleModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <Card className="w-full max-w-lg">
+      <Card className={cn('w-full max-w-lg', darkMode ? 'bg-slate-900' : 'bg-white')}>
         <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">🗓️ Replanification en masse</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Repeat className="w-5 h-5" />
+            Templates & Événements récurrents
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className={cn('p-3 rounded-lg border', darkMode ? 'bg-slate-900/20 border-slate-700' : 'bg-gray-50 border-gray-200')}>
-            <p className="text-sm font-semibold">Cibles : {targetCount}</p>
-            <p className="text-xs text-slate-400">La même date/heure sera appliquée à tous les événements ciblés.</p>
+        <CardContent className="space-y-3">
+          {templates.map((template) => (
+            <Card
+              key={template.id}
+              className={cn('cursor-pointer hover:border-orange-500/50', darkMode ? 'bg-slate-800/50' : 'bg-slate-50')}
+              onClick={() => {
+                onApply(template);
+                onClose();
+              }}
+            >
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold">{template.title}</p>
+                    <p className="text-xs text-slate-400">{template.description}</p>
+                  </div>
+                  <Button size="sm">Appliquer</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          <div className="pt-2 border-t">
+            <p className="text-xs text-slate-400 text-center">
+              💡 Les événements récurrents seront ajoutés prochainement
+            </p>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold mb-1">Date</label>
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className={cn(
-                  'w-full h-9 rounded-md border px-3 text-sm outline-none',
-                  darkMode ? 'bg-slate-900/40 border-slate-700 text-slate-200' : 'bg-white border-gray-300'
-                )}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1">Heure</label>
-              <input
-                type="time"
-                value={newTime}
-                onChange={(e) => setNewTime(e.target.value)}
-                className={cn(
-                  'w-full h-9 rounded-md border px-3 text-sm outline-none',
-                  darkMode ? 'bg-slate-900/40 border-slate-700 text-slate-200' : 'bg-white border-gray-300'
-                )}
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button className="flex-1" onClick={() => onConfirm(newDate, newTime)} disabled={!newDate || !newTime}>
-              ✓ Confirmer
-            </Button>
+          <div className="flex justify-end">
             <Button variant="secondary" onClick={onClose}>
-              Annuler
+              Fermer
             </Button>
           </div>
         </CardContent>
@@ -373,1749 +4579,376 @@ function BulkRescheduleModal({
   );
 }
 
-export default function CalendrierPage() {
-  // ======================
-  // BLOC 0 — CONTEXTE / STORES
-  // ======================
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog, actionLogs } = useBMOStore();
+// Modale Raccourcis
+function ShortcutsModal({
+  isOpen,
+  onClose,
+  darkMode,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  if (!isOpen) return null;
+
+  const shortcuts = [
+    { key: '/', action: 'Focus recherche' },
+    { key: 'Ctrl+←', action: 'Semaine précédente' },
+    { key: 'Ctrl+→', action: 'Semaine suivante' },
+    { key: 'Ctrl+Home', action: "Aujourd'hui" },
+    { key: 'Ctrl+1', action: 'Vue Semaine' },
+    { key: 'Ctrl+2', action: 'Vue Jour' },
+    { key: 'Ctrl+3', action: 'Vue Gantt' },
+    { key: 'Ctrl+4', action: 'Vue Ressource' },
+    { key: 'Ctrl+F', action: 'Toggle Mode Focus' },
+    { key: 'Ctrl+O', action: 'Auto-scheduling' },
+    { key: 'Ctrl+E', action: 'Export iCal' },
+    { key: 'Ctrl+Z', action: 'Annuler (Undo)' },
+    { key: 'Ctrl+Y ou Ctrl+Shift+Z', action: 'Rétablir (Redo)' },
+    { key: 'Ctrl+?', action: 'Afficher raccourcis' },
+    { key: 'ESC', action: 'Fermer modales' },
+  ];
 
-  const currentUser = useMemo(
-    () => ({
-      id: 'USR-001',
-      name: 'A. DIALLO',
-      role: 'Directeur Général',
-      bureau: 'BMO',
-    }),
-    []
-  );
-
-  // ======================
-  // BLOC 1 — ÉTAT UI
-  // ======================
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [activeView, setActiveView] = useState<CalendarView>('overview');
-  const [calendarViewType, setCalendarViewType] = useState<CalendarViewType>('workweek');
-
-  const [selectedBureaux, setSelectedBureaux] = useState<string[]>(bureaux.map((b) => b.code));
-
-  const [showPlanningModal, setShowPlanningModal] = useState(false);
-  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
-  const [editingActivity, setEditingActivity] = useState<CalendarEvent | null>(null);
-
-  const [showRescheduleSimulator, setShowRescheduleSimulator] = useState(false);
-  const [activityToReschedule, setActivityToReschedule] = useState<CalendarEvent | null>(null);
-
-  const [journalFilters, setJournalFilters] = useState<{ bureau?: string; project?: string; actionType?: string }>({});
-  const [calendarFilters, setCalendarFilters] = useState<{ bureau?: string; project?: string; type?: string; priority?: string }>({});
-
-  const [focusMode, setFocusMode] = useState<{ type?: 'bureau' | 'project' | 'priority'; value?: string }>({});
-
-  const [showFiltersPanel, setShowFiltersPanel] = useState(false);
-  const [showAlternativeView, setShowAlternativeView] = useState(false);
-
-  // Recherche + tri + sélection
-  const [q, setQ] = useState('');
-  const [sort, setSort] = useState<SortMode>('priority_desc');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showBulkReschedule, setShowBulkReschedule] = useState(false);
-
-  // Modales Blocages (Alternative view)
-  const [selectedBlocker, setSelectedBlocker] = useState<Blocker | null>(null);
-  const [showBMOResolveModal, setShowBMOResolveModal] = useState(false);
-  const [showEscalateModal, setShowEscalateModal] = useState(false);
-  const [showBlockerDetailsPanel, setShowBlockerDetailsPanel] = useState(false);
-
-  // Conflits (planning)
-  const [detectedConflicts, setDetectedConflicts] = useState<Array<{ type: string; description: string; severity: string }>>([]);
-
-  // Traçabilité
-  const [register, setRegister] = useState<RegisterEntry[]>([]);
-  const [lastDecisionHash, setLastDecisionHash] = useState<string | null>(null);
-
-  // ======================
-  // BLOC 2 — DONNÉES (source de vérité)
-  // ======================
-  const [activities, setActivities] = useState<CalendarEvent[]>(() => dedupeById(agendaEvents as CalendarEvent[]));
-
-  // Reset view si rien n'est sélectionné/édité
-  useEffect(() => {
-    if (!selectedActivityId && !editingActivity) {
-      setActiveView('overview');
-    }
-  }, [selectedActivityId, editingActivity]);
-
-  // ESC ferme les modales importantes
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-
-      setShowPlanningModal(false);
-      setShowRescheduleSimulator(false);
-      setShowBulkReschedule(false);
-      setShowBMOResolveModal(false);
-      setShowEscalateModal(false);
-      setShowBlockerDetailsPanel(false);
-
-      setEditingActivity(null);
-      setActivityToReschedule(null);
-      setDetectedConflicts([]);
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  // ======================
-  // BLOC 3 — CALCULS / FILTRES / VUES
-  // ======================
-  const weekDays = useMemo(() => {
-    const days: Date[] = [];
-    const start = new Date(selectedDate);
-    const day = start.getDay();
-    const diffToMonday = (day + 6) % 7;
-    start.setDate(start.getDate() - diffToMonday);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      days.push(d);
-    }
-    return days;
-  }, [selectedDate]);
-
-  // Filtrage bureau + filtres + recherche texte
-  const filteredActivities = useMemo(() => {
-    let list = [...activities];
-
-    // Filtre bureaux (sidebar)
-    if (selectedBureaux.length < bureaux.length) {
-      list = list.filter((a) => !a.bureau || selectedBureaux.includes(a.bureau));
-    }
-
-    // Filtres (panel)
-    if (calendarFilters.bureau) list = list.filter((a) => a.bureau === calendarFilters.bureau);
-    if (calendarFilters.project) list = list.filter((a) => (a.project || '').includes(calendarFilters.project || ''));
-    if (calendarFilters.type) list = list.filter((a) => a.type === calendarFilters.type);
-    if (calendarFilters.priority) list = list.filter((a) => a.priority === calendarFilters.priority);
-
-    // Recherche texte
-    const query = q.trim().toLowerCase();
-    if (query) {
-      list = list.filter((a) => {
-        const hay = [a.id, a.title, a.type, a.bureau, a.project, a.status, a.priority, a.date, a.time]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(query);
-      });
-    }
-
-    return list;
-  }, [activities, selectedBureaux, calendarFilters, q]);
-
-  // Range visible selon vue (pour "tout sélectionner (vue)")
-  const visibleRange = useMemo(() => getRangeDates(selectedDate, calendarViewType), [selectedDate, calendarViewType]);
-
-  const visibleActivities = useMemo(() => {
-    const { startIso, endIso } = visibleRange;
-    const inRange = filteredActivities.filter((a) => withinRange(a.date, startIso, endIso));
-
-    // Tri
-    const byDayCounts = new Map<string, number>();
-    for (const a of inRange) byDayCounts.set(a.date, (byDayCounts.get(a.date) || 0) + 1);
-
-    const sorted = [...inRange].sort((a, b) => {
-      if (sort === 'date_asc') return (a.date + (a.time || '')) < (b.date + (b.time || '')) ? -1 : 1;
-      if (sort === 'date_desc') return (a.date + (a.time || '')) > (b.date + (b.time || '')) ? -1 : 1;
-      if (sort === 'bureau') return String(a.bureau || '').localeCompare(String(b.bureau || ''));
-      if (sort === 'type') return String(a.type || '').localeCompare(String(b.type || ''));
-      if (sort === 'status') return String(a.status || '').localeCompare(String(b.status || ''));
-      // priority_desc (par défaut)
-      const sa = computeEventPriorityScore(a, byDayCounts.get(a.date) || 0);
-      const sb = computeEventPriorityScore(b, byDayCounts.get(b.date) || 0);
-      return sb - sa;
-    });
-
-    return sorted;
-  }, [filteredActivities, visibleRange, sort]);
-
-  // Sélection / cibles (sélection > sinon visible)
-  const selectedActivities = useMemo(() => {
-    if (selectedIds.size === 0) return [];
-    const map = new Map(activities.map((a) => [a.id, a]));
-    return Array.from(selectedIds).map((id) => map.get(id)).filter(Boolean) as CalendarEvent[];
-  }, [selectedIds, activities]);
-
-  const targets = useMemo(() => (selectedActivities.length > 0 ? selectedActivities : visibleActivities), [selectedActivities, visibleActivities]);
-
-  const eventsByDate = useMemo(() => {
-    const grouped: Record<string, CalendarEvent[]> = {};
-    for (const e of visibleActivities) {
-      if (!grouped[e.date]) grouped[e.date] = [];
-      grouped[e.date].push(e);
-    }
-    return grouped;
-  }, [visibleActivities]);
-
-  const overloadPeriods = useMemo(() => {
-    return Object.entries(eventsByDate)
-      .filter(([, events]) => events.length > 3)
-      .map(([date, events]) => ({ date, count: events.length, events }));
-  }, [eventsByDate]);
-
-  const upcomingDeadlines = useMemo(() => {
-    const todayIso = isoDate(new Date());
-    const in7 = new Date();
-    in7.setDate(in7.getDate() + 7);
-    const in7Iso = isoDate(in7);
-
-    return visibleActivities
-      .filter((e) => e.type === 'deadline' && e.date >= todayIso && e.date <= in7Iso)
-      .sort((a, b) => (a.date < b.date ? -1 : 1))
-      .slice(0, 12);
-  }, [visibleActivities]);
-
-  const activeAbsences = useMemo(() => {
-    const today = new Date();
-    return plannedAbsences.filter((a) => new Date(a.endDate.split('/').reverse().join('-')) >= today);
-  }, []);
-
-  // "Ce qui casse l'orga"
-  const orgaBreakers = useMemo(() => {
-    const breakers: OrgaBreaker[] = [];
-
-    blockedDossiers
-      .filter((d) => d.delay >= 5 || d.impact === 'critical')
-      .forEach((d) => {
-        breakers.push({
-          id: d.id,
-          type: 'blocked',
-          severity: d.delay >= 7 || d.impact === 'critical' ? 'critical' : 'high',
-          title: `Dossier bloqué ${d.delay}j`,
-          description: d.subject,
-          bureau: d.bureau,
-          link: '/maitre-ouvrage/substitution',
-          daysBlocked: d.delay,
-          project: d.project,
-        });
-      });
-
-    paymentsN1.forEach((p) => {
-      const dueDate = new Date(p.dueDate.split('/').reverse().join('-'));
-      const today = new Date();
-      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays <= 5 && diffDays >= 0) {
-        breakers.push({
-          id: p.id,
-          type: 'payment',
-          severity: diffDays <= 2 ? 'critical' : 'high',
-          title: `Paiement urgent J-${diffDays}`,
-          description: `${p.beneficiary} - ${p.amount} FCFA`,
-          bureau: p.bureau,
-          link: '/maitre-ouvrage/validation-paiements',
-          dueDate: p.dueDate,
-        });
-      }
-    });
-
-    contractsToSign
-      .filter((c) => c.status === 'pending')
-      .forEach((c) => {
-        breakers.push({
-          id: c.id,
-          type: 'contract',
-          severity: 'medium',
-          title: 'Contrat en attente',
-          description: c.subject,
-          bureau: c.bureau,
-          link: '/maitre-ouvrage/validation-contrats',
-          supplier: c.partner,
-        });
-      });
-
-    activeAbsences
-      .filter((a) => a.impact === 'high')
-      .forEach((a) => {
-        breakers.push({
-          id: a.id,
-          type: 'absence',
-          severity: 'high',
-          title: `Absence: ${a.employeeName}`,
-          description: `${a.startDate} → ${a.endDate}`,
-          bureau: a.bureau,
-          link: '/maitre-ouvrage/substitution',
-          employeeName: a.employeeName,
-          startDate: a.startDate,
-          endDate: a.endDate,
-        });
-      });
-
-    const order: Record<ImpactSeverity, number> = { critical: 0, high: 1, medium: 2 };
-    return breakers.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 12);
-  }, [activeAbsences]);
-
-  // Stats rapides
-  const todayIso = isoDate(new Date());
-  const todayEvents = useMemo(() => activities.filter((e) => e.date === todayIso), [activities, todayIso]);
-  const urgentEvents = useMemo(
-    () => activities.filter((e) => e.priority === 'urgent' || e.priority === 'critical'),
-    [activities]
-  );
-
-  // ======================
-  // BLOC 4 — TRAÇABILITÉ & LOGS
-  // ======================
-  const pushRegister = useCallback((entry: RegisterEntry) => {
-    setRegister((prev) => [entry, ...prev].slice(0, 800));
-    setLastDecisionHash(entry.hash.replace('SHA-256:', ''));
-  }, []);
-
-  const logCalendarAction = useCallback(
-    async (payload: {
-      kind: RegisterEntry['kind'];
-      action: RegisterEntry['action'];
-      event: CalendarEvent;
-      details: string;
-      batchId?: string;
-    }) => {
-      const at = new Date().toISOString();
-      const raw = {
-        at,
-        batchId: payload.batchId,
-        kind: payload.kind,
-        eventId: payload.event.id,
-        date: payload.event.date,
-        time: payload.event.time,
-        title: payload.event.title,
-        bureau: payload.event.bureau,
-        priority: payload.event.priority,
-        status: payload.event.status,
-        details: payload.details,
-        user: currentUser,
-      };
-      const hex = await sha256Hex(JSON.stringify(raw));
-      const hash = `SHA-256:${hex}`;
-
-      // Store log
-      addActionLog({
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userRole: currentUser.role,
-        module: 'calendar',
-        action: payload.kind === 'create' ? 'creation' : payload.kind === 'edit' ? 'modification' : 'validation',
-        targetId: payload.event.id,
-        targetType: 'Activity',
-        targetLabel: payload.event.title,
-        bureau: payload.event.bureau,
-        details: `${payload.details} • Hash: ${hash}`,
-      });
-
-      // Registre local exportable
-      pushRegister({
-        at,
-        batchId: payload.batchId,
-        action: payload.action,
-        module: 'calendar',
-        kind: payload.kind,
-        eventId: payload.event.id,
-        title: payload.event.title,
-        bureau: payload.event.bureau,
-        date: payload.event.date,
-        time: payload.event.time,
-        priority: payload.event.priority,
-        status: payload.event.status,
-        details: payload.details,
-        hash,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userRole: currentUser.role,
-      });
-    },
-    [addActionLog, currentUser, pushRegister]
-  );
-
-  const exportRegister = useCallback(() => {
-    const filename = `registre_calendrier_${isoDate(new Date())}.json`;
-    downloadJson(filename, {
-      generatedAt: new Date().toISOString(),
-      user: currentUser,
-      view: { activeView, calendarViewType, selectedDate: isoDate(selectedDate) },
-      filters: { q, sort, selectedBureaux, calendarFilters, focusMode },
-      selection: Array.from(selectedIds),
-      register,
-    });
-    addToast('📤 Registre exporté (JSON)', 'success');
-  }, [register, currentUser, activeView, calendarViewType, selectedDate, q, sort, selectedBureaux, calendarFilters, focusMode, selectedIds, addToast]);
-
-  const copyLastHash = useCallback(async () => {
-    if (!lastDecisionHash) return;
-    await navigator.clipboard.writeText(lastDecisionHash);
-    addToast('🔗 Hash copié', 'success');
-  }, [lastDecisionHash, addToast]);
-
-  // Résolution de blocages
-  const resolveBlocker = useCallback(async (
-    blockerId: string,
-    action: 'resolve' | 'escalate' | 'relaunch',
-    data?: any
-  ) => {
-    // Mapping des actions internes vers ActionLogType
-    const actionMap: Record<string, 'modification' | 'escalation' | 'audit'> = {
-      resolve: 'modification',
-      escalate: 'escalation',
-      relaunch: 'audit',
-    };
-
-    const actionLogType = actionMap[action] || 'audit';
-
-    // 1. Log l'action
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      module: 'blocages',
-      action: actionLogType,
-      targetId: blockerId,
-      targetType: 'Blocker',
-      details: `Action: ${action}${data ? ` - ${JSON.stringify(data)}` : ''}`,
-      bureau: selectedBlocker?.bureau,
-    });
-
-    // 2. Fermer les modales
-    setShowBMOResolveModal(false);
-    setShowEscalateModal(false);
-    setSelectedBlocker(null);
-
-    // 3. Optionnel : générer un nouveau hash de résolution
-    if (action === 'resolve') {
-      const resolutionHash = generateSHA3Hash(`resolve-${blockerId}-${Date.now()}`);
-      setLastDecisionHash(resolutionHash.replace('SHA3-256:', ''));
-      addToast(`✅ Blocage résolu – Hash: ${resolutionHash.slice(0, 12)}...`, 'success');
-    } else if (action === 'escalate') {
-      addToast('🔺 Blocage escaladé', 'info');
-    } else if (action === 'relaunch') {
-      addToast('🔄 Blocage relancé', 'info');
-    }
-  }, [currentUser, selectedBlocker, addActionLog, addToast, setLastDecisionHash]);
-
-  // ======================
-  // BLOC 5 — ACTIONS (sélection & masse)
-  // ======================
-  const toggleSelected = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-  const selectAllVisible = useCallback(() => setSelectedIds(new Set(visibleActivities.map((a) => a.id))), [visibleActivities]);
-  const selectNoneVisible = useCallback(() => setSelectedIds(new Set()), []);
-
-  const runBulk = useCallback(
-    async (action: BulkAction, extra?: { newDate?: string; newTime?: string }) => {
-      if (targets.length === 0) {
-        addToast('Aucune cible', 'warning');
-        return;
-      }
-
-      const batchId = `BATCH-${Date.now()}`;
-      const startedAt = new Date().toISOString();
-
-      // En-tête bulk dans registre (utile audit)
-      const headerRaw = { batchId, action, count: targets.length, extra: extra || {}, at: startedAt, user: currentUser };
-      const headerHash = await sha256Hex(JSON.stringify(headerRaw));
-      setRegister((prev) => [
-        {
-          at: startedAt,
-          batchId,
-          action: 'bulk',
-          module: 'calendar',
-          kind: action,
-          eventId: `__BULK__${batchId}`,
-          title: `Bulk ${action} (${targets.length})`,
-          bureau: currentUser.bureau,
-          date: isoDate(new Date()),
-          time: '',
-          priority: '',
-          status: '',
-          details: `Opération en masse: ${action} • Extra: ${JSON.stringify(extra || {})}`,
-          hash: `SHA-256:${headerHash}`,
-          userId: currentUser.id,
-          userName: currentUser.name,
-          userRole: currentUser.role,
-        },
-        ...prev,
-      ]);
-      setLastDecisionHash(headerHash);
-
-      // Application
-      setActivities((prev) => {
-        const map = new Map(prev.map((e) => [e.id, e]));
-        for (const t of targets) {
-          const cur = map.get(t.id);
-          if (!cur) continue;
-
-          let next: CalendarEvent = cur;
-
-          if (action === 'complete') next = { ...cur, status: 'completed' as const };
-          if (action === 'cancel') next = { ...cur, status: 'cancelled' as const };
-          if (action === 'reschedule' && extra?.newDate && extra?.newTime)
-            next = { ...cur, date: extra.newDate, time: extra.newTime, status: 'rescheduled' as const };
-          if (action === 'set_priority_urgent') next = { ...cur, priority: 'urgent' as const };
-          if (action === 'set_priority_normal') next = { ...cur, priority: 'normal' as const };
-          if (action === 'set_priority_critical') next = { ...cur, priority: 'critical' as const };
-
-          map.set(t.id, next);
-        }
-        return Array.from(map.values());
-      });
-
-      // Logs par item (audit)
-      for (const t of targets) {
-        const meta = action === 'reschedule' ? `Replanifié → ${extra?.newDate} ${extra?.newTime}` : `Action: ${action}`;
-        await logCalendarAction({
-          kind: action,
-          action: 'bulk',
-          event: t,
-          details: `${meta} (batchId=${batchId})`,
-          batchId,
-        });
-      }
-
-      addToast(
-        action === 'complete'
-          ? `✓ Terminé en masse (${targets.length})`
-          : action === 'cancel'
-          ? `✖ Annulé en masse (${targets.length})`
-          : action === 'reschedule'
-          ? `🗓️ Replanifié en masse (${targets.length})`
-          : action.includes('priority')
-          ? `⚡ Priorité modifiée (${targets.length})`
-          : `Action exécutée (${targets.length})`,
-        'success'
-      );
-    },
-    [targets, addToast, logCalendarAction, currentUser]
-  );
-
-  // Navigation calendrier
-  const handlePrevious = useCallback(() => {
-    const newDate = new Date(selectedDate);
-    if (calendarViewType === 'day') newDate.setDate(newDate.getDate() - 1);
-    else if (calendarViewType === 'month') newDate.setMonth(newDate.getMonth() - 1);
-    else newDate.setDate(newDate.getDate() - 7);
-    setSelectedDate(newDate);
-    addToast(`Navigation vers ${newDate.toLocaleDateString('fr-FR')}`, 'info');
-  }, [selectedDate, calendarViewType, addToast]);
-
-  const handleNext = useCallback(() => {
-    const newDate = new Date(selectedDate);
-    if (calendarViewType === 'day') newDate.setDate(newDate.getDate() + 1);
-    else if (calendarViewType === 'month') newDate.setMonth(newDate.getMonth() + 1);
-    else newDate.setDate(newDate.getDate() + 7);
-    setSelectedDate(newDate);
-    addToast(`Navigation vers ${newDate.toLocaleDateString('fr-FR')}`, 'info');
-  }, [selectedDate, calendarViewType, addToast]);
-
-  const handleToday = useCallback(() => {
-    setSelectedDate(new Date());
-    addToast("Navigation vers aujourd'hui", 'success');
-  }, [addToast]);
-
-  const handleBureauToggle = useCallback((bureauCode: string) => {
-    setSelectedBureaux((prev) => (prev.includes(bureauCode) ? prev.filter((b) => b !== bureauCode) : [...prev, bureauCode]));
-  }, []);
-
-  // ======================
-  // BLOC 6 — DÉTECTION DE CONFLITS (planning)
-  // ======================
-  const detectConflicts = useCallback(
-    (activityData: Partial<CalendarEvent>, existingActivityId?: string): Array<{ type: string; description: string; severity: string }> => {
-      const conflicts: Array<{ type: string; description: string; severity: string }> = [];
-      if (!activityData.date || !activityData.bureau) return conflicts;
-
-      const activityDate = activityData.date;
-      const activityBureau = activityData.bureau;
-      const activityTime = activityData.time || '10:00';
-
-      // surcharge par bureau / jour
-      const sameDay = activities.filter((a) => a.date === activityDate && a.bureau === activityBureau && a.id !== existingActivityId);
-      if (sameDay.length >= 3) {
-        conflicts.push({
-          type: 'overload',
-          description: `${sameDay.length} activités déjà planifiées ce jour pour ${activityBureau}`,
-          severity: sameDay.length >= 5 ? 'critical' : 'high',
-        });
-      }
-
-      // absences participants
-      if (activityData.participants) {
-        const activityDateObj = new Date(activityDate);
-        const absent = activityData.participants.filter((p) => {
-          const absence = plannedAbsences.find(
-            (a) =>
-              a.bureau === p.bureau &&
-              a.employeeName.includes(p.name.split(' ')[0]) &&
-              new Date(a.startDate.split('/').reverse().join('-')) <= activityDateObj &&
-              new Date(a.endDate.split('/').reverse().join('-')) >= activityDateObj
-          );
-          return Boolean(absence);
-        });
-        if (absent.length > 0) {
-          conflicts.push({
-            type: 'absence',
-            description: `${absent.length} participant(s) absent(s) à cette date`,
-            severity: absent.length === activityData.participants.length ? 'critical' : 'high',
-          });
-        }
-      }
-
-      // chevauchement par heure (±2h)
-      const overlap = activities.filter(
-        (a) =>
-          a.date === activityDate &&
-          a.bureau === activityBureau &&
-          a.id !== existingActivityId &&
-          a.time &&
-          Math.abs(parseHH(a.time) - parseHH(activityTime)) < 2
-      );
-      if (overlap.length > 0) {
-        conflicts.push({
-          type: 'overlap',
-          description: `${overlap.length} activité(s) chevauchant(nt) cette plage horaire`,
-          severity: 'high',
-        });
-      }
-
-      // dépendances
-      if (activityData.dependencies && activityData.dependencies.length > 0) {
-        const unmet = activityData.dependencies.filter((depId) => {
-          const dep = activities.find((a) => a.id === depId);
-          if (!dep) return true;
-          const depDate = new Date(dep.date);
-          const actDate = new Date(activityDate);
-          return depDate > actDate || dep.status === 'cancelled';
-        });
-        if (unmet.length > 0) {
-          conflicts.push({
-            type: 'dependency',
-            description: `${unmet.length} dépendance(s) non respectée(s)`,
-            severity: 'critical',
-          });
-        }
-      }
-
-      return conflicts;
-    },
-    [activities]
-  );
-
-  // ======================
-  // RENDER
-  // ======================
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden w-full max-w-full -m-4">
-      {/* ===== BLOC 1 — Ribbon (Outlook) ===== */}
-      <CalendarRibbon
-        activeView={calendarViewType}
-        onViewChange={(view) => {
-          setCalendarViewType(view);
-          addToast(`Vue changée: ${view}`, 'success');
-        }}
-        onNewEvent={() => {
-          setEditingActivity(null);
-          setDetectedConflicts([]);
-          setShowPlanningModal(true);
-          addToast('Ouverture du formulaire de planification', 'info');
-        }}
-        onFilter={() => {
-          setShowFiltersPanel((v) => !v);
-          addToast(showFiltersPanel ? 'Fermeture des filtres' : 'Ouverture des filtres', 'info');
-        }}
-        onPrint={() => {
-          window.print();
-          addToast('Impression du calendrier...', 'info');
-        }}
-        onDisplayClick={() => {
-          setShowAlternativeView((v) => !v);
-          addToast(showAlternativeView ? 'Retour à la vue calendrier standard' : 'Affichage alternatif: Blocages & événements', 'info');
-        }}
-        onHelpClick={() => {
-          window.alert(
-            'Raccourcis clavier:\n- Échap : fermer modales\n- Utilise les boutons de navigation pour semaine/mois/jour'
-          );
-        }}
-      />
-
-      {/* ===== BLOC 2 — Layout : Sidebar + Main ===== */}
-      <div className="flex flex-1 overflow-hidden w-full max-w-full">
-        <CalendarSidebar
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
-          selectedBureaux={selectedBureaux}
-          onBureauToggle={handleBureauToggle}
-          activities={activities}
-        />
-
-        <div className="flex-1 flex flex-col overflow-hidden w-full max-w-full">
-          {/* ===== BLOC 3 — Navigation + outils ===== */}
-          <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/30 px-4 py-2">
-            <CalendarNavigationBar
-              currentDate={selectedDate}
-              viewType={calendarViewType}
-              onPrevious={handlePrevious}
-              onNext={handleNext}
-              onToday={handleToday}
-            />
-
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <Card className={cn('w-full max-w-2xl', darkMode ? 'bg-slate-900' : 'bg-white')}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AdvancedSearch
-                activities={activities}
-                onSelectActivity={(id) => {
-                  setSelectedActivityId(id);
-                  addToast("Navigation vers l'activité sélectionnée", 'info');
-                }}
-                onFilterChange={() => {
-                  // Tu peux connecter ici une recherche avancée si tu veux unifier avec q/calendarFilters
-                  addToast('Recherche avancée mise à jour', 'info');
-                }}
-              />
-
-              <CalendarExport
-                activities={activities}
-                onImport={(imported) => {
-                  setActivities((prev) => dedupeById([...prev, ...imported]));
-                  addToast(`${imported.length} activité(s) importée(s)`, 'success');
-                }}
-              />
+              <Command className="w-5 h-5" />
+              Raccourcis clavier
             </div>
-          </div>
-
-          {/* ===== BLOC 4 — Panel filtres ===== */}
-          {showFiltersPanel && (
-            <div className="border-b border-slate-700/50 bg-slate-800/50 p-4">
-              <CalendarFilters
-                filters={calendarFilters}
-                onFiltersChange={(newFilters) => {
-                  setCalendarFilters(newFilters);
-                  addToast('Filtres appliqués', 'success');
-                }}
-              />
-            </div>
-          )}
-
-          {/* ===== BLOC 5 — Command Center (recherche / tri / sélection / bulk / registre) ===== */}
-          <div className={cn('border-b p-3', darkMode ? 'border-slate-700/50 bg-slate-900/20' : 'border-gray-200 bg-white')}>
-            <div className="flex flex-wrap items-center gap-2 justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Rechercher (titre, id, bureau, projet, statut...)"
-                  className={cn(
-                    'h-9 w-96 max-w-full rounded-md border px-3 text-sm outline-none',
-                    darkMode ? 'bg-slate-900/40 border-slate-700 text-slate-200' : 'bg-white border-gray-300'
-                  )}
-                />
-                <select
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value as SortMode)}
-                  className={cn(
-                    'h-9 rounded-md border px-3 text-sm',
-                    darkMode ? 'bg-slate-900/40 border-slate-700 text-slate-200' : 'bg-white border-gray-300'
-                  )}
-                >
-                  <option value="priority_desc">Priorité ↓</option>
-                  <option value="date_asc">Date ↑</option>
-                  <option value="date_desc">Date ↓</option>
-                  <option value="bureau">Bureau</option>
-                  <option value="type">Type</option>
-                  <option value="status">Statut</option>
-                </select>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            {shortcuts.map((s, idx) => (
+              <div key={idx} className="flex items-center justify-between p-2 rounded border">
+                <span className="text-sm">{s.action}</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 text-xs font-mono">{s.key}</kbd>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="info">Visibles: {visibleActivities.length}</Badge>
-                <Badge variant="default">Sélection: {selectedIds.size}</Badge>
-                <Badge variant="warning">Cibles: {targets.length}</Badge>
-
-                <Button size="sm" variant="secondary" onClick={selectAllVisible}>
-                  Tout sélectionner (vue)
-                </Button>
-                <Button size="sm" variant="secondary" onClick={selectNoneVisible}>
-                  Désélectionner
-                </Button>
-                <Button size="sm" variant="secondary" onClick={clearSelection}>
-                  Vider sélection
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="success" onClick={() => runBulk('complete')}>
-                ✓ Terminer (masse)
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => runBulk('cancel')}>
-                ✖ Annuler (masse)
-              </Button>
-              <Button size="sm" variant="info" onClick={() => setShowBulkReschedule(true)}>
-                🗓️ Replanifier (masse)
-              </Button>
-
-              <div className="h-4 w-px bg-slate-700/50 mx-1" />
-
-              <Button size="sm" variant="warning" onClick={() => runBulk('set_priority_critical')}>
-                🚨 Priorité: critical
-              </Button>
-              <Button size="sm" variant="warning" onClick={() => runBulk('set_priority_urgent')}>
-                ⚡ Priorité: urgent
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => runBulk('set_priority_normal')}>
-                🧊 Priorité: normal
-              </Button>
-
-              <div className="flex-1" />
-
-              <Button size="sm" variant="default" onClick={exportRegister}>
-                📤 Export registre (JSON)
-              </Button>
-              <Button size="sm" variant="secondary" onClick={copyLastHash} disabled={!lastDecisionHash}>
-                🔗 Copier dernier hash
-              </Button>
-            </div>
-
-            {lastDecisionHash && (
-              <div className={cn('mt-3 p-2 rounded border', darkMode ? 'border-slate-700 bg-slate-900/20' : 'border-gray-200 bg-gray-50')}>
-                <p className="text-[10px] text-slate-400">Dernier hash</p>
-                <p className="font-mono text-[11px] break-all">{lastDecisionHash}</p>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="mt-1 text-[10px]"
-                  onClick={async () => {
-                    // Chercher l'entrée correspondante dans le registre
-                    const entry = register.find((r) => r.hash.replace('SHA-256:', '') === lastDecisionHash);
-                    if (entry) {
-                      // Utiliser eventId comme decisionId pour la vérification
-                      const isValid = await verifyDecisionHash(entry.eventId, `SHA-256:${lastDecisionHash}`);
-                      addToast(
-                        isValid ? '✅ Hash valide – décision authentique' : '❌ Hash invalide – altération détectée',
-                        isValid ? 'success' : 'error'
-                      );
-                    } else {
-                      // Vérifier directement dans le registre si le hash existe
-                      const hashExists = register.some((r) => r.hash.replace('SHA-256:', '') === lastDecisionHash);
-                      addToast(
-                        hashExists ? '✅ Hash trouvé dans le registre' : '⚠️ Hash non trouvé dans le registre',
-                        hashExists ? 'success' : 'warning'
-                      );
-                    }
-                  }}
-                >
-                  🔍 Vérifier l'intégrité
-                </Button>
-              </div>
-            )}
+            ))}
           </div>
-
-          {/* ===== BLOC 6 — Contenu (Alternative ou Standard + onglets) ===== */}
-          <div className="flex-1 overflow-auto p-4 w-full max-w-full overflow-x-hidden">
-            {showAlternativeView ? (
-              <AlternativeCalendarView
-                activities={activities}
-                onResolveBlocker={(blockerId) => {
-                  const blocked = blockedDossiers.find((b) => b.id === blockerId);
-                  const contract = contractsToSign.find((c) => c.id === blockerId);
-
-                  if (blocked) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'blocked',
-                      severity: (blocked.impact === 'critical' ? 'critical' : blocked.impact === 'high' ? 'high' : 'medium') as ImpactSeverity,
-                      title: `Dossier bloqué ${blocked.delay || 0}j`,
-                      description: blocked.reason || blocked.subject,
-                      bureau: blocked.bureau,
-                      project: blocked.project,
-                      situation: blocked.reason,
-                      daysBlocked: blocked.delay,
-                    });
-                    setShowBMOResolveModal(true);
-                  } else if (contract) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'contract',
-                      severity: 'medium',
-                      title: 'Contrat en attente',
-                      description: contract.subject,
-                      bureau: contract.bureau,
-                      supplier: contract.partner,
-                    });
-                    setShowBMOResolveModal(true);
-                  }
-                }}
-                onViewBlockerDetails={(blockerId) => {
-                  const blocked = blockedDossiers.find((b) => b.id === blockerId);
-                  const contract = contractsToSign.find((c) => c.id === blockerId);
-
-                  if (blocked) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'blocked',
-                      severity: (blocked.impact === 'critical' ? 'critical' : blocked.impact === 'high' ? 'high' : 'medium') as ImpactSeverity,
-                      title: `Dossier bloqué ${blocked.delay || 0}j`,
-                      description: blocked.reason || blocked.subject,
-                      bureau: blocked.bureau,
-                      project: blocked.project,
-                      situation: blocked.reason,
-                      daysBlocked: blocked.delay,
-                    });
-                    setShowBlockerDetailsPanel(true);
-                  } else if (contract) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'contract',
-                      severity: 'medium',
-                      title: 'Contrat en attente',
-                      description: contract.subject,
-                      bureau: contract.bureau,
-                      supplier: contract.partner,
-                    });
-                    setShowBlockerDetailsPanel(true);
-                  }
-                }}
-                onEscalateBlocker={(blockerId) => {
-                  const blocked = blockedDossiers.find((b) => b.id === blockerId);
-                  const contract = contractsToSign.find((c) => c.id === blockerId);
-
-                  if (blocked) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'blocked',
-                      severity: (blocked.impact === 'critical' ? 'critical' : blocked.impact === 'high' ? 'high' : 'medium') as ImpactSeverity,
-                      title: `Dossier bloqué ${blocked.delay || 0}j`,
-                      description: blocked.reason || blocked.subject,
-                      bureau: blocked.bureau,
-                      project: blocked.project,
-                      situation: blocked.reason,
-                      daysBlocked: blocked.delay,
-                    });
-                    setShowEscalateModal(true);
-                  } else if (contract) {
-                    setSelectedBlocker({
-                      id: blockerId,
-                      type: 'contract',
-                      severity: 'medium',
-                      title: 'Contrat en attente',
-                      description: contract.subject,
-                      bureau: contract.bureau,
-                      supplier: contract.partner,
-                    });
-                    setShowEscalateModal(true);
-                  }
-                }}
-                onViewEventDetails={(eventId) => {
-                  setSelectedActivityId(eventId);
-                  addToast("Ouverture des détails de l'événement", 'info');
-                }}
-              />
-            ) : (
-              <>
-                {/* Onglets (toujours visibles en mode standard) */}
-                <div className="flex gap-2 border-b border-slate-700/50 pb-2 mb-4 overflow-x-auto">
-                  <Button size="sm" variant={activeView === 'overview' ? 'default' : 'ghost'} onClick={() => setActiveView('overview')} className="whitespace-nowrap">
-                    📋 Vue d'ensemble
-                  </Button>
-                  <Button size="sm" variant={activeView === 'heatmap' ? 'default' : 'ghost'} onClick={() => setActiveView('heatmap')} className="whitespace-nowrap">
-                    🔥 Heatmap
-                  </Button>
-                  <Button size="sm" variant={activeView === 'timeline' ? 'default' : 'ghost'} onClick={() => setActiveView('timeline')} className="whitespace-nowrap">
-                    📊 Timeline
-                  </Button>
-                  <Button size="sm" variant={activeView === 'statistics' ? 'default' : 'ghost'} onClick={() => setActiveView('statistics')} className="whitespace-nowrap">
-                    📈 Statistiques
-                  </Button>
-                  <Button size="sm" variant={activeView === 'journal' ? 'default' : 'ghost'} onClick={() => setActiveView('journal')} className="whitespace-nowrap">
-                    📜 Journal ({actionLogs.filter((l) => l.module === 'calendar' || l.module === 'alerts').length})
-                  </Button>
-                </div>
-
-                {/* VUE: Overview */}
-                {activeView === 'overview' && (
-                  <div className="space-y-6">
-                    <IntelligentDashboard activities={activities} selectedDate={selectedDate} />
-
-                    {/* Widgets synthèse */}
-                    <div className="grid md:grid-cols-3 gap-3">
-                      <Card className="border-red-500/30">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            ⏰ Échéances à 7 jours <Badge variant="urgent">{upcomingDeadlines.length}</Badge>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-1 max-h-40 overflow-y-auto">
-                          {upcomingDeadlines.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-2">Aucune échéance</p>
-                          ) : (
-                            upcomingDeadlines.map((event) => {
-                              const meta = getEventTypeMeta(event.type);
-                              const diff = daysUntil(event.date);
-                              const score = computeEventPriorityScore(event, (eventsByDate[event.date] || []).length);
-
-                              return (
-                                <div
-                                  key={`deadline-${event.id}`}
-                                  className={cn(
-                                    'flex items-center gap-2 p-2 rounded text-xs transition-colors hover:opacity-80 cursor-pointer',
-                                    darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
-                                  )}
-                                  onClick={async () => {
-                                    setSelectedActivityId(event.id);
-                                    await logCalendarAction({
-                                      kind: 'open_details',
-                                      action: 'single',
-                                      event,
-                                      details: `Ouverture détails (score=${score})`,
-                                    });
-                                    addToast(`Consultation: ${event.title}`, 'info');
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds.has(event.id)}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      toggleSelected(event.id);
-                                    }}
-                                  />
-                                  <span>{meta.icon}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-semibold truncate">{event.title}</p>
-                                    <p className="text-[10px] text-slate-400">{event.date} • {event.time}</p>
-                                  </div>
-                                  <Badge variant={diff <= 2 ? 'urgent' : diff <= 4 ? 'warning' : 'default'}>J-{diff}</Badge>
-                                </div>
-                              );
-                            })
-                          )}
-                        </CardContent>
-                      </Card>
-
-                      <Card className="border-amber-500/30">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            🔥 Surcharges <Badge variant="warning">{overloadPeriods.length}</Badge>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-1 max-h-40 overflow-y-auto">
-                          {overloadPeriods.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-2">Aucune surcharge</p>
-                          ) : (
-                            overloadPeriods.map((p) => (
-                              <div
-                                key={`over-${p.date}`}
-                                className={cn(
-                                  'flex items-center gap-2 p-2 rounded text-xs cursor-pointer hover:opacity-80',
-                                  darkMode ? 'bg-amber-500/10' : 'bg-amber-50'
-                                )}
-                                onClick={() => {
-                                  setSelectedDate(new Date(p.date));
-                                  setCalendarViewType('day');
-                                  addToast(`Navigation vers ${p.date}`, 'info');
-                                }}
-                              >
-                                <span>⚠️</span>
-                                <div className="flex-1">
-                                  <p className="font-semibold">{p.date}</p>
-                                </div>
-                                <Badge variant="warning">{p.count} évts</Badge>
-                              </div>
-                            ))
-                          )}
-                        </CardContent>
-                      </Card>
-
-                      <Card className="border-blue-500/30">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            👥 Absences <Badge variant="info">{activeAbsences.length}</Badge>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-1 max-h-40 overflow-y-auto">
-                          {activeAbsences.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-2">Aucune absence</p>
-                          ) : (
-                            activeAbsences.map((a) => (
-                              <div
-                                key={a.id}
-                                className={cn(
-                                  'flex items-center gap-2 p-2 rounded text-xs cursor-pointer hover:opacity-80',
-                                  a.impact === 'high' ? 'bg-red-500/10' : darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
-                                )}
-                                onClick={() => {
-                                  setSelectedDate(new Date(a.startDate.split('/').reverse().join('-')));
-                                  setCalendarViewType('day');
-                                  addToast(`Navigation vers absence: ${a.employeeName}`, 'info');
-                                }}
-                              >
-                                <span>{a.type === 'congé' ? '🏖️' : '✈️'}</span>
-                                <div className="flex-1">
-                                  <p className="font-semibold">{a.employeeName}</p>
-                                  <p className="text-[10px] text-slate-400">
-                                    {a.startDate} → {a.endDate}
-                                  </p>
-                                </div>
-                                <BureauTag bureau={a.bureau} />
-                              </div>
-                            ))
-                          )}
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Stats rapides */}
-                    <div className="grid grid-cols-4 gap-3">
-                      <Card>
-                        <CardContent className="p-3 text-center">
-                          <p className="text-2xl font-bold text-blue-400">{todayEvents.length}</p>
-                          <p className="text-[10px] text-slate-400">Aujourd'hui</p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-3 text-center">
-                          <p className="text-2xl font-bold text-red-400">{urgentEvents.length}</p>
-                          <p className="text-[10px] text-slate-400">Urgents</p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-3 text-center">
-                          <p className="text-2xl font-bold text-amber-400">{activities.filter((e) => e.type === 'deadline').length}</p>
-                          <p className="text-[10px] text-slate-400">Échéances</p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-3 text-center">
-                          <p className="text-2xl font-bold text-emerald-400">{activities.filter((e) => e.type === 'meeting').length}</p>
-                          <p className="text-[10px] text-slate-400">Réunions</p>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Actions rapides */}
-                    <QuickActionsPanel
-                      onQuickAction={(action) => {
-                        if (action === 'focus-urgent') {
-                          setCalendarFilters((f) => ({ ...f, priority: 'urgent' }));
-                          addToast('Focus sur les urgents', 'info');
-                        } else if (action === 'focus-overload') {
-                          setActiveView('heatmap');
-                          addToast('Heatmap surcharges', 'info');
-                        } else if (action === 'view-all') {
-                          setCalendarFilters({});
-                          addToast('Réinitialisation filtres', 'info');
-                        }
-                      }}
-                      stats={{
-                        urgentCount: activities.filter((a) => a.priority === 'urgent' || a.priority === 'critical').length,
-                        overloadedDays: Object.values(eventsByDate).filter((evts) => evts.length > 3).length,
-                        criticalAlerts: orgaBreakers.filter((b) => b.severity === 'critical').length,
-                      }}
-                    />
-
-                    {/* Focus + suggestions */}
-                    <div className="space-y-4">
-                      <FocusModePanel
-                        activeFocus={focusMode}
-                        onFocusChange={(focus) => {
-                          setFocusMode(focus);
-                          if (focus.type === 'bureau' && focus.value) setCalendarFilters((f) => ({ ...f, bureau: focus.value }));
-                          else if (focus.type === 'priority' && focus.value) setCalendarFilters((f) => ({ ...f, priority: focus.value }));
-                          else setCalendarFilters({});
-                        }}
-                      />
-
-                      <SmartSuggestions
-                        activities={activities}
-                        onApplySuggestion={(s) => {
-                          if (s.type === 'overload') {
-                            setCalendarFilters({ bureau: s.data.bureau, priority: 'urgent' });
-                            addToast(`Focus ${s.data.bureau} (urgent)`, 'info');
-                          } else if (s.type === 'conflict') {
-                            setSelectedDate(new Date(s.data.date));
-                            addToast(`Navigation vers ${s.data.date}`, 'info');
-                          } else if (s.type === 'optimization') {
-                            setActiveView('heatmap');
-                            addToast('Heatmap optimisation', 'info');
-                          }
-                        }}
-                      />
-                    </div>
-
-                    {/* Blocages organisationnels */}
-                    {orgaBreakers.length > 0 && (
-                      <Card className="border-red-500/30 bg-gradient-to-r from-red-500/5 to-orange-500/5">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center gap-2 text-red-400">
-                            🚨 Ce qui casse l'organisation <Badge variant="urgent">{orgaBreakers.length}</Badge>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {orgaBreakers.map((b) => {
-                            const { icon, label } = getBreakerIconAndLabel(b);
-                            return (
-                              <div
-                                key={b.id}
-                                className={cn(
-                                  'p-3 rounded-lg border-l-4',
-                                  b.severity === 'critical'
-                                    ? 'border-l-red-500 bg-red-500/10'
-                                    : b.severity === 'high'
-                                    ? 'border-l-amber-500 bg-amber-500/10'
-                                    : 'border-l-blue-500 bg-blue-500/10'
-                                )}
-                                aria-label={`${label}: ${b.title}`}
-                              >
-                                <div className="flex items-start gap-2">
-                                  <span className="text-lg" aria-hidden="true">
-                                    {icon}
-                                  </span>
-                                  <span className="sr-only">{label}</span>
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant={getSeverityBadge(b.severity)}>{b.severity}</Badge>
-                                      {b.bureau && <BureauTag bureau={b.bureau} />}
-                                    </div>
-                                    <p className="text-xs font-semibold mt-1">{b.title}</p>
-                                    <p className="text-[10px] text-slate-400 line-clamp-2">{b.description}</p>
-                                  </div>
-                                </div>
-
-                              <div className="flex gap-2 mt-3">
-                                <Button
-                                  size="xs"
-                                  variant="ghost"
-                                  className="flex-1 text-[10px] border border-slate-600 hover:bg-slate-700/50"
-                                  onClick={() => {
-                                    setSelectedBlocker({
-                                      id: b.id,
-                                      type: b.type as any,
-                                      severity: b.severity,
-                                      title: b.title,
-                                      description: b.description,
-                                      bureau: b.bureau,
-                                    });
-                                    setShowBlockerDetailsPanel(true);
-                                    addToast('Détails blocage', 'info');
-                                  }}
-                                >
-                                  📋 Détails
-                                </Button>
-
-                                <Button
-                                  size="xs"
-                                  variant={b.severity === 'critical' ? 'destructive' : 'warning'}
-                                  className="flex-1 text-[10px]"
-                                  onClick={() => {
-                                    setSelectedBlocker({
-                                      id: b.id,
-                                      type: b.type as any,
-                                      severity: b.severity,
-                                      title: b.title,
-                                      description: b.description,
-                                      bureau: b.bureau,
-                                    });
-                                    setShowBMOResolveModal(true);
-                                  }}
-                                >
-                                  ⚡ Résoudre
-                                </Button>
-                              </div>
-
-                              {b.severity !== 'critical' && (
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  className="w-full mt-2 text-[10px] border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
-                                  onClick={() => {
-                                    setSelectedBlocker({
-                                      id: b.id,
-                                      type: b.type as any,
-                                      severity: b.severity,
-                                      title: b.title,
-                                      description: b.description,
-                                      bureau: b.bureau,
-                                    });
-                                    setShowEscalateModal(true);
-                                  }}
-                                >
-                                  🔺 Escalader
-                                </Button>
-                              )}
-                            </div>
-                            );
-                          })}
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Calendrier principal */}
-                    <Card className="border-slate-700/50">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          🗓️ Vue calendrier <Badge variant="info">{visibleActivities.length}</Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ModernCalendarGrid
-                          activities={visibleActivities}
-                          selectedDate={selectedDate}
-                          viewType={calendarViewType}
-                          onActivityClick={async (activity) => {
-                            setSelectedActivityId(activity.id);
-                            await logCalendarAction({
-                              kind: 'open_details',
-                              action: 'single',
-                              event: activity,
-                              details: 'Consultation activité',
-                            });
-                            addToast(`Consultation: ${activity.title}`, 'info');
-                          }}
-                          onTimeSlotClick={(date, hour) => {
-                            const dateStr = isoDate(date);
-                            const timeStr = `${hour.toString().padStart(2, '0')}:00`;
-                            setEditingActivity({
-                              id: '',
-                              title: '',
-                              type: 'meeting',
-                              date: dateStr,
-                              time: timeStr,
-                              priority: 'normal',
-                              status: 'planned',
-                              createdAt: new Date().toISOString(),
-                              createdBy: currentUser.id,
-                            });
-                            setShowPlanningModal(true);
-                            addToast(`Planification à ${timeStr}`, 'info');
-                          }}
-                          onDateClick={(date) => {
-                            setSelectedDate(date);
-                            setCalendarViewType('day');
-                            addToast(`Navigation vers ${date.toLocaleDateString('fr-FR')}`, 'info');
-                          }}
-                        />
-                      </CardContent>
-                    </Card>
-
-                    {/* Liste triée (utile pour sélection/masse) */}
-                    <Card className="border-slate-700/50">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center justify-between">
-                          <span>📌 Liste priorisée (vue)</span>
-                          <Badge variant="warning">Tri: {sort}</Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        {visibleActivities.slice(0, 20).map((e) => {
-                          const meta = getEventTypeMeta(e.type);
-                          const overload = (eventsByDate[e.date] || []).length;
-                          const score = computeEventPriorityScore(e, overload);
-
-                          return (
-                            <div
-                              key={`list-${e.id}`}
-                              className={cn('p-2 rounded-lg border flex items-center gap-2', darkMode ? 'border-slate-700 bg-slate-900/10' : 'border-gray-200 bg-gray-50')}
-                            >
-                              <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleSelected(e.id)} />
-                              <span className="text-lg">{meta.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-semibold text-sm truncate">{e.title}</p>
-                                  <Badge variant={getPriorityBadge(e.priority)} className="text-[10px]">
-                                    {e.priority || 'normal'}
-                                  </Badge>
-                                  <Badge variant="info" className="text-[10px]">
-                                    score {score}
-                                  </Badge>
-                                  {e.bureau && <BureauTag bureau={e.bureau} className="text-[10px]" />}
-                                  {e.project && <span className="text-[10px] text-slate-400 font-mono">{e.project}</span>}
-                                </div>
-                                <p className="text-[10px] text-slate-400">
-                                  {e.date} • {e.time} • {meta.label} • statut: {e.status || 'planned'}
-                                </p>
-                              </div>
-
-                              <div className="flex gap-1">
-                                <Button size="xs" variant="secondary" onClick={() => toggleSelected(e.id)}>
-                                  {selectedIds.has(e.id) ? '–' : '+'}
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="info"
-                                  onClick={async () => {
-                                    setSelectedActivityId(e.id);
-                                    await logCalendarAction({
-                                      kind: 'open_details',
-                                      action: 'single',
-                                      event: e,
-                                      details: 'Ouverture détails depuis liste',
-                                    });
-                                  }}
-                                >
-                                  👁️
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {visibleActivities.length === 0 && <p className="text-xs text-slate-400 text-center py-4">Aucun événement visible</p>}
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
-
-                {/* VUE: Heatmap */}
-                {activeView === 'heatmap' && <HeatmapView activities={visibleActivities} selectedDate={selectedDate} />}
-
-                {/* VUE: Timeline */}
-                {activeView === 'timeline' && <BureauTimelineView activities={visibleActivities} weekDays={weekDays} />}
-
-                {/* VUE: Statistics */}
-                {activeView === 'statistics' && (
-                  <div className="space-y-6">
-                    <PilotingStatistics
-                      activities={activities}
-                      actionLogs={actionLogs.map((l) => ({ ...l, targetId: l.targetId || '' }))}
-                    />
-                    <ModernStatistics
-                      activities={activities}
-                      actionLogs={actionLogs.map((l) => ({ ...l, targetId: l.targetId || '' }))}
-                    />
-                  </div>
-                )}
-
-                {/* VUE: Journal */}
-                {activeView === 'journal' && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm flex items-center justify-between">
-                        <span>📜 Journal d'organisation</span>
-                        <Badge variant="info">
-                          {
-                            actionLogs.filter((log) => {
-                              if (log.module !== 'calendar' && log.module !== 'alerts') return false;
-                              if (journalFilters.bureau && log.bureau !== journalFilters.bureau) return false;
-                              if (journalFilters.actionType && log.action !== journalFilters.actionType) return false;
-                              return true;
-                            }).length
-                          }{' '}
-                          entrées
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="mb-4 p-3 rounded-lg bg-slate-700/30 border border-slate-600">
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-semibold mb-1">Bureau</label>
-                            <select
-                              value={journalFilters.bureau || ''}
-                              onChange={(e) => setJournalFilters({ ...journalFilters, bureau: e.target.value || undefined })}
-                              className={cn(
-                                'w-full px-2 py-1 rounded text-[9px] border',
-                                darkMode ? 'bg-slate-700/50 border-slate-600 text-slate-300' : 'bg-white border-gray-300 text-gray-700'
-                              )}
-                            >
-                              <option value="">Tous</option>
-                              {bureaux.map((b) => (
-                                <option key={b.code} value={b.code}>
-                                  {b.code}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold mb-1">Type d'action</label>
-                            <select
-                              value={journalFilters.actionType || ''}
-                              onChange={(e) => setJournalFilters({ ...journalFilters, actionType: e.target.value || undefined })}
-                              className={cn(
-                                'w-full px-2 py-1 rounded text-[9px] border',
-                                darkMode ? 'bg-slate-700/50 border-slate-600 text-slate-300' : 'bg-white border-gray-300 text-gray-700'
-                              )}
-                            >
-                              <option value="">Tous</option>
-                              <option value="creation">Création</option>
-                              <option value="modification">Modification</option>
-                              <option value="validation">Validation</option>
-                              <option value="notification">Notification</option>
-                            </select>
-                          </div>
-                          <div className="flex items-end">
-                            <Button size="sm" variant="ghost" onClick={() => setJournalFilters({})} className="text-[9px]">
-                              Réinitialiser
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <JournalCharts
-                        actionLogs={actionLogs
-                          .filter((log) => log.targetId)
-                          .map((log) => ({
-                            module: log.module,
-                            action: log.action,
-                            timestamp: log.timestamp,
-                            targetId: String(log.targetId || ''),
-                            bureau: log.bureau,
-                          }))}
-                        journalFilters={journalFilters}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-              </>
-            )}
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-xs text-slate-400 text-center">
+              💡 Sur Mac, utilisez ⌘ au lieu de Ctrl
+            </p>
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Mode Présentation pour réunions
+function PresentationMode({
+  items,
+  onClose,
+  darkMode,
+}: {
+  items: CalendarItem[];
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentItem = items[currentIndex] || null;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' && currentIndex < items.length - 1) setCurrentIndex((i) => i + 1);
+      if (e.key === 'ArrowLeft' && currentIndex > 0) setCurrentIndex((i) => i - 1);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, items.length, onClose]);
+
+  if (!currentItem) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
+        <div className="text-center">
+          <p className="text-2xl text-white mb-4">Aucun événement à afficher</p>
+          <Button onClick={onClose}>Fermer</Button>
         </div>
       </div>
+    );
+  }
 
-      {/* =======================
-          MODALES / PANELS
-         ======================= */}
-
-      {/* Bulk reschedule */}
-      <BulkRescheduleModal
-        isOpen={showBulkReschedule}
-        onClose={() => setShowBulkReschedule(false)}
-        onConfirm={(newDate, newTime) => {
-          setShowBulkReschedule(false);
-          runBulk('reschedule', { newDate, newTime });
-        }}
-        targetCount={targets.length}
-        darkMode={darkMode}
-      />
-
-      {/* Planification */}
-      <ActivityPlanningModal
-        isOpen={showPlanningModal}
-        onClose={() => {
-          setShowPlanningModal(false);
-          setEditingActivity(null);
-          setDetectedConflicts([]);
-        }}
-        existingActivity={editingActivity || undefined}
-        conflicts={detectedConflicts}
-        onConflictDetect={(activityData) => {
-          setDetectedConflicts(detectConflicts(activityData, editingActivity?.id));
-        }}
-        onSave={async (activityData) => {
-          const conflictData = detectConflicts(activityData, editingActivity?.id);
-          const conflicts =
-            conflictData.length > 0
-              ? conflictData.map((c) => ({
-                  type: (c.type as any) || 'overlap',
-                  description: c.description,
-                  severity: (c.severity as any) || 'medium',
-                  detectedAt: new Date().toISOString(),
-                }))
-              : undefined;
-
-          const newActivity: CalendarEvent = {
-            id: editingActivity?.id || `ACT-${Date.now()}`,
-            title: activityData.title || '',
-            type: activityData.type || 'meeting',
-            date: activityData.date || '',
-            time: activityData.time || '10:00',
-            priority: activityData.priority || 'normal',
-            bureau: activityData.bureau,
-            project: activityData.project,
-            estimatedCharge: activityData.estimatedCharge,
-            participants: activityData.participants,
-            dependencies: activityData.dependencies,
-            status: 'planned',
-            createdAt: editingActivity?.createdAt || new Date().toISOString(),
-            createdBy: editingActivity?.createdBy || currentUser.id,
-            conflicts,
-          };
-
-          setActivities((prev) => {
-            if (editingActivity) return prev.map((a) => (a.id === editingActivity.id ? newActivity : a));
-            return dedupeById([...prev, newActivity]);
-          });
-
-          await logCalendarAction({
-            kind: editingActivity ? 'edit' : 'create',
-            action: 'single',
-            event: newActivity,
-            details: editingActivity ? 'Activité modifiée' : `Activité créée (bureau=${newActivity.bureau || 'N/A'})`,
-          });
-
-          addToast(editingActivity ? `Activité modifiée: ${newActivity.title}` : `Activité créée: ${newActivity.title}`, 'success');
-
-          setShowPlanningModal(false);
-          setEditingActivity(null);
-          setDetectedConflicts([]);
-        }}
-      />
-
-      {/* Détails activité */}
-      {selectedActivityId && (() => {
-        const activity = activities.find((a) => a.id === selectedActivityId);
-        if (!activity) return null;
-
-        return (
-          <ActivityDetailsPanel
-            isOpen={selectedActivityId !== null}
-            onClose={() => setSelectedActivityId(null)}
-            activity={activity}
-            onEdit={() => {
-              setEditingActivity(activity);
-              setSelectedActivityId(null);
-              setShowPlanningModal(true);
-            }}
-            onReschedule={() => {
-              setActivityToReschedule(activity);
-              setShowRescheduleSimulator(true);
-            }}
-            onComplete={async () => {
-              setActivities((prev) => prev.map((a) => (a.id === activity.id ? { ...a, status: 'completed' as const } : a)));
-              await logCalendarAction({ kind: 'complete', action: 'single', event: activity, details: 'Activité terminée' });
-              addToast('Activité terminée', 'success');
-            }}
-            onCancel={async () => {
-              setActivities((prev) => prev.map((a) => (a.id === activity.id ? { ...a, status: 'cancelled' as const } : a)));
-              await logCalendarAction({ kind: 'cancel', action: 'single', event: activity, details: 'Activité annulée' });
-              addToast('Activité annulée', 'warning');
-            }}
-            onAddNote={(note) => {
-              const newNote = { id: `NOTE-${Date.now()}`, content: note, author: currentUser.name, createdAt: new Date().toISOString() };
-              setActivities((prev) =>
-                prev.map((a) => (a.id === activity.id ? { ...a, notes: [...(a.notes || []), newNote] } : a))
-              );
-              addToast('Note ajoutée', 'success');
-            }}
-          />
-        );
-      })()}
-
-      {/* Simulateur replanification unitaire */}
-      {activityToReschedule && (
-        <RescheduleSimulator
-          isOpen={showRescheduleSimulator}
-          onClose={() => {
-            setShowRescheduleSimulator(false);
-            setActivityToReschedule(null);
-          }}
-          onConfirm={async (newDate, newTime) => {
-            setActivities((prev) =>
-              prev.map((a) => (a.id === activityToReschedule.id ? { ...a, date: newDate, time: newTime, status: 'rescheduled' as const } : a))
-            );
-
-            await logCalendarAction({
-              kind: 'reschedule',
-              action: 'single',
-              event: activityToReschedule,
-              details: `Replanifié → ${newDate} ${newTime}`,
-            });
-
-            addToast('Activité replanifiée', 'success');
-            setShowRescheduleSimulator(false);
-            setActivityToReschedule(null);
-          }}
-          activity={activityToReschedule}
-          allActivities={activities}
-        />
-      )}
-
-      {/* BMO Resolve Modal (blocages) */}
-      {selectedBlocker && (
-        <BMOResolveModal
-          isOpen={showBMOResolveModal}
-          onClose={() => {
-            setShowBMOResolveModal(false);
-            setSelectedBlocker(null);
-          }}
-          onAction={async (action, data) => {
-            if (!selectedBlocker) return;
-            
-            // Utiliser resolveBlocker pour les actions resolve, escalate, relaunch
-            if (action === 'resolve' || action === 'escalate' || action === 'relaunch') {
-              await resolveBlocker(selectedBlocker.id, action, data);
-            } else if (action === 'reschedule') {
-              const related = activities.find((a) => a.project === selectedBlocker.project || a.bureau === selectedBlocker.bureau);
-              if (related) {
-                setActivityToReschedule(related);
-                setShowRescheduleSimulator(true);
-              }
-            }
-          }}
-          blocker={selectedBlocker}
-        />
-      )}
-
-      {/* Escalade BMO */}
-      {selectedBlocker && (
-        <EscalateToBMOModal
-          isOpen={showEscalateModal}
-          onClose={() => setShowEscalateModal(false)}
-          alert={{
-            id: selectedBlocker.id,
-            title: selectedBlocker.title,
-            description: selectedBlocker.description,
-            bureau: selectedBlocker.bureau,
-            type: selectedBlocker.type,
-          }}
-          onEscalate={async (message: string) => {
-            if (!selectedBlocker) return;
-            await resolveBlocker(selectedBlocker.id, 'escalate', { message });
-          }}
-        />
-      )}
-
-      {/* Panel détails blocage (si tu as un composant dédié, branche-le ici) */}
-      {showBlockerDetailsPanel && selectedBlocker && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowBlockerDetailsPanel(false);
-            }
-          }}
-        >
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>📋 Détails blocage</span>
-                <Badge variant={getSeverityBadge(selectedBlocker.severity)}>{selectedBlocker.severity}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className={cn('p-3 rounded border', darkMode ? 'bg-slate-900/20 border-slate-700' : 'bg-gray-50 border-gray-200')}>
-                <p className="font-semibold">{selectedBlocker.title}</p>
-                <p className="text-xs text-slate-400 mt-1">{selectedBlocker.description}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  {selectedBlocker.bureau && <BureauTag bureau={selectedBlocker.bureau} />}
-                  {selectedBlocker.project && <Badge variant="info">{selectedBlocker.project}</Badge>}
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button className="flex-1" variant="warning" onClick={() => { setShowBlockerDetailsPanel(false); setShowEscalateModal(true); }}>
-                  🔺 Escalader
-                </Button>
-                <Button className="flex-1" variant="success" onClick={() => { setShowBlockerDetailsPanel(false); setShowBMOResolveModal(true); }}>
-                  ⚡ Résoudre
-                </Button>
-                <Button variant="secondary" onClick={() => setShowBlockerDetailsPanel(false)}>
-                  Fermer
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+  return (
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col">
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center max-w-4xl">
+          <h1 className="text-5xl font-bold mb-4">{currentItem.title}</h1>
+          {currentItem.description && <p className="text-2xl text-gray-300 mb-6">{currentItem.description}</p>}
+          <div className="flex items-center justify-center gap-6 text-lg">
+            <div>
+              <span className="text-gray-400">Début:</span>{' '}
+              {new Date(currentItem.start).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}
+            </div>
+            <div>
+              <span className="text-gray-400">Fin:</span>{' '}
+              {new Date(currentItem.end).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}
+            </div>
+          </div>
+          {currentItem.bureau && (
+            <p className="mt-4 text-xl text-gray-400">Bureau: {currentItem.bureau}</p>
+          )}
         </div>
-      )}
+      </div>
+      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+        <Button variant="ghost" onClick={onClose} className="text-white">
+          <X className="w-4 h-4 mr-2" />
+          Quitter (ESC)
+        </Button>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+            disabled={currentIndex === 0}
+            className="text-white"
+          >
+            ← Précédent
+          </Button>
+          <span className="text-sm text-gray-400">
+            {currentIndex + 1} / {items.length}
+          </span>
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentIndex((i) => Math.min(items.length - 1, i + 1))}
+            disabled={currentIndex === items.length - 1}
+            className="text-white"
+          >
+            Suivant →
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Comparaison de périodes
+function PeriodComparisonPanel({
+  items,
+  onClose,
+  darkMode,
+}: {
+  items: CalendarItem[];
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  const [period1, setPeriod1] = useState<{ start: Date; end: Date }>(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return { start, end };
+  });
+  const [period2, setPeriod2] = useState<{ start: Date; end: Date }>(() => {
+    const end = new Date();
+    end.setDate(end.getDate() - 7);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 7);
+    return { start, end };
+  });
+
+  const period1Items = useMemo(() => {
+    return items.filter((it) => {
+      const date = new Date(it.start);
+      return date >= period1.start && date <= period1.end;
+    });
+  }, [items, period1]);
+
+  const period2Items = useMemo(() => {
+    return items.filter((it) => {
+      const date = new Date(it.start);
+      return date >= period2.start && date <= period2.end;
+    });
+  }, [items, period2]);
+
+  const comparison = useMemo(() => {
+    const p1Stats = {
+      total: period1Items.length,
+      conflicts: period1Items.filter((it) => it.status === 'open').length,
+      done: period1Items.filter((it) => it.status === 'done').length,
+    };
+    const p2Stats = {
+      total: period2Items.length,
+      conflicts: period2Items.filter((it) => it.status === 'open').length,
+      done: period2Items.filter((it) => it.status === 'done').length,
+    };
+    return {
+      period1: p1Stats,
+      period2: p2Stats,
+      diff: {
+        total: p1Stats.total - p2Stats.total,
+        conflicts: p1Stats.conflicts - p2Stats.conflicts,
+        done: p1Stats.done - p2Stats.done,
+      },
+    };
+  }, [period1Items, period2Items]);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <Card className={cn('w-full max-w-4xl max-h-[90vh] overflow-auto', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitCompare className="w-5 h-5" />
+              Comparaison de périodes
+            </div>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-semibold mb-2 block">Période 1</label>
+              <div className="space-y-2">
+                <Input
+                  type="date"
+                  value={dayKeyLocal(period1.start)}
+                  onChange={(e) => setPeriod1((p) => ({ ...p, start: new Date(e.target.value + 'T00:00:00') }))}
+                  className={cn(darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')}
+                />
+                <Input
+                  type="date"
+                  value={dayKeyLocal(period1.end)}
+                  onChange={(e) => setPeriod1((p) => ({ ...p, end: new Date(e.target.value + 'T23:59:59') }))}
+                  className={cn(darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold mb-2 block">Période 2</label>
+              <div className="space-y-2">
+                <Input
+                  type="date"
+                  value={dayKeyLocal(period2.start)}
+                  onChange={(e) => setPeriod2((p) => ({ ...p, start: new Date(e.target.value + 'T00:00:00') }))}
+                  className={cn(darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')}
+                />
+                <Input
+                  type="date"
+                  value={dayKeyLocal(period2.end)}
+                  onChange={(e) => setPeriod2((p) => ({ ...p, end: new Date(e.target.value + 'T23:59:59') }))}
+                  className={cn(darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">Total événements</p>
+                <p className="text-2xl font-bold">{comparison.period1.total}</p>
+                <p className={cn('text-xs mt-1', comparison.diff.total > 0 ? 'text-green-400' : comparison.diff.total < 0 ? 'text-red-400' : 'text-slate-400')}>
+                  {comparison.diff.total > 0 ? '+' : ''}{comparison.diff.total} vs Période 2
+                </p>
+              </CardContent>
+            </Card>
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">En cours</p>
+                <p className="text-2xl font-bold">{comparison.period1.conflicts}</p>
+                <p className={cn('text-xs mt-1', comparison.diff.conflicts > 0 ? 'text-red-400' : comparison.diff.conflicts < 0 ? 'text-green-400' : 'text-slate-400')}>
+                  {comparison.diff.conflicts > 0 ? '+' : ''}{comparison.diff.conflicts} vs Période 2
+                </p>
+              </CardContent>
+            </Card>
+            <Card className={cn(darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200')}>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-400 mb-1">Terminés</p>
+                <p className="text-2xl font-bold">{comparison.period1.done}</p>
+                <p className={cn('text-xs mt-1', comparison.diff.done > 0 ? 'text-green-400' : comparison.diff.done < 0 ? 'text-red-400' : 'text-slate-400')}>
+                  {comparison.diff.done > 0 ? '+' : ''}{comparison.diff.done} vs Période 2
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Historique des modifications
+function HistoryPanel({
+  history,
+  historyIndex,
+  onClose,
+  onRestore,
+  darkMode,
+}: {
+  history: CalendarItem[][];
+  historyIndex: number;
+  onClose: () => void;
+  onRestore: (index: number) => void;
+  darkMode: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <Card className={cn('w-full max-w-3xl max-h-[90vh] overflow-auto', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <HistoryIcon className="w-5 h-5" />
+              Historique des modifications
+            </div>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {history.map((snapshot, idx) => (
+              <Card
+                key={idx}
+                className={cn(
+                  'cursor-pointer transition',
+                  idx === historyIndex ? 'border-orange-500 bg-orange-500/10' : darkMode ? 'bg-slate-950/40 border-slate-700/60' : 'bg-slate-50 border-slate-200',
+                  'hover:border-slate-400'
+                )}
+                onClick={() => onRestore(idx)}
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        État #{history.length - idx} {idx === historyIndex && '(actuel)'}
+                      </p>
+                      <p className="text-xs text-slate-400">{snapshot.length} événement(s)</p>
+                    </div>
+                    {idx === historyIndex && (
+                      <Badge variant="default">Actuel</Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import type { NavItem, NavSection } from '@/lib/types/bmo.types';
 
 // Types pour les données de comptage
 export interface PageCounts {
-  alerts?: number;
+  governance?: number;
   demandes?: number;
   'validation-bc'?: number;
   'validation-contrats'?: number;
@@ -26,7 +26,7 @@ export interface PageCounts {
 export const routeMapping: Record<string, string> = {
   // PILOTAGE
   dashboard: '/maitre-ouvrage',
-  alerts: '/maitre-ouvrage/alerts',
+  governance: '/maitre-ouvrage/governance',
   calendrier: '/maitre-ouvrage/calendrier',
   analytics: '/maitre-ouvrage/analytics',
   
@@ -68,7 +68,6 @@ export const routeMapping: Record<string, string> = {
   
   // GOUVERNANCE
   decisions: '/maitre-ouvrage/decisions',
-  raci: '/maitre-ouvrage/raci',
   audit: '/maitre-ouvrage/audit',
   logs: '/maitre-ouvrage/logs',
   'system-logs': '/maitre-ouvrage/system-logs',
@@ -97,7 +96,7 @@ export function updateNavBadges(
         // Déterminer le type de badge selon le contexte
         let badgeType: 'urgent' | 'warning' | 'gray' | 'info' = 'gray';
         
-        if (item.id === 'alerts' || item.id === 'blocked') {
+        if (item.id === 'governance' || item.id === 'blocked') {
           badgeType = count > 5 ? 'urgent' : 'warning';
         } else if (item.id === 'demandes' || item.id === 'substitution') {
           badgeType = count > 10 ? 'urgent' : count > 5 ? 'warning' : 'gray';

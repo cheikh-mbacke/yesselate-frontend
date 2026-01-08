@@ -1,0 +1,101 @@
+'use client';
+
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+
+interface Props {
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
+}
+
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
+
+/**
+ * ErrorBoundary pour capturer les erreurs React et afficher un fallback
+ * Utilisation: <ErrorBoundary><YourComponent /></ErrorBoundary>
+ */
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Log l'erreur (à remplacer par un service de logging en production)
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    
+    // Appel du callback optionnel
+    this.props.onError?.(error, errorInfo);
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <Card className="border-red-500/20 bg-red-500/5">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl" aria-hidden="true">⚠️</span>
+              <div>
+                <h2 className="text-lg font-bold text-red-300">Erreur de rendu</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Une erreur s'est produite lors du chargement de cette section.
+                </p>
+              </div>
+            </div>
+
+            {this.state.error && (
+              <details className="mt-4">
+                <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-300">
+                  Détails techniques (développement)
+                </summary>
+                <pre className="mt-2 p-3 bg-slate-900/50 rounded text-xs text-red-300 overflow-auto max-h-48">
+                  {this.state.error.toString()}
+                  {this.state.error.stack && `\n\n${this.state.error.stack}`}
+                </pre>
+              </details>
+            )}
+
+            <div className="flex gap-2">
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                onClick={this.handleReset}
+                aria-label="Réessayer le chargement"
+              >
+                Réessayer
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => window.location.reload()}
+                aria-label="Recharger la page"
+              >
+                Recharger la page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+

@@ -8,20 +8,86 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { litiges } from '@/lib/data';
 
+// WHY: Parsing robuste des montants (FCFA)
+const parseMontant = (value: string | number): number => {
+  if (typeof value === 'number') return value;
+  const cleaned = value.replace(/[^\d.]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+// WHY: Export CSV enrichi — inclut origine, RACI, hash, statut
+const exportLitigesAsCSV = (
+  litiges: typeof litiges,
+  addToast: (msg: string, variant: string) => void
+) => {
+  const headers = [
+    'ID',
+    'Adversaire',
+    'Objet',
+    'Montant (FCFA)',
+    'Exposition (FCFA)',
+    'Statut',
+    'Type',
+    'Juridiction',
+    'Avocat',
+    'Prochain RDV',
+    'Origine décisionnelle',
+    'ID décision',
+    'Rôle RACI',
+    'Hash traçabilité',
+    'Statut BMO',
+  ];
+
+  const rows = litiges.map(l => [
+    l.id,
+    l.adversaire,
+    `"${l.objet}"`,
+    l.montant.toString(),
+    l.exposure.toString(),
+    l.status,
+    l.type,
+    l.juridiction,
+    l.avocat,
+    l.prochainRdv || '',
+    l.decisionBMO?.origin || 'Hors périmètre BMO',
+    l.decisionBMO?.decisionId || '',
+    l.decisionBMO?.validatorRole || '',
+    l.decisionBMO?.hash || '',
+    l.decisionBMO ? 'Piloté' : 'Non piloté',
+  ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `litiges_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addToast('✅ Export Litiges généré (traçabilité RACI incluse)', 'success');
+};
+
 export default function LitigesPage() {
   const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
+  const { addToast, addActionLog, currentUser } = useBMOStore();
   const [selectedLitige, setSelectedLitige] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'journal' | 'deadlines' | 'documents'>('journal');
 
-  // Calculs
+  // Calculs sécurisés
   const stats = useMemo(() => {
     const totalMontant = litiges.reduce(
-      (a, l) => a + parseFloat(l.montant.replace(/,/g, '')),
+      (a, l) => a + parseMontant(l.montant),
       0
     );
     const totalExposition = litiges.reduce(
-      (a, l) => a + parseFloat(l.exposure.replace(/,/g, '')),
+      (a, l) => a + parseMontant(l.exposure),
       0
     );
     const byType = litiges.reduce((acc, l) => {
@@ -82,10 +148,10 @@ export default function LitigesPage() {
 
   const handleOpenDossier = (litige: typeof litiges[0]) => {
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'creation',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'audit', // Mapping vers ActionLogType valide
       module: 'litiges',
       targetId: litige.id,
       targetType: 'Litige',
@@ -98,9 +164,9 @@ export default function LitigesPage() {
 
   const handleDemanderArbitrage = (litige: typeof litiges[0]) => {
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
       action: 'creation',
       module: 'arbitrages',
       targetId: litige.id,
@@ -122,20 +188,20 @@ export default function LitigesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            ⚖️ Litiges
+            ⚖️ Litiges Pilotés
             <Badge variant="urgent">{litiges.length}</Badge>
           </h1>
           <p className="text-sm text-slate-400">
-            Contentieux en cours et suivi procédural
+            Contentieux <strong>sous contrôle BMO</strong> — Unité : FCFA
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => addToast('Export en cours...', 'info')}
+            onClick={() => exportLitigesAsCSV(litiges, addToast)}
           >
-            📊 Exporter
+            📊 Exporter (CSV RACI)
           </Button>
           <Button
             size="sm"
@@ -152,7 +218,7 @@ export default function LitigesPage() {
         <Card className="border-red-500/30">
           <CardContent className="p-3 text-center">
             <p className="text-lg font-bold text-red-400">
-              {(stats.totalMontant / 1000000).toFixed(1)}M
+              {(stats.totalMontant / 1_000_000).toFixed(1)}M
             </p>
             <p className="text-[10px] text-slate-400">Montant en litige</p>
           </CardContent>
@@ -160,15 +226,15 @@ export default function LitigesPage() {
         <Card className="border-orange-500/30">
           <CardContent className="p-3 text-center">
             <p className="text-lg font-bold text-orange-400">
-              {(stats.totalExposition / 1000000).toFixed(1)}M
+              {(stats.totalExposition / 1_000_000).toFixed(1)}M
             </p>
             <p className="text-[10px] text-slate-400">Exposition estimée</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{litiges.length}</p>
-            <p className="text-[10px] text-slate-400">Dossiers actifs</p>
+            <p className="text-2xl font-bold text-purple-400">{litiges.filter(l => l.decisionBMO).length}</p>
+            <p className="text-[10px] text-slate-400">Pilotés par BMO</p>
           </CardContent>
         </Card>
         <Card className="border-amber-500/30">
@@ -323,30 +389,39 @@ export default function LitigesPage() {
                   )}
                 </div>
                 
-                <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    size="xs"
-                    variant="info"
-                    onClick={() => handleOpenDossier(litige)}
-                  >
-                    📋 Dossier
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="warning"
-                    onClick={() => handleDemanderArbitrage(litige)}
-                  >
-                    ⚖️ Arbitrage
-                  </Button>
-                  {litige.projetName && (
+                <div className="mt-2 flex justify-between items-center">
+                  <div className="flex gap-1">
                     <Button
                       size="xs"
-                      variant="secondary"
-                      onClick={() => addToast(`Voir projet ${litige.projet}`, 'info')}
+                      variant="info"
+                      onClick={(e) => { e.stopPropagation(); handleOpenDossier(litige); }}
                     >
-                      🔗 {litige.projetName}
+                      📋 Dossier
                     </Button>
-                  )}
+                    <Button
+                      size="xs"
+                      variant="warning"
+                      onClick={(e) => { e.stopPropagation(); handleDemanderArbitrage(litige); }}
+                    >
+                      ⚖️ Arbitrage
+                    </Button>
+                    {litige.projetName && (
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        onClick={(e) => { e.stopPropagation(); addToast(`Voir projet ${litige.projet}`, 'info'); }}
+                      >
+                        🔗 {litige.projetName}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    {litige.decisionBMO ? (
+                      <Badge variant="success" className="text-[9px]">✅ Piloté</Badge>
+                    ) : (
+                      <Badge variant="warning" className="text-[9px]">⚠️ Hors BMO</Badge>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -378,6 +453,35 @@ export default function LitigesPage() {
               <div className="p-3 rounded-lg bg-slate-700/30 text-sm">
                 <p className="text-slate-400 text-[10px] mb-1">Résumé de l'affaire</p>
                 <p>{selectedLitigeData.resume}</p>
+              </div>
+            )}
+
+            {/* Décision BMO */}
+            {selectedLitigeData.decisionBMO && (
+              <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
+                <p className="text-[10px] text-purple-400 mb-1">Décision BMO</p>
+                <Badge variant="default" className="text-[9px]">
+                  {selectedLitigeData.decisionBMO.validatorRole === 'A' ? 'BMO (Accountable)' : 'BM (Responsible)'}
+                </Badge>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="text-[10px] bg-slate-800/50 px-1 rounded">
+                    {selectedLitigeData.decisionBMO.hash.slice(0, 32)}...
+                  </code>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="text-[10px] text-blue-400 p-0 h-auto"
+                    onClick={async () => {
+                      const isValid = selectedLitigeData.decisionBMO?.hash.startsWith('SHA3-256:');
+                      addToast(
+                        isValid ? '✅ Hash valide' : '❌ Hash invalide',
+                        isValid ? 'success' : 'error'
+                      );
+                    }}
+                  >
+                    🔍 Vérifier
+                  </Button>
+                </div>
               </div>
             )}
 

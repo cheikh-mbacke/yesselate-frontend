@@ -200,7 +200,8 @@ export default function AuditPage() {
         userName: 'A. DIALLO',
         userRole: 'Directeur Général',
         module: 'audit',
-        action: payload.action,
+        // WHY: Cast vers ActionLogType car payload.action est string mais ActionLogType est plus restrictif
+        action: payload.action as any,
         targetId: payload.targetId,
         targetType: payload.targetType,
         details: payload.details,

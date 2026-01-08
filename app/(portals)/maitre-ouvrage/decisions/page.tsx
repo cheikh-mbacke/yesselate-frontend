@@ -148,14 +148,14 @@ export default function DecisionsPage() {
               </div>
               <div className="pt-2 space-y-2">
                 <div className="flex justify-between items-center">
-                  <code className="text-[10px] bg-slate-800/50 px-1 rounded">{decision.hash.slice(0, 32)}...</code>
-                  <Button
-                    size="sm"
-                    variant="link"
-                    className="text-blue-400 p-0 h-auto"
-                    onClick={() => window.open(decision.link, '_blank')}
-                  >
-                    📄 Voir décision
+                <code className="text-[10px] bg-slate-800/50 px-1 rounded">{decision.hash.slice(0, 32)}...</code>
+                <Button
+                  size="sm"
+                  variant="link"
+                  className="text-blue-400 p-0 h-auto"
+                  onClick={() => window.open(decision.link, '_blank')}
+                >
+                  📄 Voir décision
                   </Button>
                 </div>
                 <Button

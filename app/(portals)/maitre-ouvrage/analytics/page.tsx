@@ -62,11 +62,12 @@ type EnrichedRow = (typeof performanceData)[number] & {
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
 const toCsv = (rows: Array<Record<string, any>>) => {
+  // WHY: Convertir Set en Array explicitement pour TypeScript
   const cols = Array.from(
     rows.reduce((acc, r) => {
       Object.keys(r).forEach((k) => acc.add(k));
       return acc;
-    }, new Set<string>())
+    }, new Set<string>()) as Set<string>
   );
   const esc = (v: any) => {
     const s = String(v ?? '');

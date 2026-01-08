@@ -141,7 +141,12 @@ export function useCrossPageLinks(pageId: string) {
   return {
     // Liens vers les pages principales
     goToDashboard: () => navigateTo('dashboard'),
-    goToAlerts: (alertId?: string) => navigateTo('alerts', alertId ? { alertId } : undefined),
+    goToGovernance: (tab?: 'raci' | 'alerts', alertId?: string) => {
+      const params: Record<string, string> = {};
+      if (tab) params.tab = tab;
+      if (alertId) params.alertId = alertId;
+      return navigateTo('governance', Object.keys(params).length > 0 ? params : undefined);
+    },
     goToCalendrier: (date?: string) => navigateTo('calendrier', date ? { date } : undefined),
     goToAnalytics: (report?: string) => navigateTo('analytics', report ? { report } : undefined),
     

@@ -31,6 +31,9 @@ export function EscalateToBMOModal({
   const { addToast, addActionLog } = useBMOStore();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
+  
+  // Focus trap pour accessibilité
+  const modalRef = useFocusTrap(isOpen);
 
   // Initialiser le message au montage si vide
   React.useEffect(() => {
@@ -85,19 +88,24 @@ Justification:
         onClick={onClose}
       />
       <div
+        ref={modalRef}
         className={cn(
           'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[101]',
           'w-full max-w-xl',
           darkMode ? 'bg-slate-900' : 'bg-white',
           'rounded-xl shadow-2xl border'
         )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="escalate-modal-title"
+        aria-describedby="escalate-modal-description"
       >
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-400" />
-              <h2 className="text-xl font-bold">Escalade vers BMO</h2>
+              <h2 id="escalate-modal-title" className="text-xl font-bold">Escalade vers BMO</h2>
             </div>
             <button
               onClick={onClose}
@@ -105,6 +113,7 @@ Justification:
                 'p-2 rounded-lg transition-colors',
                 darkMode ? 'hover:bg-slate-800' : 'hover:bg-gray-100'
               )}
+              aria-label="Fermer la modale d'escalade"
             >
               <X className="w-5 h-5" />
             </button>

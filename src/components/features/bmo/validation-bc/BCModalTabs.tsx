@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
   Shield, FileText, CheckCircle, AlertTriangle, 
-  History, Lightbulb, TrendingUp, Download, Eye, Search
+  History, Lightbulb, TrendingUp, Download, Eye, Search, Sparkles, GitBranch, DollarSign
 } from 'lucide-react';
 import type { EnrichedBC } from '@/lib/types/document-validation.types';
 import { BCDocumentView } from './BCDocumentView';
@@ -21,6 +21,9 @@ import { useBMOStore } from '@/lib/stores';
 import { convertEnrichedBCToBonCommande } from '@/lib/utils/bc-converter';
 import { useBcAudit } from '@/ui/hooks/useBcAudit';
 import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
+import { RecommendationsModal } from './RecommendationsModal';
+import { WorkflowVisualModal } from './WorkflowVisualModal';
+import { BudgetPlanningModal } from './BudgetPlanningModal';
 
 type TabKey = "analyse" | "details" | "documents" | "historique" | "risques";
 
@@ -66,15 +69,19 @@ interface BCModalTabsProps {
   bc: EnrichedBC;
   onDecision: (payload: DecisionPayload) => Promise<void> | void;
   onAuditComplete?: (bcId: string, report: BCAuditReport) => void; // WHY: Propager le rapport d'audit au parent
+  allBCs?: PurchaseOrder[] | EnrichedBC[]; // Pour recommandations contextuelles
 }
 
-export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProps) {
+export function BCModalTabs({ bc, onDecision, onAuditComplete, allBCs = [] }: BCModalTabsProps) {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
   const [tab, setTab] = useState<TabKey>("analyse");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [auditReport, setAuditReport] = useState<BCAuditReport | null>(bc.auditReport || null);
+  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [showWorkflow, setShowWorkflow] = useState(false);
+  const [showBudgetPlanning, setShowBudgetPlanning] = useState(false);
   
   // Hook pour l'audit BC
   const bcAudit = useBcAudit();
@@ -290,6 +297,53 @@ export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProp
           Risques {counts.riskCount > 0 && <CountBadge>{counts.riskCount}</CountBadge>}
         </TabButton>
         
+        {/* Bouton Recommandations */}
+        <button
+          onClick={() => setShowRecommendations(true)}
+          className={cn(
+            "px-3 py-2 text-xs font-medium flex items-center gap-2 rounded-lg transition-colors",
+            darkMode 
+              ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30" 
+              : "bg-purple-100 text-purple-600 hover:bg-purple-200"
+          )}
+          title="Voir les recommandations intelligentes"
+        >
+          <Sparkles className="w-4 h-4" />
+          Recommandations
+        </button>
+
+        {/* Bouton Workflow */}
+        <button
+          onClick={() => setShowWorkflow(true)}
+          className={cn(
+            "px-3 py-2 text-xs font-medium flex items-center gap-2 rounded-lg transition-colors",
+            darkMode 
+              ? "bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30" 
+              : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+          )}
+          title="Voir le workflow de validation"
+        >
+          <GitBranch className="w-4 h-4" />
+          Workflow
+        </button>
+
+        {/* Bouton Budget */}
+        {bc.projetDetails && (
+          <button
+            onClick={() => setShowBudgetPlanning(true)}
+            className={cn(
+              "px-3 py-2 text-xs font-medium flex items-center gap-2 rounded-lg transition-colors",
+              darkMode 
+                ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" 
+                : "bg-emerald-100 text-emerald-600 hover:bg-emerald-200"
+            )}
+            title="Voir l'impact budgétaire"
+          >
+            <DollarSign className="w-4 h-4" />
+            Budget
+          </button>
+        )}
+
         {/* Bouton Audit complet (loupe) */}
         <button
           onClick={async () => {
@@ -460,6 +514,46 @@ export function BCModalTabs({ bc, onDecision, onAuditComplete }: BCModalTabsProp
           </Button>
         </div>
       </div>
+
+      {/* Modal de Recommandations */}
+      <RecommendationsModal
+        isOpen={showRecommendations}
+        onClose={() => setShowRecommendations(false)}
+        bc={bc}
+        allBCs={allBCs}
+        onAction={(action, reason) => {
+          if (action === 'validate') {
+            runDecision({ decision: 'approve', reason: reason || 'Recommandation contextuelle' });
+          } else if (action === 'reject') {
+            runDecision({ decision: 'reject', reason: reason || 'Recommandation contextuelle' });
+          } else if (action === 'request_complement') {
+            runDecision({ decision: 'request_complement', reason: reason || 'Recommandation contextuelle' });
+          }
+          setShowRecommendations(false);
+        }}
+      />
+
+      {/* Modal de Workflow Visuel */}
+      <WorkflowVisualModal
+        isOpen={showWorkflow}
+        onClose={() => setShowWorkflow(false)}
+        bc={bc}
+        onAction={(stepId, action) => {
+          addToast(`Action ${action} sur l'étape ${stepId}`, 'info');
+        }}
+      />
+
+      {/* Modal de Planification Budgétaire */}
+      <BudgetPlanningModal
+        isOpen={showBudgetPlanning}
+        onClose={() => setShowBudgetPlanning(false)}
+        bc={bc}
+        allBCs={allBCs}
+        onValidate={() => {
+          runDecision({ decision: 'approve', reason: 'Validation après analyse budgétaire' });
+          setShowBudgetPlanning(false);
+        }}
+      />
     </div>
   );
 }

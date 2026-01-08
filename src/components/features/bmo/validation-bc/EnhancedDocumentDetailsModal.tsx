@@ -44,6 +44,7 @@ interface EnhancedDocumentDetailsModalProps {
   onRequestComplement?: () => void;
   onSign?: (signature: DocumentSignature) => void;
   onAuditComplete?: (bcId: string, report: any) => void; // WHY: Propager le rapport d'audit au parent
+  allBCs?: any[]; // WHY: Pour recommandations contextuelles
 }
 
 export function EnhancedDocumentDetailsModal({
@@ -56,6 +57,7 @@ export function EnhancedDocumentDetailsModal({
   onRequestComplement,
   onSign,
   onAuditComplete,
+  allBCs = [],
 }: EnhancedDocumentDetailsModalProps) {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
@@ -273,6 +275,7 @@ export function EnhancedDocumentDetailsModal({
               <BCModalTabs
                 key={document.id} // Force reset au changement de BC
                 bc={document as EnrichedBC}
+                allBCs={allBCs} // WHY: Pour recommandations contextuelles
                 onDecision={async (payload) => {
                   if (payload.decision === 'approve') {
                     handleValidate();

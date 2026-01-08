@@ -9,14 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { arbitragesVivants, coordinationStats, arbitrages, bureauxGovernance } from '@/lib/data';
 import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
+import type { ArbitrageVivant, Arbitration } from '@/lib/types/bmo.types';
 
 type MainTab = 'arbitrages' | 'bureaux';
 type Filter = 'all' | 'ouverts' | 'tranche' | 'pending' | 'resolved';
 type SelectedType = 'vivant' | 'simple' | null;
 type ViewTab = 'contexte' | 'options' | 'parties' | 'documents';
 
-type Vivant = (typeof arbitragesVivants)[number] & { _type: 'vivant' };
-type Simple = (typeof arbitrages)[number] & { _type: 'simple' };
+type Vivant = ArbitrageVivant & { _type: 'vivant' };
+type Simple = Arbitration & { _type: 'simple' };
 type AnyArb = Vivant | Simple;
 
 type Bureau = (typeof bureauxGovernance)[number];
@@ -179,7 +180,7 @@ export default function ArbitragesVivantsPage() {
       if (onlyOverloaded) params.set('over', '1');
     }
 
-    router.replace(`?${params.toString()}`, { scroll: false } as any);
+    router.replace(`?${params.toString()}`, { scroll: false });
   }, [mainTab, filter, q, onlyIssues, selectedArbitrageId, selectedType, selectedBureau, onlyOverloaded, router]);
 
   // Reset viewTab au changement d'arbitrage sélectionné
@@ -222,8 +223,9 @@ export default function ArbitragesVivantsPage() {
       return open && (risky || overdue);
     }
     // simple
-    const urgent = a.status === 'pending' && isUrgentDeadline((a as any).deadline);
-    const criticalImpact = (a as any).impact === 'critical' || (a as any).impact === 'high';
+    const simple = a as Simple;
+    const urgent = simple.status === 'pending' && isUrgentDeadline(simple.deadline);
+    const criticalImpact = simple.impact === 'critical' || simple.impact === 'high';
     return a.status === 'pending' && (urgent || criticalImpact);
   };
 
@@ -245,7 +247,10 @@ export default function ArbitragesVivantsPage() {
       list = list.filter((a) => {
         const hay = isVivant(a)
           ? `${a.id} ${a.subject} ${a.status} ${a.type} ${a.context?.linkedEntity?.type ?? ''} ${a.context?.linkedEntity?.label ?? ''}`.toLowerCase()
-          : `${(a as any).id} ${(a as any).subject} ${(a as any).status} ${(a as any).impact ?? ''} ${(a as any).deadline ?? ''} ${(a as any).requestedBy ?? ''} ${Array.isArray((a as any).parties) ? (a as any).parties.join(' ') : ''}`.toLowerCase();
+          : (() => {
+              const simple = a as Simple;
+              return `${simple.id} ${simple.subject} ${simple.status} ${simple.impact ?? ''} ${simple.deadline ?? ''} ${simple.requestedBy ?? ''} ${Array.isArray(simple.parties) ? simple.parties.join(' ') : ''}`.toLowerCase();
+            })();
         return hay.includes(search);
       });
     }
@@ -266,8 +271,8 @@ export default function ArbitragesVivantsPage() {
 
       // simples : deadline plus proche d'abord
       if (!isVivant(a) && !isVivant(b)) {
-        const ad = parseFrDate((a as any).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-        const bd = parseFrDate((b as any).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const ad = parseFrDate(isVivant(a) ? undefined : (a as Simple).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const bd = parseFrDate(isVivant(b) ? undefined : (b as Simple).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
         return ad - bd;
       }
 
@@ -283,7 +288,7 @@ export default function ArbitragesVivantsPage() {
     const simplesTotal = arbitrages.length;
     const simplesPending = arbitrages.filter((a) => a.status === 'pending').length;
     const simplesResolved = arbitrages.filter((a) => a.status === 'resolved').length;
-    const simplesUrgent = arbitrages.filter((a: any) => a.status === 'pending' && isUrgentDeadline(a.deadline)).length;
+    const simplesUrgent = arbitrages.filter((a: Arbitration) => a.status === 'pending' && isUrgentDeadline(a.deadline)).length;
 
     return {
       ...vivantsStats,
@@ -318,7 +323,7 @@ export default function ArbitragesVivantsPage() {
       action: 'validation',
       targetId: arb.id,
       targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Arbitrage tranché: ${(arb as any).subject}${optionId ? ` - Option ${optionId}` : ''}`,
+      details: `Arbitrage tranché: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}${optionId ? ` - Option ${optionId}` : ''}`,
     });
 
     addToast(
@@ -341,7 +346,7 @@ export default function ArbitragesVivantsPage() {
       action: 'modification',
       targetId: arb.id,
       targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Report arbitrage: ${(arb as any).subject}`,
+      details: `Report arbitrage: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}`,
     });
 
     addToast('Report enregistré avec justification obligatoire', 'warning');
@@ -359,7 +364,7 @@ export default function ArbitragesVivantsPage() {
       action: 'modification',
       targetId: arb.id,
       targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Demande complément: ${(arb as any).subject}`,
+      details: `Demande complément: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}`,
     });
 
     addToast('Demande de complément envoyée aux parties', 'info');
@@ -406,8 +411,8 @@ export default function ArbitragesVivantsPage() {
 
     const hash =
       selected._type === 'vivant'
-        ? (selected as Vivant).hash
-        : (selected as any).hash ?? (selected as any).decisionHash ?? '';
+        ? (selected as Vivant).decision?.decisionId ?? ''
+        : '';
 
     if (!hash) return addToast('Aucun hash à copier', 'warning');
 
@@ -822,7 +827,7 @@ export default function ArbitragesVivantsPage() {
                               </p>
                               {(arb as Vivant).context.financialExposure ? (
                                 <p className="text-sm font-bold text-amber-400 mt-1">
-                                  💰 Exposition: {formatMoney((arb as Vivant).context.financialExposure)}
+                                  💰 Exposition: {formatMoney((arb as Vivant).context.financialExposure ?? 0)}
                                 </p>
                               ) : null}
                             </div>
@@ -1118,20 +1123,20 @@ export default function ArbitragesVivantsPage() {
                               const s = getStatusBadgeConfig(selected.status);
                               return <Badge variant={s.variant}>{s.label}</Badge>;
                             })()}
-                            {'impact' in (selected as any) && (
+                            {!isVivant(selected) && (selected as Simple).impact && (
                               <Badge
                                 variant={
-                                  (selected as any).impact === 'critical'
+                                  (selected as Simple).impact === 'critical'
                                     ? 'urgent'
-                                    : (selected as any).impact === 'high'
+                                    : (selected as Simple).impact === 'high'
                                     ? 'warning'
                                     : 'default'
                                 }
                               >
-                                Impact: {(selected as any).impact}
+                                Impact: {(selected as Simple).impact}
                               </Badge>
                             )}
-                            {(selected as any).deadline && isUrgentDeadline((selected as any).deadline) && selected.status === 'pending' && (
+                            {!isVivant(selected) && (selected as Simple).deadline && isUrgentDeadline((selected as Simple).deadline) && selected.status === 'pending' && (
                               <Badge variant="urgent" pulse>Urgent</Badge>
                             )}
                           </div>

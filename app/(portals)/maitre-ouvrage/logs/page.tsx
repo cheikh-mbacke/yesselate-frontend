@@ -7,7 +7,57 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { ActionLogType } from '@/lib/types/bmo.types';
+import type { ActionLogType, ActionLog } from '@/lib/types/bmo.types';
+
+// WHY: Export CSV enrichi — traçabilité RACI incluse
+const exportLogsAsCSV = (
+  logs: ActionLog[],
+  addToast: (msg: string, variant: string) => void
+) => {
+  const headers = [
+    'ID',
+    'Utilisateur',
+    'Rôle',
+    'Bureau',
+    'Action',
+    'Cible',
+    'Détails',
+    'Module',
+    'Date/Heure',
+    'Hash traçabilité',
+    'Statut BMO',
+  ];
+
+  const rows = logs.map(log => [
+    log.id,
+    log.userName,
+    log.userRole,
+    log.bureau || '',
+    log.action,
+    log.targetLabel || log.targetId || '',
+    `"${log.details || ''}"`,
+    log.module,
+    new Date(log.timestamp).toLocaleString('fr-FR'),
+    log.hash || '',
+    log.userRole === 'bmo' ? 'Accountable' : 'Responsible',
+  ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `journal_actions_bmo_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addToast('✅ Export Journal généré (traçabilité RACI incluse)', 'success');
+};
 
 export default function LogsPage() {
   const { darkMode } = useAppStore();
@@ -117,6 +167,7 @@ export default function LogsPage() {
       today: todayLogs.length,
       validations: actionLogs.filter((log) => log.action === 'validation').length,
       substitutions: actionLogs.filter((log) => log.action === 'substitution').length,
+      accountables: actionLogs.filter((log) => log.userRole === 'bmo').length,
     };
   }, [actionLogs]);
 
@@ -126,25 +177,25 @@ export default function LogsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            📜 Journal des actions
+            📜 Journal des actions BMO
           </h1>
           <p className="text-sm text-slate-400">
-            Historique horodaté de toutes les actions sur la plateforme
+            Historique <strong>horodaté et tracé</strong> de toutes les actions — Unité : jour
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => addToast('Export du journal en cours...', 'info')}
+            onClick={() => exportLogsAsCSV(actionLogs, addToast)}
           >
-            📊 Exporter
+            📊 Exporter (CSV RACI)
           </Button>
         </div>
       </div>
 
       {/* Stats rapides */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card>
           <CardContent className="p-3 text-center">
             <p className="text-2xl font-bold text-orange-400">{stats.total}</p>
@@ -167,6 +218,12 @@ export default function LogsPage() {
           <CardContent className="p-3 text-center">
             <p className="text-2xl font-bold text-amber-400">{stats.substitutions}</p>
             <p className="text-[10px] text-slate-400">Substitutions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-purple-400">{stats.accountables}</p>
+            <p className="text-[10px] text-slate-400">Actions BMO (A)</p>
           </CardContent>
         </Card>
       </div>
@@ -231,7 +288,7 @@ export default function LogsPage() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center justify-between">
-            <span>📋 Historique</span>
+            <span>📋 Historique des décisions</span>
             <Badge variant="gray">{filteredLogs.length} entrée(s)</Badge>
           </CardTitle>
         </CardHeader>
@@ -276,8 +333,11 @@ export default function LogsPage() {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-sm">{log.userName}</span>
-                            <Badge variant="gray" className="text-[9px]">
-                              {log.userRole}
+                            <Badge 
+                              variant={log.userRole === 'bmo' ? 'success' : 'gray'} 
+                              className="text-[9px]"
+                            >
+                              {log.userRole === 'bmo' ? 'BMO (A)' : 'BM (R)'}
                             </Badge>
                             {log.bureau && (
                               <Badge variant="info" className="text-[9px]">
@@ -305,13 +365,18 @@ export default function LogsPage() {
                       </div>
 
                       {/* Timestamp */}
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end">
                         <p className="text-[10px] text-slate-400">
                           {formatDate(log.timestamp)}
                         </p>
                         <p className="text-[9px] text-slate-500 mt-1">
                           {log.module}
                         </p>
+                        {log.hash && (
+                          <code className="text-[8px] bg-slate-800/50 px-1 rounded mt-1">
+                            {log.hash.slice(0, 12)}...
+                          </code>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -322,21 +387,19 @@ export default function LogsPage() {
         </CardContent>
       </Card>
 
-      {/* Info */}
+      {/* Info — avec mention de traçabilité */}
       <Card className="border-blue-500/30">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
-            <span className="text-2xl">ℹ️</span>
+            <span className="text-2xl">🔐</span>
             <div>
               <h3 className="font-bold text-sm text-blue-400">
-                À propos du journal
+                Traçabilité BMO
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Ce journal enregistre automatiquement toutes les actions effectuées 
-                sur la plateforme (validations, substitutions, modifications, etc.). 
-                Les données sont conservées pendant 90 jours pour des raisons de 
-                traçabilité et d&apos;audit. Chaque entrée est horodatée et associée 
-                à l&apos;utilisateur qui a effectué l&apos;action.
+                Chaque action est <strong>horodatée, hashée et associée à un rôle RACI</strong> (Accountable/Responsible). 
+                Les données sont conservées pendant 90 jours pour audit. 
+                L&apos;export CSV inclut le <strong>hash de traçabilité</strong> pour chaque entrée.
               </p>
             </div>
           </div>

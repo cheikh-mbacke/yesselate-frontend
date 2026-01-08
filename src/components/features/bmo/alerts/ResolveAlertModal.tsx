@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { X, Clock, User, FileText, CheckCircle, RefreshCw, MessageSquare } from 'lucide-react';
 import { BureauTag } from '@/components/features/bmo/BureauTag';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import type { BlockedDossier } from '@/lib/types/bmo.types';
 
 interface ResolveAlertModalProps {

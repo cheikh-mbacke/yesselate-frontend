@@ -28,6 +28,11 @@ export { BonDeCommandePreview, BonDeCommandePrintButton } from './BonDeCommandeP
 export { BCModalTabs } from './BCModalTabs';
 export { BCRowActions } from './BCRowActions';
 export { DecisionCell } from './DecisionCell';
+export { RecommendationsModal } from './RecommendationsModal';
+export { BCComparisonModal } from './BCComparisonModal';
+export { WorkflowVisualModal } from './WorkflowVisualModal';
+export { BatchActionsModal } from './BatchActionsModal';
+export { BudgetPlanningModal } from './BudgetPlanningModal';
 export type { PurchaseOrderData, PurchaseOrderLine, PurchaseOrderParty, PurchaseOrderMeta } from './BonDeCommandePreview';
 export type { TabType } from './types';
 

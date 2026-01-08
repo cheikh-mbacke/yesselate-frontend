@@ -141,7 +141,7 @@ export const navSections: NavSection[] = [
     title: 'Pilotage',
     items: [
       { id: 'dashboard', icon: '📊', label: 'Tableau de bord' },
-      { id: 'alerts', icon: '⚠️', label: 'Alertes & Risques', badge: 7, badgeType: 'warning' },
+      { id: 'governance', icon: '🏛️', label: 'Gouvernance', badge: 7, badgeType: 'warning' },
       { id: 'calendrier', icon: '📅', label: 'Calendrier' },
       { id: 'analytics', icon: '📈', label: 'Analytics & Rapports' },
     ],
@@ -201,7 +201,6 @@ export const navSections: NavSection[] = [
     title: 'Gouvernance',
     items: [
       { id: 'decisions', icon: '⚖️', label: 'Décisions' },
-      { id: 'raci', icon: '📐', label: 'Matrice RACI' },
       { id: 'audit', icon: '🔍', label: 'Audit' },
       { id: 'logs', icon: '📜', label: 'Journal des Actions' },
       { id: 'system-logs', icon: '🔧', label: 'Logs Système' },

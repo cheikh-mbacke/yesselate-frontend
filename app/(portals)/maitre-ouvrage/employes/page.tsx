@@ -407,7 +407,7 @@ export default function EmployesPage() {
       targetType: 'Employee',
       details: `Plan mitigation SPOF: ${note}`,
     });
-    addToast('Plan d'action enregistré (trace créée)', 'success');
+    addToast("Plan d'action enregistré (trace créée)", 'success');
   }, [addActionLog, addToast]);
 
   const handleEditEmployee = useCallback(() => {
@@ -427,7 +427,7 @@ export default function EmployesPage() {
 
   const handleEvaluateEmployee = useCallback(() => {
     if (!selectedEmp) return;
-    const objective = window.prompt('Objectif de l'évaluation (trace audit) :', 'Évaluation périodique / performance / compétences');
+    const objective = window.prompt("Objectif de l'évaluation (trace audit) :", 'Évaluation périodique / performance / compétences');
     if (!objective) return;
 
     addActionLog({

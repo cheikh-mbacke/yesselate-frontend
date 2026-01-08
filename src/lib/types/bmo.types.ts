@@ -139,16 +139,35 @@ export interface EmployeePromotion {
 }
 
 // --- Projet ---
+// =========================
+// PROJET UNIVERSEL
+// =========================
+
+export type ProjectDomain = 'travaux' | 'fournitures' | 'services' | 'logistique';
+
 export interface Project {
   id: string;
   name: string;
-  client: string;
+  client: string; // ⚠️ Conservé pour compatibilité rétroactive
+  clientIds: string[];        // ✅ Plusieurs clients
+  buildingIds: string[];      // ✅ Plusieurs bâtiments
+  domains: ProjectDomain[];   // ✅ Multi-domaine
+  nomenclatureFamilies: string[]; // ex: ['F10-02', 'S20-01', 'C10-01']
   budget: string;
   spent: string;
   progress: number;
   status: ProjectStatus;
   bureau: string;
   team: number;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
+}
+
+// --- Bâtiment ---
+export interface Building {
+  id: string;      // BLDG-01
+  name: string;    // "Bâtiment A - Urgences"
+  type: string;    // "sanitaire", "bureaux", "logement"
+  surface: number; // m²
 }
 
 // --- Projet avec Budget détaillé (NOUVEAU) ---
@@ -226,19 +245,52 @@ export interface Decision {
   hash: string;
 }
 
-// --- Bon de Commande ---
+// =========================
+// NOMENCLATURE INTERNE (type CPV)
+// =========================
+
+export type NomenclatureDomain = 'F' | 'S' | 'C' | 'T' | 'L'; // Fournitures, Services, Conception, Travaux, Logistique
+
+export type FamilyCode = `${NomenclatureDomain}${number}${number}-${number}${number}`;
+
+export interface NomenclatureFamily {
+  code: FamilyCode;
+  label: string;
+  domain: NomenclatureDomain;
+  parent?: string; // ex: "F10"
+  cpvRef?: string[];
+  keywords?: string[];
+  allowMixedWith?: FamilyCode[]; // ex: livraison peut se mélanger
+}
+
+// =========================
+// BON DE COMMANDE (homogène par famille)
+// =========================
+
+export interface BCLine {
+  id: string;
+  familyCode: FamilyCode; // ✅ Doit correspondre à la famille du BC
+  designation: string;
+  qty: number;
+  unitPriceHT: number;
+}
+
 export interface PurchaseOrder {
   id: string;
-  project: string;
+  project: string; // ⚠️ Conservé pour compatibilité rétroactive
+  projectId: string;       // ✅ Lié à un projet (même multi-client)
+  familyCode: FamilyCode; // ✅ 1 seule famille par BC (conformité interne)
   subject: string;
   supplier: string;
+  supplierId?: string;
   amount: string;
   requestedBy: string;
   bureau: string;
   date: string;
   dateLimit?: string; // Date limite de validation
   priority: Priority;
-  status: DemandStatus;
+  status: DemandStatus | 'audit_required' | 'approved' | 'rejected';
+  lines?: BCLine[]; // Lignes détaillées du bon de commande
   decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
@@ -346,6 +398,7 @@ export interface HRRequest {
   impactSubstitution?: string; // ID de la substitution créée si absence
   impactFinance?: string; // ID de l'entrée finance si dépense payée
   hash?: string; // SHA3-256 pour anti-contestation
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 export interface HRRequestDocument {
@@ -403,6 +456,7 @@ export interface Mission {
   decisions?: string[]; // IDs des décisions liées
   createdBy: string;
   createdAt: string;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Évaluation (nouveau) ---
@@ -506,10 +560,11 @@ export interface ExternalMessage {
   subject: string;
   message: string;
   date: string;
-  status: 'unread' | 'read' | 'replied';
+  status: 'unread' | 'read' | 'replied' | 'archived';
   priority: Priority;
   project?: string;
   requiresResponse: boolean;
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Recouvrement (enrichi pour traçabilité) ---
@@ -635,6 +690,7 @@ export interface Litigation {
     montantAccorde?: string;
     resume: string;
   };
+  decisionBMO?: DecisionBMO; // 🔑 CHAMP CLÉ : DÉCISION BMO (traçabilité RACI)
 }
 
 // --- Événement calendrier (enrichi pour multi-bureaux) ---
@@ -929,7 +985,20 @@ export type ActionLogType =
   | 'budget_approval'
   | 'audit'
   | 'request_complement'
-  | 'escalation';
+  | 'escalation'
+  // Actions calendrier
+  | 'modifier'
+  | 'replanifier'
+  | 'terminer'
+  | 'supprimer'
+  | 'annuler'
+  | 'creer'
+  | 'assigner-bureau'
+  | 'escalader'
+  | 'changer-statut'
+  | 'mass-done'
+  | 'mass-cancel'
+  | 'mass-replan';
 
 export interface ActionLog {
   id: string;
@@ -948,6 +1017,7 @@ export interface ActionLog {
   previousValue?: string;     // Pour les modifications
   newValue?: string;          // Pour les modifications
   bureau?: string;
+  hash?: string;              // 🔑 Hash de traçabilité (SHA-256)
 }
 
 // --- Paramètres utilisateur ---
@@ -996,14 +1066,17 @@ export interface UserSettings {
 // --- Statistiques Clients ---
 export interface Client {
   id: string;
-  type: 'particulier' | 'entreprise' | 'institution';
   name: string;
-  contact: string;
-  email: string;
-  phone: string;
+  type: 'particulier' | 'entreprise' | 'institution' | 'ong';
+  satisfaction: number; // 1-5
+  projects: string[]; // IDs de projets
+  // Champs existants conservés pour compatibilité
+  contact?: string;
+  email?: string;
+  phone?: string;
   address?: string;
-  registrationDate: string;
-  status: 'active' | 'inactive' | 'prospect';
+  registrationDate?: string;
+  status?: 'active' | 'inactive' | 'prospect';
 }
 
 export interface ClientStats {
@@ -1384,6 +1457,7 @@ export interface RACIEnriched {
   modifiedBy: string;
   locked: boolean; // seul DG peut modifier si locked
   linkedProcedure?: string;
+  decisionBMO?: string; // Décision BMO associée (optionnel)
 }
 
 // --- Audit enrichi ---

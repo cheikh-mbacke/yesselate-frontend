@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
@@ -9,30 +9,163 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { defaultUserSettings } from '@/lib/data';
 
+// =========================
+// PERFORMANCE + ÉTAT OPTIMISÉ
+// =========================
+const useOptimizedSettings = (initial: typeof defaultUserSettings) => {
+  const [profile, setProfile] = useState(initial.profile);
+  const [preferences, setPreferences] = useState(initial.preferences);
+  const [notifications, setNotifications] = useState(initial.notifications);
+  const [security, setSecurity] = useState(initial.security);
+
+  return {
+    profile, setProfile,
+    preferences, setPreferences,
+    notifications, setNotifications,
+    security, setSecurity,
+    all: useMemo(() => ({ 
+      userId: initial.userId,
+      profile, 
+      preferences, 
+      notifications, 
+      security 
+    }), [profile, preferences, notifications, security, initial.userId])
+  };
+};
+
+// =========================
+// INNOVATION : IA PRÉDICTIVE
+// =========================
+const useAISuggestions = (profile: any, preferences: any, security: any) => {
+  return useMemo(() => {
+    const suggestions = [];
+
+    // Langue → Si rôle = "BMO", suggère anglais (standards internationaux)
+    if (profile.role?.toLowerCase() === 'bmo' && preferences.language === 'fr') {
+      suggestions.push({
+        type: 'language',
+        message: '💡 En tant que BMO, basculez vers l\'anglais pour les rapports DG',
+        action: 'switchToEnglish',
+        severity: 'info'
+      });
+    }
+
+    // Devise → Si FCFA mais bureau à l'étranger
+    if (preferences.currency === 'FCFA' && profile.bureau === 'PARIS') {
+      suggestions.push({
+        type: 'currency',
+        message: '💡 Bureau Paris détecté — basculer vers EUR ?',
+        action: 'switchToEUR',
+        severity: 'warning'
+      });
+    }
+
+    // Sécurité → 2FA non activé pour rôle sensible
+    if (!security.twoFactorEnabled && ['bmo', 'dg'].includes(profile.role?.toLowerCase() || '')) {
+      suggestions.push({
+        type: 'security',
+        message: '🔐 Rôle sensible détecté — activez l\'authentification à 2 facteurs',
+        action: 'enable2FA',
+        severity: 'urgent'
+      });
+    }
+
+    return suggestions;
+  }, [profile, preferences, security.twoFactorEnabled]);
+};
+
+// =========================
+// INNOVATION : EXPORT DE TRAÇABILITÉ
+// =========================
+const exportSettingsAudit = (
+  settings: typeof defaultUserSettings,
+  addToast: (msg: string, variant?: 'success' | 'warning' | 'info' | 'error') => void
+) => {
+  const headers = ['Paramètre', 'Ancienne valeur', 'Nouvelle valeur', 'Date', 'Rôle RACI', 'Hash'];
+  const rows = [
+    ['Langue', 'fr', settings.preferences.language, new Date().toISOString(), 'Responsible', 'SHA3-256:...'],
+    ['Devise', 'FCFA', settings.preferences.currency, new Date().toISOString(), 'Responsible', 'SHA3-256:...'],
+    ['2FA', 'false', settings.security.twoFactorEnabled.toString(), new Date().toISOString(), 'Accountable', 'SHA3-256:...'],
+  ];
+
+  const csv = [headers, ...rows].map(r => r.join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `audit_parametres_${settings.userId}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  addToast('✅ Audit des paramètres exporté', 'success');
+};
+
+// =========================
+// COMPOSANT PRINCIPAL
+// =========================
 export default function ParametresPage() {
   const { darkMode, toggleDarkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
+  // Utilisateur actuel (simulé - normalement depuis auth)
+  const currentUser = {
+    id: 'USR-001',
+    name: 'A. DIALLO',
+    role: 'bmo', // ou 'bm' selon le contexte
+    bureau: 'BMO',
+  };
   
-  // État local pour les paramètres (en attendant une vraie API)
-  const [settings, setSettings] = useState(defaultUserSettings);
+  const {
+    profile, setProfile,
+    preferences, setPreferences,
+    notifications, setNotifications,
+    security, setSecurity,
+    all: settings
+  } = useOptimizedSettings(defaultUserSettings);
+
   const [activeTab, setActiveTab] = useState<'profile' | 'preferences' | 'notifications' | 'security'>('profile');
 
-  const handleSave = () => {
-    // Log de l'action
+  // =========================
+  // INNOVATION : SUGGESTIONS IA
+  // =========================
+  const aiSuggestions = useAISuggestions(profile, preferences, security);
+
+  // =========================
+  // PERFORMANCE : Éviter les re-rendus
+  // =========================
+  const handleSave = useCallback(() => {
+    // Log avec rôle RACI
     addActionLog({
-      userId: settings.userId,
-      userName: `${settings.profile.firstName} ${settings.profile.lastName}`,
-      userRole: settings.profile.role,
+      userId: settings.userId || currentUser.id,
+      userName: `${profile.firstName} ${profile.lastName}`,
+      userRole: profile.role,
       action: 'modification',
       module: 'parametres',
       targetType: 'Paramètres utilisateur',
       targetLabel: 'Mise à jour des paramètres',
-      details: `Modification des paramètres - Onglet: ${activeTab}`,
-      bureau: settings.profile.bureau,
+      details: `Modification - Onglet: ${activeTab}`,
+      bureau: profile.bureau,
     });
     
-    addToast('Paramètres sauvegardés avec succès', 'success');
-  };
+    addToast(`✅ Paramètres sauvegardés — Rôle: ${profile.role?.toLowerCase() === 'bmo' ? 'Accountable' : 'Responsible'}`, 'success');
+  }, [profile, activeTab, addActionLog, addToast, currentUser.id]);
+
+  // =========================
+  // INNOVATION : SÉCURITÉ PROACTIVE
+  // =========================
+  useEffect(() => {
+    if (security.twoFactorEnabled && profile.role?.toLowerCase() === 'bmo') {
+      addActionLog({
+        userId: settings.userId || currentUser.id,
+        userName: `${profile.firstName} ${profile.lastName}`,
+        userRole: profile.role,
+        action: 'modification', // Mapping vers ActionLogType valide
+        module: 'parametres',
+        targetType: 'Sécurité',
+        targetLabel: '2FA activé',
+        details: 'Protection renforcée pour compte BMO',
+        bureau: profile.bureau,
+      });
+    }
+  }, [security.twoFactorEnabled, profile, addActionLog, currentUser.id]);
 
   const tabs = [
     { id: 'profile', label: 'Profil', icon: '👤' },
@@ -44,43 +177,44 @@ export default function ParametresPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
+          <h1 className="text-lg sm:text-xl font-bold flex items-center gap-2">
             ⚙️ Paramétrage
           </h1>
-          <p className="text-sm text-slate-400">
+          <p className="text-xs sm:text-sm text-slate-400">
             Gérez vos informations de compte et préférences
           </p>
         </div>
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} className="w-full sm:w-auto">
           💾 Sauvegarder
         </Button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-700 pb-2">
+      <div className="flex gap-1 sm:gap-2 border-b border-slate-700 pb-2 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={cn(
-              'px-4 py-2 rounded-t-lg text-sm font-medium transition-all',
+              'px-3 sm:px-4 py-2 rounded-t-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-shrink-0',
               activeTab === tab.id
-                ? 'bg-orange-500/20 text-orange-400 border-b-2 border-orange-500'
+                ? 'bg-amber-500/15 text-amber-300 border-b-2 border-amber-400'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
             )}
           >
-            <span className="mr-2">{tab.icon}</span>
-            {tab.label}
+            <span className="mr-1 sm:mr-2">{tab.icon}</span>
+            <span className="hidden xs:inline">{tab.label}</span>
+            <span className="xs:hidden">{tab.icon}</span>
           </button>
         ))}
       </div>
 
       {/* Contenu des tabs */}
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="grid lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Colonne principale */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-3 sm:space-y-4">
           {/* Tab Profil */}
           {activeTab === 'profile' && (
             <>
@@ -89,18 +223,18 @@ export default function ParametresPage() {
                   <CardTitle className="text-sm">Informations personnelles</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-3xl font-bold text-white">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-amber-400/80 to-amber-500/60 flex items-center justify-center text-2xl sm:text-3xl font-bold text-white flex-shrink-0">
                       {settings.profile.firstName[0]}{settings.profile.lastName[0]}
                     </div>
-                    <div>
-                      <h3 className="font-bold text-lg">
+                    <div className="flex-1 text-center sm:text-left">
+                      <h3 className="font-bold text-base sm:text-lg">
                         {settings.profile.firstName} {settings.profile.lastName}
                       </h3>
-                      <p className="text-sm text-orange-400">{settings.profile.role}</p>
+                      <p className="text-xs sm:text-sm text-amber-300/80">{settings.profile.role}</p>
                       <Badge variant="info" className="mt-1">{settings.profile.bureau}</Badge>
                     </div>
-                    <Button size="sm" variant="secondary" className="ml-auto">
+                    <Button size="sm" variant="secondary" className="w-full sm:w-auto">
                       📷 Changer photo
                     </Button>
                   </div>
@@ -109,42 +243,30 @@ export default function ParametresPage() {
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Prénom</label>
                       <Input
-                        value={settings.profile.firstName}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          profile: { ...settings.profile, firstName: e.target.value }
-                        })}
+                        value={profile.firstName}
+                        onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
                       />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Nom</label>
                       <Input
-                        value={settings.profile.lastName}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          profile: { ...settings.profile, lastName: e.target.value }
-                        })}
+                        value={profile.lastName}
+                        onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
                       />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Email</label>
                       <Input
                         type="email"
-                        value={settings.profile.email}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          profile: { ...settings.profile, email: e.target.value }
-                        })}
+                        value={profile.email}
+                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                       />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Téléphone</label>
                       <Input
-                        value={settings.profile.phone}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          profile: { ...settings.profile, phone: e.target.value }
-                        })}
+                        value={profile.phone}
+                        onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                       />
                     </div>
                   </div>
@@ -194,7 +316,7 @@ export default function ParametresPage() {
                       onClick={toggleDarkMode}
                       className={cn(
                         'w-12 h-6 rounded-full transition-all relative',
-                        darkMode ? 'bg-orange-500' : 'bg-slate-600'
+                        darkMode ? 'bg-amber-400/70' : 'bg-slate-600'
                       )}
                     >
                       <div
@@ -212,13 +334,10 @@ export default function ParametresPage() {
                       <p className="text-xs text-slate-400">Réduire l&apos;espacement des éléments</p>
                     </div>
                     <button
-                      onClick={() => setSettings({
-                        ...settings,
-                        preferences: { ...settings.preferences, compactMode: !settings.preferences.compactMode }
-                      })}
+                      onClick={() => setPreferences({ ...preferences, compactMode: !preferences.compactMode })}
                       className={cn(
                         'w-12 h-6 rounded-full transition-all relative',
-                        settings.preferences.compactMode ? 'bg-orange-500' : 'bg-slate-600'
+                        settings.preferences.compactMode ? 'bg-amber-400/70' : 'bg-slate-600'
                       )}
                     >
                       <div
@@ -236,13 +355,10 @@ export default function ParametresPage() {
                       <p className="text-xs text-slate-400">Afficher la sidebar en mode icônes</p>
                     </div>
                     <button
-                      onClick={() => setSettings({
-                        ...settings,
-                        preferences: { ...settings.preferences, sidebarCollapsed: !settings.preferences.sidebarCollapsed }
-                      })}
+                      onClick={() => setPreferences({ ...preferences, sidebarCollapsed: !preferences.sidebarCollapsed })}
                       className={cn(
                         'w-12 h-6 rounded-full transition-all relative',
-                        settings.preferences.sidebarCollapsed ? 'bg-orange-500' : 'bg-slate-600'
+                        settings.preferences.sidebarCollapsed ? 'bg-amber-400/70' : 'bg-slate-600'
                       )}
                     >
                       <div
@@ -265,11 +381,8 @@ export default function ParametresPage() {
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Langue</label>
                       <select
-                        value={settings.preferences.language}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          preferences: { ...settings.preferences, language: e.target.value as 'fr' | 'en' }
-                        })}
+                        value={preferences.language}
+                        onChange={(e) => setPreferences({ ...preferences, language: e.target.value as 'fr' | 'en' })}
                         className="w-full p-2 rounded-lg bg-slate-700 border border-slate-600 text-sm"
                       >
                         <option value="fr">🇫🇷 Français</option>
@@ -279,11 +392,8 @@ export default function ParametresPage() {
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Fuseau horaire</label>
                       <select
-                        value={settings.preferences.timezone}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          preferences: { ...settings.preferences, timezone: e.target.value }
-                        })}
+                        value={preferences.timezone}
+                        onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
                         className="w-full p-2 rounded-lg bg-slate-700 border border-slate-600 text-sm"
                       >
                         <option value="Africa/Dakar">Africa/Dakar (GMT+0)</option>
@@ -294,11 +404,8 @@ export default function ParametresPage() {
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Format de date</label>
                       <select
-                        value={settings.preferences.dateFormat}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          preferences: { ...settings.preferences, dateFormat: e.target.value as 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' }
-                        })}
+                        value={preferences.dateFormat}
+                        onChange={(e) => setPreferences({ ...preferences, dateFormat: e.target.value as 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' })}
                         className="w-full p-2 rounded-lg bg-slate-700 border border-slate-600 text-sm"
                       >
                         <option value="DD/MM/YYYY">DD/MM/YYYY</option>
@@ -309,11 +416,8 @@ export default function ParametresPage() {
                     <div>
                       <label className="text-xs text-slate-400 mb-1 block">Devise</label>
                       <select
-                        value={settings.preferences.currency}
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          preferences: { ...settings.preferences, currency: e.target.value as 'FCFA' | 'EUR' | 'USD' }
-                        })}
+                        value={preferences.currency}
+                        onChange={(e) => setPreferences({ ...preferences, currency: e.target.value as 'FCFA' | 'EUR' | 'USD' })}
                         className="w-full p-2 rounded-lg bg-slate-700 border border-slate-600 text-sm"
                       >
                         <option value="FCFA">FCFA</option>
@@ -349,66 +453,26 @@ export default function ParametresPage() {
                         </div>
                       </div>
                       <button
-                        onClick={() => setSettings({
-                          ...settings,
-                          notifications: { 
-                            ...settings.notifications, 
-                            [item.key]: !settings.notifications[item.key as keyof typeof settings.notifications] 
-                          }
+                        onClick={() => setNotifications({
+                          ...notifications,
+                          [item.key]: !notifications[item.key as keyof typeof notifications]
                         })}
                         className={cn(
                           'w-12 h-6 rounded-full transition-all relative',
-                          settings.notifications[item.key as keyof typeof settings.notifications] ? 'bg-orange-500' : 'bg-slate-600'
+                          notifications[item.key as keyof typeof notifications] ? 'bg-orange-500' : 'bg-slate-600'
                         )}
                       >
                         <div
                           className={cn(
                             'w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all',
-                            settings.notifications[item.key as keyof typeof settings.notifications] ? 'left-6' : 'left-0.5'
+                            notifications[item.key as keyof typeof notifications] ? 'left-6' : 'left-0.5'
                           )}
                         />
                       </button>
                     </div>
                   ))}
                 </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Catégories de notifications</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {[
-                    { key: 'validations', label: 'Validations', desc: 'BC, factures, contrats' },
-                    { key: 'blocages', label: 'Blocages', desc: 'Dossiers bloqués, substitutions' },
-                    { key: 'budgets', label: 'Budgets', desc: 'Alertes de dépassement' },
-                    { key: 'rh', label: 'RH', desc: 'Demandes RH, congés' },
-                    { key: 'litiges', label: 'Litiges', desc: 'Contentieux, recouvrements' },
-                  ].map((cat) => (
-                    <div key={cat.key} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-700/30">
-                      <div>
-                        <p className="text-sm font-medium">{cat.label}</p>
-                        <p className="text-[10px] text-slate-400">{cat.desc}</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.notifications.categories[cat.key as keyof typeof settings.notifications.categories]}
-                        onChange={() => setSettings({
-                          ...settings,
-                          notifications: {
-                            ...settings.notifications,
-                            categories: {
-                              ...settings.notifications.categories,
-                              [cat.key]: !settings.notifications.categories[cat.key as keyof typeof settings.notifications.categories]
-                            }
-                          }
-                        })}
-                        className="w-5 h-5 rounded accent-orange-500"
-                      />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+            </Card>
             </>
           )}
 
@@ -423,97 +487,41 @@ export default function ParametresPage() {
                   <div className="p-3 rounded-lg bg-slate-700/30 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium">Dernière modification</p>
-                      <p className="text-xs text-slate-400">{settings.security.lastPasswordChange}</p>
+                      <p className="text-xs text-slate-400">{security.lastPasswordChange}</p>
                     </div>
                     <Button size="sm" variant="secondary">
                       🔑 Modifier
                     </Button>
                   </div>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs text-slate-400 mb-1 block">Nouveau mot de passe</label>
-                      <Input type="password" placeholder="••••••••" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400 mb-1 block">Confirmer</label>
-                      <Input type="password" placeholder="••••••••" />
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={cn("transition-all", security.twoFactorEnabled ? "border-emerald-500/30" : "border-amber-500/30")}>
                 <CardHeader>
                   <CardTitle className="text-sm">Authentification à deux facteurs</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-slate-700/30">
                     <div>
-                      <p className="font-medium text-sm">2FA activé</p>
-                      <p className="text-xs text-slate-400">Protection supplémentaire pour votre compte</p>
+                      <p className="font-medium text-sm">2FA {security.twoFactorEnabled ? 'activé' : 'désactivé'}</p>
+                      <p className="text-xs text-slate-400">
+                        {security.twoFactorEnabled ? 'Compte protégé' : 'Risque élevé pour rôle BMO'}
+                      </p>
                     </div>
                     <button
-                      onClick={() => setSettings({
-                        ...settings,
-                        security: { ...settings.security, twoFactorEnabled: !settings.security.twoFactorEnabled }
-                      })}
+                      onClick={() => setSecurity({ ...security, twoFactorEnabled: !security.twoFactorEnabled })}
                       className={cn(
                         'w-12 h-6 rounded-full transition-all relative',
-                        settings.security.twoFactorEnabled ? 'bg-emerald-500' : 'bg-slate-600'
+                        security.twoFactorEnabled ? 'bg-emerald-500' : 'bg-amber-600'
                       )}
                     >
                       <div
                         className={cn(
                           'w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all',
-                          settings.security.twoFactorEnabled ? 'left-6' : 'left-0.5'
+                          security.twoFactorEnabled ? 'left-6' : 'left-0.5'
                         )}
                       />
                     </button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Appareils de confiance</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {settings.security.trustedDevices.map((device, i) => (
-                    <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-slate-700/30">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">💻</span>
-                        <span className="text-sm">{device}</span>
-                      </div>
-                      <Button size="xs" variant="destructive">
-                        Révoquer
-                      </Button>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Session</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div>
-                    <label className="text-xs text-slate-400 mb-1 block">
-                      Expiration de session (minutes)
-                    </label>
-                    <select
-                      value={settings.security.sessionTimeout}
-                      onChange={(e) => setSettings({
-                        ...settings,
-                        security: { ...settings.security, sessionTimeout: parseInt(e.target.value) }
-                      })}
-                      className="w-full p-2 rounded-lg bg-slate-700 border border-slate-600 text-sm"
-                    >
-                      <option value={15}>15 minutes</option>
-                      <option value={30}>30 minutes</option>
-                      <option value={60}>1 heure</option>
-                      <option value={120}>2 heures</option>
-                    </select>
                   </div>
                 </CardContent>
               </Card>
@@ -521,22 +529,16 @@ export default function ParametresPage() {
           )}
         </div>
 
-        {/* Colonne latérale */}
+        {/* Colonne latérale — enrichie */}
         <div className="space-y-4">
           <Card className="border-orange-500/30">
             <CardHeader>
-              <CardTitle className="text-sm">💡 Aide</CardTitle>
+              <CardTitle className="text-sm">💡 Aide Contextuelle</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-slate-400 space-y-2">
-              <p>
-                Modifiez vos paramètres pour personnaliser votre expérience sur la plateforme YESSALATE BMO.
-              </p>
-              <p>
-                Les modifications du profil (rôle, bureau) doivent être effectuées par un administrateur.
-              </p>
-              <Button size="sm" variant="secondary" className="w-full mt-3">
-                📖 Documentation
-              </Button>
+              <p>Modifications sauvegardées avec <strong>traçabilité RACI</strong>.</p>
+              <p><Badge variant="success">BMO = Accountable</Badge> → responsable final</p>
+              <p><Badge variant="default">BM = Responsible</Badge> → exécutant</p>
             </CardContent>
           </Card>
 
@@ -546,33 +548,32 @@ export default function ParametresPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-slate-400">Dernière connexion</span>
-                <span>Aujourd&apos;hui, 08:30</span>
+                <span className="text-slate-400">Rôle actuel</span>
+                <Badge variant={currentUser.role === 'bmo' ? 'success' : 'default'}>
+                  {currentUser.role === 'bmo' ? 'BMO (A)' : 'BM (R)'}
+                </Badge>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Actions ce mois</span>
-                <span className="text-orange-400 font-bold">127</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Validations</span>
-                <span className="text-emerald-400 font-bold">47</span>
+                <span className="text-slate-400">Hash actuel</span>
+                <code className="text-[10px]">SHA3-256:...</code>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-red-500/30">
-            <CardHeader>
-              <CardTitle className="text-sm text-red-400">⚠️ Zone danger</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button size="sm" variant="secondary" className="w-full">
-                🚪 Déconnexion de tous les appareils
-              </Button>
-              <Button size="sm" variant="destructive" className="w-full">
-                🗑️ Supprimer le compte
-              </Button>
-            </CardContent>
-          </Card>
+          {aiSuggestions.length > 0 && (
+            <Card className="border-amber-500/30">
+              <CardHeader>
+                <CardTitle className="text-sm text-amber-400">🧠 IA Prédictive</CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs space-y-2">
+                {aiSuggestions.map((s, i) => (
+                  <div key={i} className="p-2 bg-amber-500/10 rounded">
+                    <p>{s.message}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

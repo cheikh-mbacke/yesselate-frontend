@@ -21,4 +21,6 @@ export { AdvancedSearch } from './AdvancedSearch';
 export { CalendarExport } from './CalendarExport';
 export { IntelligentDashboard } from './IntelligentDashboard';
 export { AlternativeCalendarView } from './AlternativeCalendarView';
+export { CalendarInspector } from './CalendarInspector';
+export { CalendarOverlays } from './CalendarOverlays';
 export type { SearchFilters } from './AdvancedSearch';

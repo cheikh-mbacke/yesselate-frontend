@@ -592,7 +592,7 @@ export default function DemandesPage() {
                           )}
                           <Badge variant="info" className="text-[10px]">J+{demand.delayDays}</Badge>
                           {hasProofs && (
-                            <Badge variant="outline" className="text-[10px]">
+                            <Badge variant="default" className="text-[10px]">
                               🔗 {proofs.decisions.length + proofs.exchanges.length} preuves
                             </Badge>
                           )}
@@ -666,7 +666,7 @@ export default function DemandesPage() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="default"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleAssign(demand);

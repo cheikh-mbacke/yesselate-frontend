@@ -87,6 +87,11 @@ export {
   clientDemandStats,
 } from './bmo-mock-4';
 
+// Bâtiments
+export {
+  buildings,
+} from './buildings';
+
 // Partie 5 - Gouvernance & Système
 export {
   bureauxGovernance,
@@ -105,6 +110,14 @@ export {
 // Partie 6 - Coordination Stratégique
 export {
   conferencesDecisionnelles,
+} from './bmo-mock-6';
+
+// Partie 7 - Nomenclature
+export {
+  NOMENCLATURE,
+} from './nomenclature';
+
+export {
   echangesStructures,
   arbitragesVivants,
   coordinationStats,

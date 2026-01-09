@@ -160,6 +160,30 @@ body {
   background-color: rgba(249, 115, 22, 0.5);
 }
 
+/* Scrollbar "subtle" (plus discrète) pour les grands panneaux/pages */
+.scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.22) transparent; /* slate-400 */
+}
+
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+}
+
+.scrollbar-subtle:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.32);
+}
+
 /* Scrollbar gutter stable - évite les sauts de layout quand la scrollbar apparaît */
 .scrollbar-gutter-stable {
   scrollbar-gutter: stable;

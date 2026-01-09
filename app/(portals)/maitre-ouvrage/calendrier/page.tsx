@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   agendaEvents, 
   paymentsN1, 
@@ -92,6 +93,29 @@ function logWithHash(addActionLog: any, baseLog: any, payload: unknown) {
 }
 
 type CalendarView = 'week' | 'day' | 'month' | 'agenda' | 'gantt' | 'resource' | 'kanban';
+type PrimaryTab = 'planning' | 'pilotage' | 'outils';
+type SecondaryTab =
+  | 'vues'
+  | 'inspector'
+  | 'kpis'
+  | 'previsions'
+  | 'comparaison'
+  | 'exports'
+  | 'templates'
+  | 'auto'
+  | 'historique'
+  | 'presentation';
+
+type UIMode = 'windows' | 'classic';
+
+type WorkspaceTab = {
+  id: string;
+  title: string;
+  tab: PrimaryTab;
+  sub: SecondaryTab;
+  view?: CalendarView;
+  itemId?: string | null;
+};
 export type Priority = 'critical' | 'urgent' | 'normal';
 export type Severity = 'critical' | 'warning' | 'info' | 'success';
 export type Status = 'open' | 'done' | 'snoozed' | 'ack' | 'blocked';
@@ -650,6 +674,18 @@ export default function CalendrierPage() {
   const priorityFilter = sp.get('priority') || 'ALL';
   const kindFilter = sp.get('kind') || 'ALL';
 
+  // Navigation "logiciel métier" (onglets hiérarchiques via URL)
+  const primaryTab = ((sp.get('tab') as PrimaryTab) || 'planning') satisfies PrimaryTab;
+  const secondaryTab = ((sp.get('sub') as SecondaryTab) ||
+    (primaryTab === 'planning'
+      ? 'vues'
+      : primaryTab === 'pilotage'
+      ? 'kpis'
+      : 'exports')) satisfies SecondaryTab;
+
+  // UI "modèle Windows Explorer"
+  const uiMode = ((sp.get('ui') as UIMode) || 'windows') satisfies UIMode;
+
   const [cursorDate, setCursorDate] = useState(() => startOfDay(new Date()));
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [inspectedId, setInspectedId] = useState<string | null>(null);
@@ -686,10 +722,14 @@ export default function CalendrierPage() {
   const touchStartX = useRef<number>(0);
   const touchStartY = useRef<number>(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
   
   // Détecter si on est sur mobile
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsNarrow(window.innerWidth < 1280); // < xl
+    };
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -1128,12 +1168,258 @@ export default function CalendrierPage() {
   const selectionCount = useMemo(() => Object.values(selectedIds).filter(Boolean).length, [selectedIds]);
   const inspected = useMemo(() => filtered.find((x) => x.id === inspectedId) ?? null, [filtered, inspectedId]);
 
+  // Actions Inspector (desktop + mobile)
+  const handleInspectorAction = useCallback((a: string) => {
+    if (!inspected) return;
+
+    // Édition / replanification => ouvre la modale
+    if (a === 'modifier' || a === 'replanifier') {
+      setEditingItem(inspected);
+      setEventModalDate(new Date(inspected.start));
+      setShowEventModal(true);
+      return;
+    }
+
+    // Assigner bureau (modale)
+    if (a === 'assigner-bureau') {
+      setBureauPromptValue(inspected.bureau || 'BMO');
+      setBureauPromptCallback((value: string) => {
+        if (!value?.trim()) return;
+        const nextBureau = value.trim();
+        updateItemsWithHistory((prev) => prev.map((it) => (it.id === inspected.id ? { ...it, bureau: nextBureau } : it)));
+        addToast(`✓ Bureau assigné: ${nextBureau}`, 'success');
+        addActionLog({
+          userId: 'USR-001',
+          userName: 'A. DIALLO',
+          userRole: 'Directeur Général',
+          action: 'assigner-bureau' as any,
+          module: 'calendrier',
+          targetId: inspected.id,
+          targetType: 'CalendarItem',
+          targetLabel: inspected.title,
+          details: `Bureau assigné: ${nextBureau}`,
+          bureau: nextBureau,
+        });
+      });
+      setShowBureauPrompt(true);
+      return;
+    }
+
+    // Copier / dupliquer
+    if (a === 'copier') {
+      setCopiedItem(inspected);
+      addToast(`✓ "${inspected.title}" copié (Ctrl+V pour coller)`, 'success');
+      return;
+    }
+
+    if (a === 'dupliquer') {
+      const newItem: CalendarItem = {
+        ...inspected,
+        id: uid('EVT'),
+        title: `${inspected.title} (copie)`,
+        start: new Date(new Date(inspected.start).getTime() + 86400000).toISOString(), // +1 jour
+        end: new Date(new Date(inspected.end).getTime() + 86400000).toISOString(),
+      };
+      updateItemsWithHistory((prev) => [...prev, newItem]);
+      addToast(`✓ "${newItem.title}" dupliqué`, 'success');
+      return;
+    }
+
+    // Escalade / terminer
+    if (a === 'escalader') {
+      addToast(`⚠️ Escalade de "${inspected.title}" vers BMO`, 'warning');
+      addActionLog({
+        userId: 'USR-001',
+        userName: 'A. DIALLO',
+        userRole: 'Directeur Général',
+        action: 'escalader' as any,
+        module: 'calendrier',
+        targetId: inspected.id,
+        targetType: 'CalendarItem',
+        targetLabel: inspected.title,
+        details: 'Escalade vers BMO',
+        bureau: inspected.bureau ?? 'BMO',
+      });
+      return;
+    }
+
+    if (a === 'terminer') {
+      updateItemsWithHistory((prev) => prev.map((it) => (it.id === inspected.id ? { ...it, status: 'done' as Status } : it)));
+      addToast(`✓ ${inspected.title} marqué comme terminé`, 'success');
+      addActionLog({
+        userId: 'USR-001',
+        userName: 'A. DIALLO',
+        userRole: 'Directeur Général',
+        action: 'terminer' as any,
+        module: 'calendrier',
+        targetId: inspected.id,
+        targetType: 'CalendarItem',
+        targetLabel: inspected.title,
+        details: 'Événement terminé',
+        bureau: inspected.bureau ?? 'BMO',
+      });
+      return;
+    }
+
+    // Annuler / supprimer => confirmation
+    if (a === 'annuler' || a === 'supprimer') {
+      setDeleteConfirmTitle(inspected.title);
+      setDeleteConfirmCallback(() => {
+        logWithHash(
+          addActionLog,
+          {
+            userId: 'USR-001',
+            userName: 'A. DIALLO',
+            userRole: 'Directeur Général',
+            action: 'supprimer' as any,
+            module: 'calendrier',
+            targetId: inspected.id,
+            targetType: 'CalendarItem',
+            targetLabel: inspected.title,
+            details: 'Événement supprimé',
+            bureau: inspected.bureau ?? 'BMO',
+          },
+          { before: inspected, after: null }
+        );
+        updateItemsWithHistory((prev) => prev.filter((it) => it.id !== inspected.id));
+        addToast(`✓ ${inspected.title} supprimé`, 'success');
+        setInspectedId(null);
+      });
+      setShowDeleteConfirm(true);
+      return;
+    }
+
+    // Default
+    addToast(`Action: ${a} sur ${inspected.id}`, 'success');
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      action: a as any,
+      module: 'calendrier',
+      targetId: inspected.id,
+      targetType: 'CalendarItem',
+      targetLabel: inspected.title,
+      details: `Action '${a}' depuis inspector`,
+      bureau: inspected.bureau ?? 'BMO',
+    });
+  }, [inspected, updateItemsWithHistory, addToast, addActionLog, setCopiedItem]);
+
   const setParam = useCallback(
     (patch: Record<string, string | undefined | null>) => {
       router.replace(pathname + buildQuery(sp, patch));
     },
     [router, pathname, sp]
   );
+
+  const labels = useMemo(() => {
+    const tabLabel: Record<PrimaryTab, string> = {
+      planning: 'Planification',
+      pilotage: 'Pilotage',
+      outils: 'Outils',
+    };
+    const subLabel: Record<SecondaryTab, string> = {
+      vues: 'Vues',
+      inspector: 'Inspecteur',
+      kpis: 'KPIs',
+      previsions: 'Prévisions',
+      comparaison: 'Comparaison',
+      exports: 'Exports',
+      templates: 'Templates',
+      auto: 'Auto-planif',
+      historique: 'Historique',
+      presentation: 'Présentation',
+    };
+    const viewLabel: Record<CalendarView, string> = {
+      week: 'Semaine',
+      day: 'Jour',
+      month: 'Mois',
+      agenda: 'Agenda',
+      gantt: 'Gantt',
+      resource: 'Ressource',
+      kanban: 'Kanban',
+    };
+    return { tabLabel, subLabel, viewLabel };
+  }, []);
+
+  // Onglets internes (style Chrome) - basés sur l'URL + persistés
+  const makeWorkspaceTab = useCallback((next: { tab: PrimaryTab; sub: SecondaryTab; view?: CalendarView; itemId?: string | null }) => {
+    const id = `${next.tab}:${next.sub}:${next.view ?? ''}:${next.itemId ?? ''}`;
+    const base =
+      next.tab === 'planning'
+        ? `${labels.tabLabel.planning} • ${labels.viewLabel[next.view ?? 'week']}`
+        : `${labels.tabLabel[next.tab]} • ${labels.subLabel[next.sub]}`;
+    return { id, title: base, tab: next.tab, sub: next.sub, view: next.view, itemId: next.itemId ?? null } satisfies WorkspaceTab;
+  }, [labels]);
+
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>(() => {
+    try {
+      const saved = localStorage.getItem('calendrier.workspaceTabs');
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as WorkspaceTab[];
+    } catch {}
+    return [];
+  });
+
+  const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(() => {
+    try {
+      const v = localStorage.getItem('calendrier.activeWorkspaceTabId');
+      return v && v.length ? v : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const openWorkspaceTab = useCallback((next: { tab: PrimaryTab; sub: SecondaryTab; view?: CalendarView; itemId?: string | null }) => {
+    const t = makeWorkspaceTab(next);
+    setWorkspaceTabs((prev) => {
+      const exists = prev.some((x) => x.id === t.id);
+      const nextTabs = exists ? prev : [...prev, t].slice(-12);
+      try { localStorage.setItem('calendrier.workspaceTabs', JSON.stringify(nextTabs)); } catch {}
+      return nextTabs;
+    });
+    setActiveWorkspaceTabId(t.id);
+    try { localStorage.setItem('calendrier.activeWorkspaceTabId', t.id); } catch {}
+    setParam({ tab: t.tab, sub: t.sub, view: t.view ?? undefined, item: t.itemId ?? undefined });
+  }, [makeWorkspaceTab, setParam]);
+
+  const activateWorkspaceTab = useCallback((t: WorkspaceTab) => {
+    setActiveWorkspaceTabId(t.id);
+    try { localStorage.setItem('calendrier.activeWorkspaceTabId', t.id); } catch {}
+    setParam({ tab: t.tab, sub: t.sub, view: t.view ?? undefined, item: t.itemId ?? undefined });
+  }, [setParam]);
+
+  const closeWorkspaceTab = useCallback((id: string) => {
+    setWorkspaceTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      const nextTabs = prev.filter((t) => t.id !== id);
+      try { localStorage.setItem('calendrier.workspaceTabs', JSON.stringify(nextTabs)); } catch {}
+
+      if (activeWorkspaceTabId === id) {
+        const fallback = nextTabs[Math.min(idx, nextTabs.length - 1)] ?? nextTabs[nextTabs.length - 1] ?? null;
+        const nextActiveId = fallback?.id ?? null;
+        setActiveWorkspaceTabId(nextActiveId);
+        try { localStorage.setItem('calendrier.activeWorkspaceTabId', nextActiveId ?? ''); } catch {}
+        if (fallback) setParam({ tab: fallback.tab, sub: fallback.sub, view: fallback.view ?? undefined, item: fallback.itemId ?? undefined });
+        else setParam({ tab: 'planning', sub: 'vues', view: 'week', item: undefined });
+      }
+
+      return nextTabs;
+    });
+  }, [activeWorkspaceTabId, setParam]);
+
+  // A chaque changement d'URL (back/forward, partage…), s'assurer qu'un onglet existe et activer l'onglet correspondant
+  useEffect(() => {
+    const current = makeWorkspaceTab({ tab: primaryTab, sub: secondaryTab, view, itemId: inspectedId });
+    setWorkspaceTabs((prev) => {
+      const exists = prev.some((t) => t.id === current.id);
+      const nextTabs = exists ? prev : [...prev, current].slice(-12);
+      try { localStorage.setItem('calendrier.workspaceTabs', JSON.stringify(nextTabs)); } catch {}
+      return nextTabs;
+    });
+    setActiveWorkspaceTabId(current.id);
+    try { localStorage.setItem('calendrier.activeWorkspaceTabId', current.id); } catch {}
+  }, [primaryTab, secondaryTab, view, inspectedId, makeWorkspaceTab]);
 
   // Prévisions (7 prochains jours)
   const predictions = useMemo(() => {
@@ -1252,6 +1538,109 @@ export default function CalendrierPage() {
     link.click();
     addToast('📥 Calendrier exporté (JSON)', 'success');
   }, [filtered, conflicts, slaStatuses, q, bureauParam, priorityFilter, kindFilter, view, addToast]);
+
+  // Export PDF (impression) - version "métier" simple
+  const handleExportPDF = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const rows = filtered
+      .slice(0, 500)
+      .map((it) => {
+        const sla = slaStatuses.find((s) => s.itemId === it.id);
+        const conflict = conflicts.has(it.id) ? 'Oui' : 'Non';
+        const slaTxt = sla ? `${sla.status}${sla.daysOverdue ? ` (${sla.daysOverdue}j)` : ''}` : '';
+        return `<tr>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:11px;">${it.id}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${(it.title || '').replace(/</g, '&lt;')}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${it.kind}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${it.bureau || ''}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${new Date(it.start).toLocaleString('fr-FR')}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${new Date(it.end).toLocaleString('fr-FR')}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${it.status}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${conflict}</td>
+          <td style="padding:6px;border-bottom:1px solid #e5e7eb;">${slaTxt}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const html = `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendrier - Rapport ${dateStr}</title>
+  <style>
+    @page { margin: 12mm; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; color: #0f172a; }
+    h1 { font-size: 16px; margin: 0 0 6px; }
+    .meta { font-size: 12px; color: #475569; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; padding: 6px; border-bottom: 2px solid #e5e7eb; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Calendrier — Rapport</h1>
+  <div class="meta">
+    Exporté le ${new Date().toLocaleString('fr-FR')} • ${filtered.length} item(s) • Vue: ${view} • Bureau: ${bureauParam} • Priorité: ${priorityFilter} • Type: ${kindFilter}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Titre</th><th>Type</th><th>Bureau</th><th>Début</th><th>Fin</th><th>Statut</th><th>Conflit</th><th>SLA</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  ${filtered.length > 500 ? `<p style="margin-top:10px;color:#475569;font-size:12px;">Note: export limité à 500 lignes pour l'impression.</p>` : ''}
+</body>
+</html>`;
+
+    const w = window.open('', '_blank', 'noopener,noreferrer');
+    if (!w) {
+      addToast('⚠️ Popup bloquée: autorisez les popups pour exporter PDF', 'warning');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+    addToast('📄 Rapport prêt à imprimer (PDF)', 'success');
+  }, [filtered, conflicts, slaStatuses, view, bureauParam, priorityFilter, kindFilter, addToast]);
+
+  // Export Excel (CSV compatible Excel)
+  const handleExportExcel = useCallback(() => {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const headers = ['ID','Titre','Type','Bureau','Début','Fin','Priorité','Statut','Projet','Conflit','SLA','SLA_Jours'];
+    const rows = filtered.map((it) => {
+      const sla = slaStatuses.find(s => s.itemId === it.id);
+      return [
+        it.id,
+        it.title,
+        it.kind,
+        it.bureau || 'N/A',
+        new Date(it.start).toLocaleString('fr-FR'),
+        new Date(it.end).toLocaleString('fr-FR'),
+        it.priority,
+        it.status,
+        it.project || '',
+        conflicts.has(it.id) ? 'YES' : 'NO',
+        sla?.status ?? '',
+        sla?.daysOverdue ?? 0,
+      ];
+    });
+    const sep = ';';
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(sep))
+      .join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' }); // BOM pour Excel
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `calendrier-${dateStr}-excel.csv`;
+    link.click();
+    addToast('📊 Calendrier exporté (Excel/CSV)', 'success');
+  }, [filtered, conflicts, slaStatuses, addToast]);
 
   // Gestion clic sur créneau horaire
   const handleTimeSlotClick = useCallback((date: Date, hour: number) => {
@@ -1632,14 +2021,82 @@ export default function CalendrierPage() {
   return (
     <div
       className={cn(
-        'min-h-screen w-full',
+        'h-full min-h-0 w-full overflow-hidden',
         darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
       )}
     >
-      <div className="mx-auto max-w-[1800px] px-4 py-4">
-        <div className="flex gap-4">
+      <div className="mx-auto max-w-[1800px] p-4 h-full min-h-0">
+        <div className="flex gap-4 h-full min-h-0 min-w-0">
           {/* Sidebar */}
-          <aside className="hidden lg:flex w-[320px] shrink-0 flex-col gap-3">
+          <aside className="hidden lg:flex w-[320px] shrink-0 flex-col gap-3 h-full min-h-0 overflow-y-auto scrollbar-subtle">
+            {/* Navigation style Explorateur Windows */}
+            {uiMode === 'windows' && (
+              <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Navigation
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="space-y-1 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceTab({ tab: 'planning', sub: 'vues', view })}
+                      className={cn(
+                        'w-full text-left px-2 py-1.5 rounded border transition',
+                        primaryTab === 'planning' ? 'bg-orange-500/10 border-orange-500/30 text-orange-200' : darkMode ? 'border-slate-700/60 hover:bg-slate-800/30' : 'border-slate-200 hover:bg-slate-50'
+                      )}
+                    >
+                      {labels.tabLabel.planning}
+                      <span className="ml-2 text-xs text-slate-400">› {labels.viewLabel[view]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceTab({ tab: 'pilotage', sub: 'kpis' })}
+                      className={cn(
+                        'w-full text-left px-2 py-1.5 rounded border transition',
+                        primaryTab === 'pilotage' ? 'bg-orange-500/10 border-orange-500/30 text-orange-200' : darkMode ? 'border-slate-700/60 hover:bg-slate-800/30' : 'border-slate-200 hover:bg-slate-50'
+                      )}
+                    >
+                      {labels.tabLabel.pilotage}
+                      <span className="ml-2 text-xs text-slate-400">› {labels.subLabel[secondaryTab]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceTab({ tab: 'outils', sub: 'exports' })}
+                      className={cn(
+                        'w-full text-left px-2 py-1.5 rounded border transition',
+                        primaryTab === 'outils' ? 'bg-orange-500/10 border-orange-500/30 text-orange-200' : darkMode ? 'border-slate-700/60 hover:bg-slate-800/30' : 'border-slate-200 hover:bg-slate-50'
+                      )}
+                    >
+                      {labels.tabLabel.outils}
+                      <span className="ml-2 text-xs text-slate-400">› {labels.subLabel[secondaryTab]}</span>
+                    </button>
+                  </div>
+
+                  {primaryTab === 'planning' && (
+                    <div className="pt-2 border-t border-slate-700/40">
+                      <p className="text-[11px] text-slate-400 mb-2">Vues</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {(['week','day','month','agenda','gantt','resource','kanban'] as CalendarView[]).map((v) => (
+                          <Button
+                            key={v}
+                            type="button"
+                            size="sm"
+                            variant={view === v ? 'default' : 'secondary'}
+                            onClick={() => openWorkspaceTab({ tab: 'planning', sub: 'vues', view: v })}
+                          >
+                            {labels.viewLabel[v]}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             <Card className={cn(darkMode ? 'bg-slate-900/40 border-slate-700/60' : '')}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -1815,7 +2272,7 @@ export default function CalendrierPage() {
           </aside>
 
           {/* Main */}
-          <main className="flex-1 flex flex-col gap-3">
+          <main className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
             {/* Command bar sticky */}
             <div
               className={cn(
@@ -1823,6 +2280,136 @@ export default function CalendrierPage() {
                 darkMode ? 'bg-slate-950/70 border-slate-700/60' : 'bg-white/80 border-slate-200'
               )}
             >
+              {/* Mode "Explorateur Windows" : barre commandes + barre d'adresse */}
+              {uiMode === 'windows' && (
+                <div className="mb-3 pb-3 border-b border-slate-700/40 space-y-2">
+                  {/* Onglets internes (style Chrome) */}
+                  <div className={cn(
+                    'flex items-center gap-1 overflow-x-auto scrollbar-subtle pb-1',
+                    darkMode ? '' : ''
+                  )}>
+                    {workspaceTabs.map((t) => {
+                      const active = t.id === activeWorkspaceTabId;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => activateWorkspaceTab(t)}
+                          className={cn(
+                            'group inline-flex items-center gap-2 px-3 py-1.5 rounded-t-lg border text-xs whitespace-nowrap transition',
+                            active
+                              ? 'bg-slate-900 border-slate-700 text-white'
+                              : darkMode
+                              ? 'bg-slate-900/30 border-slate-700/60 text-slate-300 hover:bg-slate-900/50'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          )}
+                          title={t.title}
+                        >
+                          <span className="max-w-[220px] truncate">{t.title}</span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              closeWorkspaceTab(t.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                closeWorkspaceTab(t.id);
+                              }
+                            }}
+                            className={cn(
+                              'ml-1 inline-flex items-center justify-center w-4 h-4 rounded hover:bg-slate-800/60',
+                              'opacity-70 group-hover:opacity-100'
+                            )}
+                            aria-label={`Fermer l'onglet ${t.title}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openWorkspaceTab({ tab: 'planning', sub: 'vues', view: 'week' })}
+                      title="Nouvel onglet Planification"
+                      className="ml-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Commandes */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setEventModalDate(new Date());
+                        setEditingItem(null);
+                        setShowEventModal(true);
+                      }}
+                    >
+                      Nouveau
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={!selectionCount} onClick={() => doMass('done')}>
+                      Terminer
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={!selectionCount} onClick={() => doMass('cancel')}>
+                      Annuler
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={handleAutoSchedule}>
+                      Optimiser
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setShowTemplates(true)}>
+                      Templates
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setShowAnalytics(true)}>
+                      Analytics
+                    </Button>
+                    <div className="flex-1" />
+                    <Button type="button" size="sm" variant="outline" onClick={() => setParam({ ui: 'classic' })}>
+                      UI classique
+                    </Button>
+                  </div>
+
+                  {/* Barre d'adresse */}
+                  <div className={cn('flex items-center gap-2 rounded-lg border px-2 py-1', darkMode ? 'border-slate-700/60 bg-slate-900/30' : 'border-slate-200 bg-white')}>
+                    <span className="text-xs text-slate-400">Maitre-ouvrage</span>
+                    <span className="text-xs text-slate-500">›</span>
+                    <button type="button" className="text-xs hover:underline" onClick={() => openWorkspaceTab({ tab: 'planning', sub: 'vues', view })}>Calendrier</button>
+                    <span className="text-xs text-slate-500">›</span>
+                    <button
+                      type="button"
+                      className="text-xs hover:underline"
+                      onClick={() => openWorkspaceTab({ tab: primaryTab, sub: primaryTab === 'planning' ? 'vues' : primaryTab === 'pilotage' ? 'kpis' : 'exports', view })}
+                    >
+                      {labels.tabLabel[primaryTab]}
+                    </button>
+                    <span className="text-xs text-slate-500">›</span>
+                    <button type="button" className="text-xs hover:underline" onClick={() => openWorkspaceTab({ tab: primaryTab, sub: secondaryTab, view })}>
+                      {labels.subLabel[secondaryTab]}
+                    </button>
+                    {primaryTab === 'planning' && (
+                      <>
+                        <span className="text-xs text-slate-500">›</span>
+                        <button type="button" className="text-xs hover:underline" onClick={() => openWorkspaceTab({ tab: 'planning', sub: 'vues', view })}>
+                          {labels.viewLabel[view]}
+                        </button>
+                      </>
+                    )}
+                    <div className="flex-1" />
+                    <span className="text-[11px] text-slate-500">Recherche:</span>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center gap-2 justify-between">
                 <div className="flex items-center gap-2 flex-1 min-w-[280px]">
                   <div className="relative flex-1 max-w-[520px]">
@@ -1966,63 +2553,76 @@ export default function CalendrierPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <ViewPill label="Semaine" active={view === 'week'} onClick={() => setParam({ view: 'week' })} />
-                  <ViewPill label="Jour" active={view === 'day'} onClick={() => setParam({ view: 'day' })} />
-                  <ViewPill label="Mois" active={view === 'month'} onClick={() => setParam({ view: 'month' })} />
-                  <ViewPill label="Agenda" active={view === 'agenda'} onClick={() => setParam({ view: 'agenda' })} />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setParam({ view: 'gantt' });
+                  {/* Toggle UI (visible aussi en mode classic) */}
+                  {uiMode !== 'windows' && (
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setParam({ ui: 'windows' })} title="Activer le modèle Explorateur Windows">
+                      <Users className="w-4 h-4 mr-1" />
+                      Windows
+                    </Button>
+                  )}
+                  <Tabs
+                    value={primaryTab}
+                    onValueChange={(v) => {
+                      setParam({ tab: v, sub: undefined });
+                      if (v === 'planning') setParam({ view: view || 'week' });
                     }}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
-                      view === 'gantt'
-                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
-                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
-                    )}
+                    className="w-full"
                   >
-                    <GanttChart className="w-3 h-3" />
-                    Gantt
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setParam({ view: 'resource' });
-                    }}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
-                      view === 'resource'
-                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
-                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
-                    )}
-                    title="Vue par ressource (personne)"
-                  >
-                    <User className="w-3 h-3" />
-                    Ressource
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setParam({ view: 'kanban' });
-                    }}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-sm border transition flex items-center gap-1',
-                      view === 'kanban'
-                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-200'
-                        : 'bg-transparent border-slate-700/60 text-slate-300 hover:bg-slate-800/40'
-                    )}
-                    title="Vue Kanban par statut"
-                  >
-                    <Kanban className="w-3 h-3" />
-                    Kanban
-                  </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <TabsList className="bg-slate-900/40">
+                        <TabsTrigger value="planning">Planification</TabsTrigger>
+                        <TabsTrigger value="pilotage">Pilotage</TabsTrigger>
+                        <TabsTrigger value="outils">Outils</TabsTrigger>
+                      </TabsList>
+
+                      {/* Sous-onglets (niveau 2) */}
+                      {primaryTab === 'planning' && (
+                        <Tabs value={secondaryTab} onValueChange={(v) => openWorkspaceTab({ tab: 'planning', sub: v as SecondaryTab, view })}>
+                          <TabsList className="bg-slate-900/40">
+                            <TabsTrigger value="vues">Vues</TabsTrigger>
+                            <TabsTrigger value="inspector">Inspecteur</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      )}
+                      {primaryTab === 'pilotage' && (
+                        <Tabs value={secondaryTab} onValueChange={(v) => openWorkspaceTab({ tab: 'pilotage', sub: v as SecondaryTab })}>
+                          <TabsList className="bg-slate-900/40">
+                            <TabsTrigger value="kpis">KPIs</TabsTrigger>
+                            <TabsTrigger value="previsions">Prévisions</TabsTrigger>
+                            <TabsTrigger value="comparaison">Comparaison</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      )}
+                      {primaryTab === 'outils' && (
+                        <Tabs value={secondaryTab} onValueChange={(v) => openWorkspaceTab({ tab: 'outils', sub: v as SecondaryTab })}>
+                          <TabsList className="bg-slate-900/40">
+                            <TabsTrigger value="exports">Exports</TabsTrigger>
+                            <TabsTrigger value="templates">Templates</TabsTrigger>
+                            <TabsTrigger value="auto">Auto-planif</TabsTrigger>
+                            <TabsTrigger value="historique">Historique</TabsTrigger>
+                            <TabsTrigger value="presentation">Présentation</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      )}
+                    </div>
+
+                    {/* Sous-sous-onglets (niveau 3) : seulement en Planification/Vues */}
+                    <TabsContent value="planning" className="mt-2">
+                      {secondaryTab === 'vues' && (
+                        <Tabs value={view} onValueChange={(v) => openWorkspaceTab({ tab: 'planning', sub: 'vues', view: v as CalendarView })}>
+                          <TabsList className="bg-slate-900/40">
+                            <TabsTrigger value="week">Semaine</TabsTrigger>
+                            <TabsTrigger value="day">Jour</TabsTrigger>
+                            <TabsTrigger value="month">Mois</TabsTrigger>
+                            <TabsTrigger value="agenda">Agenda</TabsTrigger>
+                            <TabsTrigger value="gantt">Gantt</TabsTrigger>
+                            <TabsTrigger value="resource">Ressource</TabsTrigger>
+                            <TabsTrigger value="kanban">Kanban</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                   <Button
                     type="button"
                     size="sm"
@@ -2307,18 +2907,185 @@ export default function CalendrierPage() {
             {/* Canvas avec transitions */}
             <div
               className={cn(
-                'rounded-xl border overflow-hidden transition-all duration-300 ease-in-out',
+                'flex-1 min-h-0 rounded-xl border overflow-hidden transition-all duration-300 ease-in-out',
                 darkMode ? 'border-slate-700/60 bg-slate-900/30' : 'border-slate-200 bg-white'
               )}
-              style={{ height: 'calc(100vh - 220px)' }}
             >
               <div className="h-full flex">
-                <div className="flex-1 h-full overflow-auto">
+                <div className="flex-1 h-full overflow-auto scrollbar-subtle">
                   <div className={cn(
                     'transition-opacity duration-300 ease-in-out',
                     'opacity-100'
                   )}>
-                  {view === 'week' && (
+                  {/* PILOTAGE / OUTILS : contenu métier dans la page (pas caché) */}
+                  {primaryTab === 'pilotage' && (
+                    <div className="p-4 space-y-4">
+                      {secondaryTab === 'kpis' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <BarChart2 className="w-4 h-4" />
+                              <p className="text-sm font-semibold">KPIs & Performance</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowAnalytics(true)}>
+                              Ouvrir en plein écran
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            Les KPIs sont disponibles ici. (Option “plein écran” conservée pour le confort.)
+                          </p>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'previsions' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <TrendingDown className="w-4 h-4 text-amber-400" />
+                              <p className="text-sm font-semibold">Prévisions (7 jours)</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowPredictions(true)}>
+                              Widget
+                            </Button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {predictions.map((pred, idx) => (
+                              <div
+                                key={pred.date}
+                                className={cn(
+                                  'p-3 rounded-lg border',
+                                  pred.isOverloaded
+                                    ? 'border-red-500/30 bg-red-500/10'
+                                    : pred.overloadPercent > 80
+                                    ? 'border-amber-500/30 bg-amber-500/10'
+                                    : darkMode
+                                    ? 'bg-slate-800/40 border-slate-700/60'
+                                    : 'bg-slate-50 border-slate-200'
+                                )}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-semibold">
+                                    {idx === 0 ? "Aujourd'hui" : idx === 1 ? 'Demain' : new Date(pred.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+                                  </span>
+                                  <Badge variant={pred.isOverloaded ? 'urgent' : pred.overloadPercent > 80 ? 'warning' : 'default'}>
+                                    {pred.overloadPercent}%
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">
+                                  {pred.maxBureau}: {(pred.maxBureauLoad / 60).toFixed(1)}h / {(pred.capacity / 60).toFixed(0)}h
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'comparaison' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <GitCompare className="w-4 h-4" />
+                              <p className="text-sm font-semibold">Comparaison de périodes</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowPeriodComparison(true)}>
+                              Ouvrir
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            Compare deux périodes (activité / terminés). Ouverture via panneau dédié.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {primaryTab === 'outils' && (
+                    <div className="p-4 space-y-4">
+                      {secondaryTab === 'exports' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Download className="w-4 h-4" />
+                              <p className="text-sm font-semibold">Exports</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" variant="secondary" onClick={handleExportCSV}>CSV</Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={handleExportJSON}>JSON</Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={handleExportICal}>iCal</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={handleExportPDF}>PDF</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={handleExportExcel}>Excel</Button>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-3">
+                            Les exports incluent conflits/SLA (CSV + JSON enrichis).
+                          </p>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'templates' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Repeat className="w-4 h-4" />
+                              <p className="text-sm font-semibold">Templates</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowTemplates(true)}>
+                              Ouvrir
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">Catalogue de modèles pour créer rapidement des événements.</p>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'auto' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-amber-400" />
+                              <p className="text-sm font-semibold">Auto-planification</p>
+                            </div>
+                            <Button type="button" size="sm" variant="default" onClick={handleAutoSchedule}>
+                              Optimiser
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">Génère des scénarios pour réduire conflits / surcharge / SLA.</p>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'historique' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <HistoryIcon className="w-4 h-4" />
+                              <p className="text-sm font-semibold">Historique</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowHistory(true)}>
+                              Ouvrir
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">Restaurer des états précédents (Undo/Redo étendu).</p>
+                        </div>
+                      )}
+
+                      {secondaryTab === 'presentation' && (
+                        <div className={cn('rounded-xl border p-4', darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Maximize2 className="w-4 h-4" />
+                              <p className="text-sm font-semibold">Mode Présentation</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowPresentationMode(true)}>
+                              Lancer
+                            </Button>
+                          </div>
+                          <p className="text-xs text-slate-400">Plein écran pour réunion (navigation clavier).</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* PLANIFICATION : calendrier */}
+                  {primaryTab === 'planning' && view === 'week' && (
                     <WeekView
                       days={weekDays}
                       items={filtered}
@@ -2335,7 +3102,7 @@ export default function CalendrierPage() {
                       onTimeSlotClick={handleTimeSlotClick}
                     />
                   )}
-                  {view === 'agenda' && (
+                  {primaryTab === 'planning' && view === 'agenda' && (
                     <AgendaView
                       items={filtered}
                       conflicts={conflicts}
@@ -2346,7 +3113,7 @@ export default function CalendrierPage() {
                       darkMode={darkMode}
                     />
                   )}
-                  {view === 'day' && (
+                  {primaryTab === 'planning' && view === 'day' && (
                     <DayView
                       day={cursorDate}
                       items={filtered}
@@ -2363,7 +3130,7 @@ export default function CalendrierPage() {
                       onTimeSlotClick={handleTimeSlotClick}
                     />
                   )}
-                  {view === 'gantt' && (
+                  {primaryTab === 'planning' && view === 'gantt' && (
                     <GanttView
                       items={filtered}
                       conflicts={conflicts}
@@ -2372,7 +3139,7 @@ export default function CalendrierPage() {
                       darkMode={darkMode}
                     />
                   )}
-                  {view === 'month' && (
+                  {primaryTab === 'planning' && view === 'month' && (
                     <MonthView
                       cursorDate={cursorDate}
                       items={filtered}
@@ -2387,7 +3154,7 @@ export default function CalendrierPage() {
                       darkMode={darkMode}
                     />
                   )}
-                  {view === 'resource' && (
+                  {primaryTab === 'planning' && view === 'resource' && (
                     <ResourceView
                       byAssignee={byAssignee}
                       conflicts={conflicts}
@@ -2399,7 +3166,7 @@ export default function CalendrierPage() {
                       darkMode={darkMode}
                     />
                   )}
-                  {view === 'kanban' && (
+                  {primaryTab === 'planning' && view === 'kanban' && (
                     <KanbanView
                       byStatus={byStatus}
                       conflicts={conflicts}
@@ -2435,6 +3202,7 @@ export default function CalendrierPage() {
                 <div
                   className={cn(
                     'hidden xl:flex w-[420px] shrink-0 border-l h-full',
+                    primaryTab !== 'planning' && 'hidden',
                     darkMode ? 'border-slate-700/60 bg-slate-950/30' : 'border-slate-200 bg-white'
                   )}
                 >
@@ -2443,143 +3211,7 @@ export default function CalendrierPage() {
                     conflicts={conflicts}
                     slaStatuses={slaStatuses}
                     onClose={() => setInspectedId(null)}
-                    onAction={(a) => {
-                      if (!inspected) return;
-                      
-                      // Gérer les actions spécifiques
-                      if (a === 'modifier') {
-                        setEditingItem(inspected);
-                        setEventModalDate(new Date(inspected.start));
-                        setShowEventModal(true);
-                        return;
-                      }
-                      
-                      if (a === 'replanifier') {
-                        setEditingItem(inspected);
-                        setEventModalDate(new Date(inspected.start));
-                        setShowEventModal(true);
-                        return;
-                      }
-                      
-                      if (a === 'assigner-bureau') {
-                        setBureauPromptValue(inspected.bureau || 'BMO');
-                        setBureauPromptCallback((value: string) => {
-                          if (value && value.trim()) {
-                            updateItemsWithHistory((prev) =>
-                              prev.map((it) => (it.id === inspected.id ? { ...it, bureau: value.trim() } : it))
-                            );
-                            addToast(`✓ Bureau assigné: ${value}`, 'success');
-                            addActionLog({
-                              userId: 'USR-001',
-                              userName: 'A. DIALLO',
-                              userRole: 'Directeur Général',
-                              action: 'assigner-bureau' as any,
-                              module: 'calendrier',
-                              targetId: inspected.id,
-                              targetType: 'CalendarItem',
-                              targetLabel: inspected.title,
-                              details: `Bureau assigné: ${value}`,
-                              bureau: value.trim(),
-                            });
-                          }
-                        });
-                        setShowBureauPrompt(true);
-                        return;
-                      }
-                      
-                      if (a === 'copier') {
-                        setCopiedItem(inspected);
-                        addToast(`✓ "${inspected.title}" copié (Ctrl+V pour coller)`, 'success');
-                        return;
-                      }
-                      
-                      if (a === 'dupliquer') {
-                        const newItem: CalendarItem = {
-                          ...inspected,
-                          id: uid('EVT'),
-                          title: `${inspected.title} (copie)`,
-                          start: new Date(new Date(inspected.start).getTime() + 86400000).toISOString(), // +1 jour
-                          end: new Date(new Date(inspected.end).getTime() + 86400000).toISOString(),
-                        };
-                        updateItemsWithHistory((prev) => [...prev, newItem]);
-                        addToast(`✓ "${newItem.title}" dupliqué`, 'success');
-                        return;
-                      }
-                      
-                      if (a === 'escalader') {
-                        addToast(`⚠️ Escalade de "${inspected.title}" vers BMO`, 'warning');
-                        addActionLog({
-                          userId: 'USR-001',
-                          userName: 'A. DIALLO',
-                          userRole: 'Directeur Général',
-                          action: 'escalader' as any,
-                          module: 'calendrier',
-                          targetId: inspected.id,
-                          targetType: 'CalendarItem',
-                          targetLabel: inspected.title,
-                          details: 'Escalade vers BMO',
-                          bureau: inspected.bureau ?? 'BMO',
-                        });
-                        return;
-                      }
-                      
-                      if (a === 'terminer') {
-                        setItems((prev) =>
-                          prev.map((it) => (it.id === inspected.id ? { ...it, status: 'done' as Status } : it))
-                        );
-                        addToast(`✓ ${inspected.title} marqué comme terminé`, 'success');
-                        addActionLog({
-                          userId: 'USR-001',
-                          userName: 'A. DIALLO',
-                          userRole: 'Directeur Général',
-                          action: 'terminer' as any,
-                          module: 'calendrier',
-                          targetId: inspected.id,
-                          targetType: 'CalendarItem',
-                          targetLabel: inspected.title,
-                          details: 'Événement terminé',
-                          bureau: inspected.bureau ?? 'BMO',
-                        });
-                        return;
-                      }
-                      
-                      if (a === 'annuler' || a === 'supprimer') {
-                        setDeleteConfirmTitle(inspected.title);
-                        setDeleteConfirmCallback(() => {
-                          updateItemsWithHistory((prev) => prev.filter((it) => it.id !== inspected.id));
-                          addToast(`✓ ${inspected.title} supprimé`, 'success');
-                          setInspectedId(null);
-                          addActionLog({
-                            userId: 'USR-001',
-                            userName: 'A. DIALLO',
-                            userRole: 'Directeur Général',
-                            action: 'supprimer' as any,
-                            module: 'calendrier',
-                            targetId: inspected.id,
-                            targetType: 'CalendarItem',
-                            targetLabel: inspected.title,
-                            details: 'Événement supprimé',
-                            bureau: inspected.bureau ?? 'BMO',
-                          });
-                        });
-                        setShowDeleteConfirm(true);
-                        return;
-                      }
-                      
-                      addToast(`Action: ${a} sur ${inspected.id}`, 'success');
-                      addActionLog({
-                        userId: 'USR-001',
-                        userName: 'A. DIALLO',
-                        userRole: 'Directeur Général',
-                        action: a as any,
-                        module: 'calendrier',
-                        targetId: inspected.id,
-                        targetType: 'CalendarItem',
-                        targetLabel: inspected.title,
-                        details: `Action '${a}' depuis inspector`,
-                        bureau: inspected.bureau ?? 'BMO',
-                      });
-                    }}
+                    onAction={handleInspectorAction}
                     darkMode={darkMode}
                     onEdit={() => {
                       if (!inspected) return;
@@ -2716,6 +3348,30 @@ export default function CalendrierPage() {
           darkMode={darkMode}
         />
       )}
+
+      {/* Inspector en modale sur écrans < xl (le panneau droit est caché) */}
+      <Dialog
+        open={Boolean(inspectedId) && isNarrow}
+        onOpenChange={(v) => {
+          if (!v) setInspectedId(null);
+        }}
+      >
+        <DialogContent className={cn('max-w-2xl p-0 overflow-hidden', darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
+          <Inspector
+            item={inspected}
+            conflicts={conflicts}
+            slaStatuses={slaStatuses}
+            onClose={() => setInspectedId(null)}
+            onAction={handleInspectorAction}
+            darkMode={darkMode}
+            onEdit={() => handleInspectorAction('modifier')}
+            onDelete={() => handleInspectorAction('supprimer')}
+            onUpdateItem={(itemId, updates) => {
+              updateItemsWithHistory((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...updates } : it)));
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Modale Templates */}
       <TemplatesModal
@@ -3522,7 +4178,7 @@ function Inspector({
   const e = new Date(item.end);
 
   return (
-    <div className="h-full p-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="h-full p-4 overflow-y-auto scrollbar-subtle" onClick={(e) => e.stopPropagation()}>
       <div
         className={cn('rounded-xl border p-4 flex flex-col gap-3', darkMode ? 'border-slate-700/60 bg-slate-950/40' : 'border-slate-200 bg-white')}
         onClick={(e) => e.stopPropagation()}

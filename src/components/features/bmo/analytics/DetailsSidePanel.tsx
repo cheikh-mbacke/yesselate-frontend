@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/stores';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,16 @@ interface DetailsSidePanelProps {
 export function DetailsSidePanel({ isOpen, onClose, data }: DetailsSidePanelProps) {
   const { darkMode } = useAppStore();
 
+  // ESC pour fermer (cohérent avec overlays)
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !data) return null;
 
   return (
@@ -42,6 +52,9 @@ export function DetailsSidePanel({ isOpen, onClose, data }: DetailsSidePanelProp
           'fixed right-0 top-0 bottom-0 w-full max-w-md bg-slate-800 border-l border-slate-700 z-50 shadow-2xl transform transition-transform duration-300 ease-in-out overflow-y-auto',
           isOpen ? 'translate-x-0' : 'translate-x-full'
         )}
+        role="dialog"
+        aria-modal="true"
+        aria-label={data.title}
       >
         <div className="p-6">
           {/* Header */}

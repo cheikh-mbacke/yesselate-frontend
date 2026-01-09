@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/stores';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,9 @@ interface AdvancedFiltersProps {
     endDate?: string;
     bureaux?: string[];
     type?: string;
+    minDemandes?: number;
+    maxTauxRejet?: number;
+    minTauxValidation?: number;
   };
   onFiltersChange: (filters: any) => void;
 }
@@ -23,6 +26,30 @@ interface AdvancedFiltersProps {
 export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersProps) {
   const { darkMode } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onDown = (e: MouseEvent) => {
+      const el = rootRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen]);
 
   const activeFiltersCount = [
     filters.period,
@@ -30,6 +57,9 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
     filters.endDate,
     filters.bureaux?.length,
     filters.type,
+    Number.isFinite(filters.minDemandes) ? filters.minDemandes : null,
+    Number.isFinite(filters.maxTauxRejet) ? filters.maxTauxRejet : null,
+    Number.isFinite(filters.minTauxValidation) ? filters.minTauxValidation : null,
   ].filter(Boolean).length;
 
   const updateFilter = (key: string, value: any) => {
@@ -42,11 +72,13 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
   };
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <Button
         variant="outline"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         className={cn(
           'gap-2',
           activeFiltersCount > 0 && 'bg-orange-500/10 border-orange-500/50'
@@ -157,6 +189,63 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                   </Badge>
                 ))}
               </div>
+            </div>
+
+            {/* Seuils */}
+            <div>
+              <label className="text-xs font-medium mb-1.5 block">Seuils (qualité)</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 mb-1 block">Min demandes</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={Number.isFinite(filters.minDemandes) ? String(filters.minDemandes) : ''}
+                    onChange={(e) => updateFilter('minDemandes', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={cn(
+                      'w-full p-2 rounded text-xs',
+                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                    )}
+                    placeholder="ex: 50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 mb-1 block">Max taux rejet %</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    value={Number.isFinite(filters.maxTauxRejet) ? String(filters.maxTauxRejet) : ''}
+                    onChange={(e) => updateFilter('maxTauxRejet', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={cn(
+                      'w-full p-2 rounded text-xs',
+                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                    )}
+                    placeholder="ex: 20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 mb-1 block">Min taux validation %</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    value={Number.isFinite(filters.minTauxValidation) ? String(filters.minTauxValidation) : ''}
+                    onChange={(e) => updateFilter('minTauxValidation', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={cn(
+                      'w-full p-2 rounded text-xs',
+                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                    )}
+                    placeholder="ex: 80"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">
+                Les seuils s'appliquent aux données après filtres période/bureaux.
+              </p>
             </div>
 
             {/* Actions */}

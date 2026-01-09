@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   Area,
   AreaChart,
@@ -39,9 +39,14 @@ import {
   MultiBureauComparator,
   NarrativeReport,
   DetailsSidePanel,
+  FinanceDashboard,
+  ClientsDashboard,
+  SavedViews,
 } from '@/components/features/bmo/analytics';
 
-import { performanceData, bureaux, projects } from '@/lib/data';
+import { bureaux, clientsGlobalStats, financials, performanceData, projects } from '@/lib/data';
+import { downloadBlob, toCsv } from '@/lib/utils/export';
+import { aggregateByMonth, expandMonthlyDataByBureau, filterRowsByPeriod } from '@/lib/utils/analytics-helpers';
 
 type ReportType = 'mensuel-dg' | 'bureau' | 'projet';
 type ViewType =
@@ -52,33 +57,24 @@ type ViewType =
   | 'comparaisons'
   | 'predictions'
   | 'anomalies'
-  | 'insights';
+  | 'insights'
+  | 'finance'
+  | 'clients';
 
-type EnrichedRow = (typeof performanceData)[number] & {
+type BaseMonthlyRow = {
+  month: string;
+  validations: number;
+  demandes: number;
+  budget: number;
+  rejets: number;
+};
+
+type EnrichedRow = BaseMonthlyRow & {
   tauxValidation: number;
   tauxRejet: number;
 };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
-const toCsv = (rows: Array<Record<string, any>>) => {
-  // WHY: Convertir Set en Array explicitement pour TypeScript
-  const cols = Array.from(
-    rows.reduce((acc, r) => {
-      Object.keys(r).forEach((k) => acc.add(k));
-      return acc;
-    }, new Set<string>()) as Set<string>
-  );
-  const esc = (v: any) => {
-    const s = String(v ?? '');
-    const needs = s.includes('"') || s.includes(';') || s.includes('\n');
-    const clean = s.replace(/"/g, '""');
-    return needs ? `"${clean}"` : clean;
-  };
-  const header = cols.map(esc).join(';');
-  const body = rows.map((r) => cols.map((c) => esc(r[c])).join(';')).join('\n');
-  return `${header}\n${body}`;
-};
 
 function CmdItem({
   label,
@@ -91,6 +87,7 @@ function CmdItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="text-left p-3 rounded-lg border border-slate-700/30 hover:bg-orange-500/5 transition-colors"
     >
@@ -101,7 +98,6 @@ function CmdItem({
 }
 
 export default function AnalyticsPage() {
-  const router = useRouter();
   const sp = useSearchParams();
   const { darkMode } = useAppStore();
   const { addToast } = useBMOStore();
@@ -119,57 +115,113 @@ export default function AnalyticsPage() {
 
   const [sidePanelData, setSidePanelData] = useState<any>(null);
   const [showSidePanel, setShowSidePanel] = useState(false);
+  const lastAnomaliesNotifiedRef = useRef<{ count: number; ts: number } | null>(null);
+
+  const handleAdvancedFiltersChange = (next: Record<string, any>) => {
+    setAdvancedFilters(next);
+    const nextBureaux = Array.isArray(next?.bureaux) ? next.bureaux : [];
+    setSelectedBureaux(nextBureaux);
+  };
 
   // UX : recherche + palette de commandes
   const [q, setQ] = useState('');
   const search = q.trim().toLowerCase();
   const [cmdOpen, setCmdOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const exportRef = useRef<HTMLDivElement | null>(null);
 
   // Init depuis URL + store navigation (sans casser vos composants existants)
   useEffect(() => {
     const view = sp.get('view') as ViewType | null;
     const bureau = sp.get('bureau');
     const project = sp.get('project');
+    const bureauxParam = sp.get('bureaux');
+    const period = sp.get('period') as 'month' | 'quarter' | 'year' | 'custom' | null;
+    const startDate = sp.get('startDate');
+    const endDate = sp.get('endDate');
+    const filterType = sp.get('type');
+    const minDemandesParam = sp.get('minDemandes');
+    const maxTauxRejetParam = sp.get('maxTauxRejet');
+    const minTauxValidationParam = sp.get('minTauxValidation');
 
-    if (view && ['overview', 'tendances', 'insights', 'comparaisons', 'predictions', 'anomalies', 'rapports', 'sources'].includes(view)) {
+    if (view && ['overview', 'tendances', 'insights', 'comparaisons', 'predictions', 'anomalies', 'rapports', 'sources', 'finance', 'clients'].includes(view)) {
       setActiveView(view);
     }
     if (bureau) setSelectedBureau(bureau);
     if (project) setSelectedProject(project);
+
+    const urlAdvanced: Record<string, any> = {};
+    if (period && ['month', 'quarter', 'year', 'custom'].includes(period)) urlAdvanced.period = period;
+    if (startDate) urlAdvanced.startDate = startDate;
+    if (endDate) urlAdvanced.endDate = endDate;
+    if (filterType) urlAdvanced.type = filterType;
+
+    const minDemandes = minDemandesParam ? Number(minDemandesParam) : undefined;
+    const maxTauxRejet = maxTauxRejetParam ? Number(maxTauxRejetParam) : undefined;
+    const minTauxValidation = minTauxValidationParam ? Number(minTauxValidationParam) : undefined;
+    if (Number.isFinite(minDemandes)) urlAdvanced.minDemandes = minDemandes;
+    if (Number.isFinite(maxTauxRejet)) urlAdvanced.maxTauxRejet = maxTauxRejet;
+    if (Number.isFinite(minTauxValidation)) urlAdvanced.minTauxValidation = minTauxValidation;
+    if (bureauxParam) {
+      const parsed = bureauxParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (parsed.length) urlAdvanced.bureaux = parsed;
+    }
+    if (Object.keys(urlAdvanced).length) {
+      setAdvancedFilters((prev) => ({ ...prev, ...urlAdvanced }));
+      setSelectedBureaux(Array.isArray(urlAdvanced.bureaux) ? urlAdvanced.bureaux : []);
+    }
 
     const stored = (getFilters?.() ?? {}) as any;
     if (stored && typeof stored === 'object') {
       setActiveView((prev) => (view ? prev : stored.activeView ?? prev));
       setSelectedBureau((prev) => (bureau ? prev : stored.selectedBureau ?? prev));
       setSelectedProject((prev) => (project ? prev : stored.selectedProject ?? prev));
-      setAdvancedFilters((prev) => (Object.keys(prev).length ? prev : stored.advancedFilters ?? prev));
-      setSelectedBureaux((prev) => (prev.length ? prev : stored.selectedBureaux ?? prev));
+      setAdvancedFilters((prev) => (Object.keys(urlAdvanced).length ? prev : stored.advancedFilters ?? prev));
+      setSelectedBureaux((prev) => (bureauxParam ? prev : stored.selectedBureaux ?? prev));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync vers URL + hook (évite les "écrans noirs" de navigation incohérente)
+  // Sync vers URL + store navigation (IMPORTANT: replace pour ne pas casser le scroll / l'historique)
   useEffect(() => {
     try {
-      updateFilters?.({
-        activeView,
-        selectedBureau,
-        selectedProject,
-        advancedFilters,
-        selectedBureaux,
-      });
+      const urlFilters: Record<string, string | number | boolean> = {
+        view: activeView,
+      };
+
+      if (selectedBureau && selectedBureau !== 'ALL') urlFilters.bureau = selectedBureau;
+      if (selectedProject && selectedProject !== 'ALL') urlFilters.project = selectedProject;
+
+      if (advancedFilters?.period) urlFilters.period = String(advancedFilters.period);
+      if (advancedFilters?.startDate) urlFilters.startDate = String(advancedFilters.startDate);
+      if (advancedFilters?.endDate) urlFilters.endDate = String(advancedFilters.endDate);
+      if (advancedFilters?.type) urlFilters.type = String(advancedFilters.type);
+      if (Number.isFinite(advancedFilters?.minDemandes)) urlFilters.minDemandes = Number(advancedFilters.minDemandes);
+      if (Number.isFinite(advancedFilters?.maxTauxRejet)) urlFilters.maxTauxRejet = Number(advancedFilters.maxTauxRejet);
+      if (Number.isFinite(advancedFilters?.minTauxValidation)) urlFilters.minTauxValidation = Number(advancedFilters.minTauxValidation);
+      if (selectedBureaux?.length) urlFilters.bureaux = selectedBureaux.join(',');
+
+      updateFilters?.(urlFilters, true);
     } catch {
       // ignore
     }
-
-    const params = new URLSearchParams();
-    params.set('view', activeView);
-    if (selectedBureau && selectedBureau !== 'ALL') params.set('bureau', selectedBureau);
-    if (selectedProject && selectedProject !== 'ALL') params.set('project', selectedProject);
-
-    router.replace(`?${params.toString()}`, { scroll: false } as any);
-  }, [activeView, selectedBureau, selectedProject, advancedFilters, selectedBureaux, router, updateFilters]);
+  }, [
+    activeView,
+    selectedBureau,
+    selectedProject,
+    advancedFilters?.period,
+    advancedFilters?.startDate,
+    advancedFilters?.endDate,
+    advancedFilters?.type,
+    advancedFilters?.minDemandes,
+    advancedFilters?.maxTauxRejet,
+    advancedFilters?.minTauxValidation,
+    selectedBureaux,
+    updateFilters,
+  ]);
 
   // Raccourcis clavier : "/" recherche, Ctrl/⌘+K palette
   useEffect(() => {
@@ -191,14 +243,52 @@ export default function AnalyticsPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Données enrichies + filtres robustes
-  const enrichedData = useMemo<EnrichedRow[]>(() => {
-    let data: EnrichedRow[] = performanceData.map((d: any) => {
+  // =========================
+  // Dataset cohérent par bureau (déverrouille Comparaisons / Heatmaps)
+  // =========================
+  const bureauExpandedAll = useMemo(() => {
+    return expandMonthlyDataByBureau(performanceData as any, bureaux, { jitter: 0.08 });
+  }, []);
+
+  const bureauExpandedPeriod = useMemo(() => {
+    return filterRowsByPeriod(bureauExpandedAll as any, {
+      period: advancedFilters?.period,
+      startDate: advancedFilters?.startDate,
+      endDate: advancedFilters?.endDate,
+    });
+  }, [bureauExpandedAll, advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
+
+  const bureauExpandedSelected = useMemo(() => {
+    if (!selectedBureaux?.length || selectedBureaux.includes('ALL')) return bureauExpandedPeriod as any[];
+    const set = new Set(selectedBureaux);
+    return (bureauExpandedPeriod as any[]).filter((r: any) => set.has(String(r.bureau)));
+  }, [bureauExpandedPeriod, selectedBureaux]);
+
+  const monthlyAgg = useMemo(() => {
+    return aggregateByMonth(bureauExpandedSelected as any);
+  }, [bureauExpandedSelected]);
+
+  const enrichedBureauData = useMemo(() => {
+    return (bureauExpandedSelected as any[]).map((d: any) => {
       const demandes = Number(d.demandes ?? 0);
       const validations = Number(d.validations ?? 0);
       const rejets = Number(d.rejets ?? 0);
       const denom = demandes <= 0 ? 1 : demandes;
+      return {
+        ...d,
+        tauxValidation: clamp(Math.round((validations / denom) * 100), 0, 100),
+        tauxRejet: clamp(Math.round((rejets / denom) * 100), 0, 100),
+      };
+    });
+  }, [bureauExpandedSelected]);
 
+  // Données enrichies (agrégées sur les bureaux filtrés) + seuils + recherche
+  const enrichedData = useMemo<EnrichedRow[]>(() => {
+    let data: EnrichedRow[] = (monthlyAgg as any[]).map((d: any) => {
+      const demandes = Number(d.demandes ?? 0);
+      const validations = Number(d.validations ?? 0);
+      const rejets = Number(d.rejets ?? 0);
+      const denom = demandes <= 0 ? 1 : demandes;
       return {
         ...d,
         tauxValidation: clamp(Math.round((validations / denom) * 100), 0, 100),
@@ -206,29 +296,28 @@ export default function AnalyticsPage() {
       };
     });
 
-    // Filtres avancés (compatibles avec votre composant AdvancedFilters)
-    if (advancedFilters?.bureaux?.length) {
-      data = data.filter((d: any) => advancedFilters.bureaux.includes(d.bureau));
-    }
-    if (advancedFilters?.minDemandes) {
+    if (Number.isFinite(advancedFilters?.minDemandes)) {
       const min = Number(advancedFilters.minDemandes);
       data = data.filter((d: any) => Number(d.demandes ?? 0) >= min);
     }
-    if (advancedFilters?.maxTauxRejet) {
+    if (Number.isFinite(advancedFilters?.maxTauxRejet)) {
       const max = Number(advancedFilters.maxTauxRejet);
       data = data.filter((d: any) => Number(d.tauxRejet ?? 0) <= max);
     }
+    if (Number.isFinite(advancedFilters?.minTauxValidation)) {
+      const min = Number(advancedFilters.minTauxValidation);
+      data = data.filter((d: any) => Number(d.tauxValidation ?? 0) >= min);
+    }
 
-    // Filtre de recherche (sur mois/bureau/valeurs)
     if (search) {
       data = data.filter((d: any) => {
-        const hay = `${d.month ?? ''} ${d.bureau ?? ''} ${d.demandes ?? ''} ${d.validations ?? ''} ${d.rejets ?? ''} ${d.budget ?? ''}`.toLowerCase();
+        const hay = `${d.month ?? ''} ${d.demandes ?? ''} ${d.validations ?? ''} ${d.rejets ?? ''} ${d.budget ?? ''} ${d.tauxValidation ?? ''} ${d.tauxRejet ?? ''}`.toLowerCase();
         return hay.includes(search);
       });
     }
 
     return data;
-  }, [advancedFilters, search]);
+  }, [monthlyAgg, advancedFilters?.minDemandes, advancedFilters?.maxTauxRejet, advancedFilters?.minTauxValidation, search]);
 
   // Totaux annuels (sur données filtrées)
   const yearlyTotals = useMemo(() => {
@@ -255,7 +344,8 @@ export default function AnalyticsPage() {
 
   // Previous period (6 premiers mois) stabilisé
   const previousPeriodTotals = useMemo(() => {
-    return performanceData.slice(0, 6).reduce(
+    const allAgg = aggregateByMonth(bureauExpandedAll as any);
+    return allAgg.slice(0, 6).reduce(
       (acc: any, m: any) => ({
         demandes: acc.demandes + Number(m.demandes ?? 0),
         validations: acc.validations + Number(m.validations ?? 0),
@@ -264,7 +354,7 @@ export default function AnalyticsPage() {
       }),
       { demandes: 0, validations: 0, rejets: 0, budget: 0 }
     );
-  }, []);
+  }, [bureauExpandedAll]);
 
   // Anomalies "simples" (utile pour sidebar counts / badges)
   const anomaliesCount = useMemo(() => {
@@ -278,6 +368,24 @@ export default function AnalyticsPage() {
     }
     return count;
   }, [enrichedData]);
+
+  // Alerting (anti-spam) : notifier seulement sur changement + seuil
+  useEffect(() => {
+    if (!Number.isFinite(anomaliesCount) || anomaliesCount <= 0) return;
+    const now = Date.now();
+    const last = lastAnomaliesNotifiedRef.current;
+    const changed = !last || last.count !== anomaliesCount;
+    const cooledDown = !last || now - last.ts > 60_000;
+    if (!changed || !cooledDown) return;
+
+    lastAnomaliesNotifiedRef.current = { count: anomaliesCount, ts: now };
+    addToast(
+      anomaliesCount >= 5
+        ? `🚨 Pilotage: ${anomaliesCount} anomalies détectées (priorité haute)`
+        : `⚠️ Pilotage: ${anomaliesCount} anomalies détectées`,
+      anomaliesCount >= 5 ? 'error' : 'warning'
+    );
+  }, [anomaliesCount, addToast]);
 
   // Sync counts sidebar (ex: anomalies)
   useAutoSyncCounts('analytics', () => anomaliesCount, { interval: 15000, immediate: true });
@@ -337,6 +445,22 @@ export default function AnalyticsPage() {
     ];
   }, []);
 
+  const financeEvolution = useMemo(() => {
+    return filterRowsByPeriod((financials as any)?.evolution ?? [], {
+      period: advancedFilters?.period,
+      startDate: advancedFilters?.startDate,
+      endDate: advancedFilters?.endDate,
+    });
+  }, [advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
+
+  const clientsEvolution = useMemo(() => {
+    return filterRowsByPeriod((clientsGlobalStats as any)?.evolutionMensuelle ?? [], {
+      period: advancedFilters?.period,
+      startDate: advancedFilters?.startDate,
+      endDate: advancedFilters?.endDate,
+    });
+  }, [advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
+
   const generateReport = async (type: ReportType) => {
     setGeneratingReport(true);
     addToast(`Génération du rapport ${type} en cours...`, 'info');
@@ -365,7 +489,6 @@ export default function AnalyticsPage() {
   const exportFilteredCsv = () => {
     const rows = enrichedData.map((r: any) => ({
       month: r.month,
-      bureau: r.bureau ?? '',
       demandes: r.demandes,
       validations: r.validations,
       rejets: r.rejets,
@@ -374,20 +497,38 @@ export default function AnalyticsPage() {
       budget: r.budget,
     }));
 
-    const csv = toCsv(rows);
+    const csv = toCsv(rows, { delimiter: ';', withBom: true });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `analytics-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `analytics-${new Date().toISOString().slice(0, 10)}.csv`);
 
     addToast('📤 Export CSV généré', 'success');
   };
 
+  const resetAll = () => {
+    setQ('');
+    setAdvancedFilters({});
+    setSelectedBureaux([]);
+    setSelectedBureau('ALL');
+    setSelectedProject('ALL');
+    addToast('Filtres réinitialisés.', 'info');
+  };
+
+  const applySavedView = (state: {
+    activeView: string;
+    selectedBureau: string;
+    selectedProject: string;
+    advancedFilters: Record<string, any>;
+    selectedBureaux: string[];
+  }) => {
+    setActiveView(state.activeView as ViewType);
+    setSelectedBureau(state.selectedBureau ?? 'ALL');
+    setSelectedProject(state.selectedProject ?? 'ALL');
+    setAdvancedFilters(state.advancedFilters ?? {});
+    setSelectedBureaux(Array.isArray(state.selectedBureaux) ? state.selectedBureaux : []);
+  };
+
   return (
-    <div className="space-y-6 p-4">
+    <div ref={exportRef} className="space-y-6 p-4">
       {/* Header "pilotage" + outils */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -395,9 +536,12 @@ export default function AnalyticsPage() {
             <span className="text-3xl">📈</span>
             Analytics & Pilotage Avancé
             {anomaliesCount > 0 && (
-              <Badge variant="warning" className="ml-2">
-                {anomaliesCount} anomalies
-              </Badge>
+              <div className="flex items-center gap-2 ml-2">
+                <Badge variant="warning">{anomaliesCount} anomalies</Badge>
+                <Button size="sm" variant="ghost" onClick={() => setActiveView('anomalies')} className="h-7 px-2 text-xs">
+                  Voir
+                </Button>
+              </div>
             )}
           </h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -406,8 +550,18 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <AdvancedFilters filters={advancedFilters} onFiltersChange={setAdvancedFilters} />
-          <AdvancedExport data={enrichedData} type="analytics" fileName="rapport-analytics" />
+          <SavedViews
+            current={{
+              activeView,
+              selectedBureau,
+              selectedProject,
+              advancedFilters,
+              selectedBureaux,
+            }}
+            onApply={applySavedView}
+          />
+          <AdvancedFilters filters={advancedFilters} onFiltersChange={handleAdvancedFiltersChange} />
+          <AdvancedExport data={enrichedData} type="analytics" fileName="rapport-analytics" targetRef={exportRef} />
           <Button size="sm" variant="ghost" onClick={exportFilteredCsv}>
             📤 CSV
           </Button>
@@ -417,6 +571,27 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {/* Empty state: aide au pilotage quand les filtres éliminent tout */}
+      {['overview', 'tendances', 'insights', 'comparaisons', 'predictions', 'anomalies', 'rapports', 'sources'].includes(activeView) &&
+        enrichedData.length === 0 && (
+          <Card className="border-orange-500/30">
+            <CardHeader>
+              <CardTitle className="text-sm">Aucune donnée pour ces filtres</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-slate-400 flex-1 min-w-[220px]">
+                Ajustez la période / les bureaux, ou réinitialisez pour revenir à une vue exploitable.
+              </p>
+              <Button size="sm" variant="secondary" onClick={resetAll}>
+                Réinitialiser
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setActiveView('sources')}>
+                Voir sources
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
       {/* Recherche */}
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -424,6 +599,7 @@ export default function AnalyticsPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Rechercher (mois, bureau, chiffres)…"
+          aria-label="Rechercher dans les analytics"
           className={cn(
             'flex-1 min-w-[240px] px-3 py-2 rounded text-sm',
             darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
@@ -453,6 +629,12 @@ export default function AnalyticsPage() {
         </Button>
         <Button size="sm" variant={activeView === 'anomalies' ? 'default' : 'ghost'} onClick={() => setActiveView('anomalies')}>
           🚨 Anomalies
+        </Button>
+        <Button size="sm" variant={activeView === 'finance' ? 'default' : 'ghost'} onClick={() => setActiveView('finance')}>
+          💰 Finance
+        </Button>
+        <Button size="sm" variant={activeView === 'clients' ? 'default' : 'ghost'} onClick={() => setActiveView('clients')}>
+          👥 Clients
         </Button>
         <Button size="sm" variant={activeView === 'rapports' ? 'default' : 'ghost'} onClick={() => setActiveView('rapports')}>
           📄 Rapports
@@ -709,8 +891,8 @@ export default function AnalyticsPage() {
       {/* VUE: Comparaisons */}
       {activeView === 'comparaisons' && (
         <div className="space-y-6">
-          <MultiBureauComparator bureaux={bureaux} performanceData={performanceData} enrichedData={enrichedData} />
-          <ComparisonChart bureaux={bureaux} performanceData={enrichedData} selectedBureaux={selectedBureaux} />
+          <MultiBureauComparator bureaux={bureaux} performanceData={enrichedBureauData} enrichedData={enrichedBureauData} />
+          <ComparisonChart bureaux={bureaux} performanceData={enrichedBureauData} selectedBureaux={selectedBureaux} />
         </div>
       )}
 
@@ -720,8 +902,8 @@ export default function AnalyticsPage() {
           <PredictionInsights performanceData={enrichedData} />
           <PredictiveTimeline enrichedData={enrichedData} monthsAhead={3} />
           <div className="grid md:grid-cols-2 gap-4">
-            <PerformanceHeatmap performanceData={performanceData} bureaux={bureaux} metric="demandes" />
-            <PerformanceHeatmap performanceData={performanceData} bureaux={bureaux} metric="taux" />
+            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="demandes" />
+            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="taux" />
           </div>
         </div>
       )}
@@ -729,12 +911,22 @@ export default function AnalyticsPage() {
       {/* VUE: Anomalies */}
       {activeView === 'anomalies' && (
         <div className="space-y-6">
-          <AnomalyDetection performanceData={performanceData} enrichedData={enrichedData} />
+          <AnomalyDetection performanceData={enrichedData} enrichedData={enrichedData} />
           <div className="grid md:grid-cols-2 gap-4">
-            <PerformanceHeatmap performanceData={performanceData} bureaux={bureaux} metric="rejets" />
-            <PerformanceHeatmap performanceData={performanceData} bureaux={bureaux} metric="validations" />
+            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="rejets" />
+            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="validations" />
           </div>
         </div>
+      )}
+
+      {/* VUE: Finance */}
+      {activeView === 'finance' && (
+        <FinanceDashboard financials={financials} evolution={financeEvolution as any} />
+      )}
+
+      {/* VUE: Clients */}
+      {activeView === 'clients' && (
+        <ClientsDashboard clientsGlobalStats={clientsGlobalStats} evolution={clientsEvolution as any} />
       )}
 
       {/* VUE: Rapports */}
@@ -890,8 +1082,14 @@ export default function AnalyticsPage() {
 
       {/* Command palette */}
       {cmdOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-xl">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Commandes rapides"
+          onClick={() => setCmdOpen(false)}
+        >
+          <Card className="w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -910,7 +1108,10 @@ export default function AnalyticsPage() {
                 <CmdItem label="📊 Comparaisons" hint="Multi-bureaux" onClick={() => { setActiveView('comparaisons'); setCmdOpen(false); }} />
                 <CmdItem label="🔮 Prédictions" hint="Projections & timeline" onClick={() => { setActiveView('predictions'); setCmdOpen(false); }} />
                 <CmdItem label="🚨 Anomalies" hint="Détections + heatmaps" onClick={() => { setActiveView('anomalies'); setCmdOpen(false); }} />
+                <CmdItem label="💰 Finance" hint="Résultat net + trésorerie" onClick={() => { setActiveView('finance'); setCmdOpen(false); }} />
+                <CmdItem label="👥 Clients" hint="Nouveaux + CA + top clients" onClick={() => { setActiveView('clients'); setCmdOpen(false); }} />
                 <CmdItem label="📄 Rapports" hint="Génération PDF" onClick={() => { setActiveView('rapports'); setCmdOpen(false); }} />
+                <CmdItem label="🔍 Sources" hint="Traçabilité des indicateurs" onClick={() => { setActiveView('sources'); setCmdOpen(false); }} />
                 <CmdItem label="📤 Export CSV" hint="Données filtrées" onClick={() => { exportFilteredCsv(); setCmdOpen(false); }} />
               </div>
 

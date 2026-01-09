@@ -71,3 +71,83 @@ export const exportFacturesAsCSV = (
 
 
 
+// ============================================
+// Helpers génériques (réutilisables dans Analytics, etc.)
+// ============================================
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(value: unknown, delimiter: string) {
+  const s = String(value ?? '');
+  const needsQuotes = s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(delimiter);
+  const cleaned = s.replace(/"/g, '""');
+  return needsQuotes ? `"${cleaned}"` : cleaned;
+}
+
+export function toCsv(
+  rows: Array<Record<string, unknown>>,
+  opts?: { delimiter?: string; withBom?: boolean }
+) {
+  const delimiter = opts?.delimiter ?? ';';
+  const withBom = opts?.withBom ?? true;
+  const cols = Array.from(
+    rows.reduce((acc, r) => {
+      Object.keys(r ?? {}).forEach((k) => acc.add(k));
+      return acc;
+    }, new Set<string>())
+  );
+
+  const header = cols.map((c) => escapeCsvCell(c, delimiter)).join(delimiter);
+  const body = rows
+    .map((r) => cols.map((c) => escapeCsvCell((r as any)?.[c], delimiter)).join(delimiter))
+    .join('\n');
+
+  const content = `${header}\n${body}`;
+  return (withBom ? '\uFEFF' : '') + content;
+}
+
+export function exportJsonFile(data: unknown, filename: string) {
+  const jsonContent = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonContent], { type: 'application/json' });
+  downloadBlob(blob, filename);
+}
+
+export async function exportElementAsPdf(
+  element: HTMLElement,
+  filename: string,
+  opts?: { background?: string; scale?: number }
+) {
+  const { default: html2canvas } = await import('html2canvas');
+  const { default: jsPDF } = await import('jspdf');
+
+  const scale = Math.max(1, Math.min(3, opts?.scale ?? 2));
+  const canvas = await html2canvas(element, {
+    scale,
+    useCORS: true,
+    backgroundColor: opts?.background ?? null,
+    scrollX: 0,
+    scrollY: -window.scrollY,
+    windowWidth: document.documentElement.clientWidth,
+    windowHeight: document.documentElement.clientHeight,
+  });
+
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({
+    orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+    unit: 'px',
+    format: [canvas.width, canvas.height],
+  });
+
+  pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+  pdf.save(filename);
+}
+

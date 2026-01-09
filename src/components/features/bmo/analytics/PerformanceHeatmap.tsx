@@ -34,20 +34,52 @@ export function PerformanceHeatmap({ performanceData, bureaux, metric }: Perform
 
   const heatmapData = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
+    const isByBureau = performanceData.some((d: any) => d && typeof d === 'object' && 'bureau' in d);
 
-    bureaux.forEach(bureau => {
-      data[bureau.code] = {};
-      performanceData.forEach((month: any) => {
-        const key = month.month;
-        if (metric === 'taux') {
-          const taux = month.demandes > 0 
-            ? ((month.validations / month.demandes) * 100) 
-            : 0;
-          data[bureau.code][key] = taux;
-        } else {
-          data[bureau.code][key] = month[metric] || 0;
-        }
+    // Index rapide pour dataset bureau-par-bureau : map[bureau][month] = row
+    const index: Record<string, Record<string, any>> = {};
+    if (isByBureau) {
+      (performanceData as any[]).forEach((row: any) => {
+        const b = String(row?.bureau ?? '');
+        const m = String(row?.month ?? '');
+        if (!b || !m) return;
+        index[b] ||= {};
+        index[b][m] = row;
       });
+    }
+
+    bureaux.forEach((bureau) => {
+      data[bureau.code] = {};
+      if (isByBureau) {
+        // valeurs par bureau/mois
+        const months = Array.from(new Set((performanceData as any[]).map((r: any) => r?.month).filter(Boolean)));
+        months.forEach((month) => {
+          const row = index[bureau.code]?.[month];
+          const demandes = Number(row?.demandes ?? 0);
+          const validations = Number(row?.validations ?? 0);
+          const rejets = Number(row?.rejets ?? 0);
+          const value =
+            metric === 'taux'
+              ? demandes > 0
+                ? (validations / demandes) * 100
+                : 0
+              : Number(row?.[metric] ?? 0);
+          data[bureau.code][month] = value;
+        });
+      } else {
+        // dataset agrégé (pas de bureau) : on remplit toutes les lignes avec la même série
+        performanceData.forEach((month: any) => {
+          const key = month.month;
+          const demandes = Number(month?.demandes ?? 0);
+          const validations = Number(month?.validations ?? 0);
+          if (metric === 'taux') {
+            const taux = demandes > 0 ? (validations / demandes) * 100 : 0;
+            data[bureau.code][key] = taux;
+          } else {
+            data[bureau.code][key] = Number(month?.[metric] ?? 0);
+          }
+        });
+      }
     });
 
     // Calculer les valeurs min/max pour la normalisation
@@ -73,7 +105,15 @@ export function PerformanceHeatmap({ performanceData, bureaux, metric }: Perform
   };
 
   const months = useMemo(() => {
-    return performanceData.map((d: any) => d.month);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    (performanceData as any[]).forEach((d: any) => {
+      const m = String(d?.month ?? '');
+      if (!m || seen.has(m)) return;
+      seen.add(m);
+      out.push(m);
+    });
+    return out;
   }, [performanceData]);
 
   return (

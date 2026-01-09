@@ -12,15 +12,15 @@ export default function MaitreOuvrageLayout({ children }: { children: ReactNode 
         Aller au contenu
       </a>
 
-      {/* Plein écran fiable + scroll interne stable */}
-      <div className="w-full min-h-screen h-[100dvh] overflow-hidden flex flex-col">
+      {/* Zone de scroll: doit s'adapter au layout parent (header déjà présent dans BMOLayout) */}
+      <div className="w-full flex-1 min-h-0 overflow-hidden flex flex-col">
         <main
           id="main-content"
           role="main"
           tabIndex={-1}
           className="
             flex-1 min-h-0
-            overflow-y-auto overscroll-contain
+            overflow-y-auto overscroll-contain scrollbar-gutter-stable scrollbar-subtle
             pb-[env(safe-area-inset-bottom)]
             focus:outline-none
           "

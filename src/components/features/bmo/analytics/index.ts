@@ -11,4 +11,7 @@ export { PredictiveTimeline } from './PredictiveTimeline';
 export { MultiBureauComparator } from './MultiBureauComparator';
 export { NarrativeReport } from './NarrativeReport';
 export { DetailsSidePanel } from './DetailsSidePanel';
+export { FinanceDashboard } from './FinanceDashboard';
+export { ClientsDashboard } from './ClientsDashboard';
+export { SavedViews } from './SavedViews';
 

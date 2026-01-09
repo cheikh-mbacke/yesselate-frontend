@@ -28,6 +28,11 @@ export function AnomalyDetection({ performanceData, enrichedData }: AnomalyDetec
 
   const anomalies = useMemo(() => {
     const detected: Anomaly[] = [];
+    const monthOrder = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const monthIdx = (m: string) => {
+      const i = monthOrder.indexOf(m);
+      return i >= 0 ? i : -1;
+    };
 
     if (enrichedData.length < 3) return detected;
 
@@ -94,7 +99,9 @@ export function AnomalyDetection({ performanceData, enrichedData }: AnomalyDetec
 
     // Détecter les seuils critiques
     enrichedData.forEach((data) => {
-      const tauxRejet = (data.rejets / data.demandes) * 100;
+      const demandes = Number(data.demandes ?? 0);
+      const rejets = Number(data.rejets ?? 0);
+      const tauxRejet = demandes > 0 ? (rejets / demandes) * 100 : 0;
       if (tauxRejet > 30 && data.demandes > 50) {
         detected.push({
           type: 'threshold',
@@ -114,7 +121,7 @@ export function AnomalyDetection({ performanceData, enrichedData }: AnomalyDetec
       if (severityOrder[a.severity] !== severityOrder[b.severity]) {
         return severityOrder[a.severity] - severityOrder[b.severity];
       }
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
+      return monthIdx(b.date) - monthIdx(a.date);
     });
   }, [enrichedData]);
 

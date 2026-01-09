@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { apiEndpoints, apiIntegrations } from '@/lib/data';
+import { ApiRequestWorkbench } from '@/components/features/bmo/api';
 
 type ViewTab = 'endpoints' | 'integrations';
 
@@ -790,6 +791,19 @@ export default function ApiPage() {
                     <Button size="sm" variant="info" onClick={() => handleSimulateCall(selectedEndpoint)}>
                       ▶️ Tester (simulation)
                     </Button>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-slate-700/50">
+                    <ApiRequestWorkbench
+                      endpoint={{
+                        id: selectedEndpoint.id,
+                        name: selectedEndpoint.name,
+                        method: selectedEndpoint.method,
+                        path: selectedEndpoint.path,
+                        avgResponseTime: selectedEndpoint.avgResponseTime,
+                        errorRate: selectedEndpoint.errorRate,
+                      }}
+                    />
                   </div>
                 </CardContent>
               </Card>

@@ -7,6 +7,7 @@ import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
 import { SearchIcon, X } from 'lucide-react';
 import { ActivityCenter } from './ActivityCenter';
+import { GlobalShortcutsMenu } from './GlobalShortcutsMenu';
 import {
   demands,
   projects,
@@ -406,6 +407,9 @@ export function BMOHeader() {
           <span>🔄</span>
           <span>Substitution</span>
         </button>
+
+        {/* Raccourcis Clavier */}
+        <GlobalShortcutsMenu />
 
         {/* Notifications */}
         <button

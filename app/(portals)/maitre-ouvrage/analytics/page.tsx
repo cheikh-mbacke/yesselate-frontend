@@ -1,1128 +1,407 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useAnalyticsWorkspaceStore } from '@/lib/stores/analyticsWorkspaceStore';
 
+import { AnalyticsWorkspaceTabs } from '@/components/features/bmo/analytics/workspace/AnalyticsWorkspaceTabs';
+import { AnalyticsWorkspaceContent } from '@/components/features/bmo/analytics/workspace/AnalyticsWorkspaceContent';
+import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
+import { AnalyticsStatsModal } from '@/components/features/bmo/analytics/workspace/AnalyticsStatsModal';
+import { AnalyticsExportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsExportModal';
+import { AnalyticsAlertConfigModal } from '@/components/features/bmo/analytics/workspace/AnalyticsAlertConfigModal';
+import { AnalyticsReportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsReportModal';
+import { AnalyticsSideRailClean } from '@/components/features/bmo/analytics/workspace/AnalyticsSideRailClean';
+
+import { FluentButton } from '@/components/ui/fluent-button';
+import { FluentModal } from '@/components/ui/fluent-modal';
+
+import {
+  BarChart3,
+  Command,
+  Maximize,
+  Minimize,
+  PanelRightClose,
+  PanelRight,
+  MoreHorizontal,
+  TrendingUp,
+  Activity,
+  DollarSign,
+  LayoutDashboard,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { usePageNavigation } from '@/hooks/usePageNavigation';
-import { useAutoSyncCounts } from '@/hooks/useAutoSync';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+type Mode = 'dashboard' | 'workspace';
 
-import {
-  AnalyticsDashboard,
-  ComparisonChart,
-  PredictionInsights,
-  AdvancedFilters,
-  AnomalyDetection,
-  PerformanceHeatmap,
-  PerformanceScore,
-  AdvancedExport,
-  IntelligentInsights,
-  PredictiveTimeline,
-  MultiBureauComparator,
-  NarrativeReport,
-  DetailsSidePanel,
-  FinanceDashboard,
-  ClientsDashboard,
-  SavedViews,
-} from '@/components/features/bmo/analytics';
+const UI_PREF_KEY = 'bmo.analytics.ui.v2';
 
-import { bureaux, clientsGlobalStats, financials, performanceData, projects } from '@/lib/data';
-import { downloadBlob, toCsv } from '@/lib/utils/export';
-import { aggregateByMonth, expandMonthlyDataByBureau, filterRowsByPeriod } from '@/lib/utils/analytics-helpers';
+function readUIPrefs() {
+  try {
+    const raw = localStorage.getItem(UI_PREF_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
-type ReportType = 'mensuel-dg' | 'bureau' | 'projet';
-type ViewType =
-  | 'overview'
-  | 'tendances'
-  | 'rapports'
-  | 'sources'
-  | 'comparaisons'
-  | 'predictions'
-  | 'anomalies'
-  | 'insights'
-  | 'finance'
-  | 'clients';
+function writeUIPrefs(p: Record<string, unknown>) {
+  try {
+    localStorage.setItem(UI_PREF_KEY, JSON.stringify(p));
+  } catch {
+    // no-op
+  }
+}
 
-type BaseMonthlyRow = {
-  month: string;
-  validations: number;
-  demandes: number;
-  budget: number;
-  rejets: number;
-};
+function ShortcutRow({ shortcut, label }: { shortcut: string; label: string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 text-sm">
+      <span className="text-slate-600 dark:text-slate-400">{label}</span>
+      <kbd className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-xs border border-slate-200 dark:border-slate-700">
+        {shortcut}
+      </kbd>
+    </div>
+  );
+}
 
-type EnrichedRow = BaseMonthlyRow & {
-  tauxValidation: number;
-  tauxRejet: number;
-};
+function ignoreIfTyping(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  const tag = target?.tagName?.toLowerCase();
+  if (target?.isContentEditable) return true;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return false;
+}
 
-const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+export default function AnalyticsPage() {
+  const { openTab, tabs, activeTabId, openCommandPalette } = useAnalyticsWorkspaceStore();
 
-function CmdItem({
-  label,
-  hint,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
+  const [mode, setMode] = useState<Mode>('dashboard');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [alertConfigModalOpen, setAlertConfigModalOpen] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showSideRail, setShowSideRail] = useState(false);
+
+  // Init prefs
+  useEffect(() => {
+    const p = readUIPrefs();
+    if (p) {
+      if (p.mode) setMode(p.mode);
+      if (typeof p.fullscreen === 'boolean') setFullscreen(p.fullscreen);
+      if (typeof p.showSideRail === 'boolean') setShowSideRail(p.showSideRail);
+    }
+  }, []);
+
+  // Persist prefs
+  useEffect(() => {
+    writeUIPrefs({ mode, fullscreen, showSideRail });
+  }, [mode, fullscreen, showSideRail]);
+
+  // Fullscreen
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [fullscreen]);
+
+  // Custom events
+  useEffect(() => {
+    const handleOpenStats = () => setStatsModalOpen(true);
+    const handleOpenExport = () => setExportModalOpen(true);
+    const handleOpenAlerts = () => setAlertConfigModalOpen(true);
+    const handleOpenReport = () => setReportModalOpen(true);
+
+    window.addEventListener('analytics:open-stats', handleOpenStats);
+    window.addEventListener('analytics:open-export', handleOpenExport);
+    window.addEventListener('analytics:open-alerts', handleOpenAlerts);
+    window.addEventListener('analytics:open-report', handleOpenReport);
+
+    return () => {
+      window.removeEventListener('analytics:open-stats', handleOpenStats);
+      window.removeEventListener('analytics:open-export', handleOpenExport);
+      window.removeEventListener('analytics:open-alerts', handleOpenAlerts);
+      window.removeEventListener('analytics:open-report', handleOpenReport);
+    };
+  }, []);
+
+  const hasTabs = tabs.length > 0 && !!activeTabId;
+  const showDashboard = mode === 'dashboard' && !hasTabs;
+
+  const openAndFocus = useCallback(
+    (tab: Parameters<typeof openTab>[0]) => {
+      openTab(tab);
+      if (mode === 'dashboard') setMode('workspace');
+    },
+    [openTab, mode]
+  );
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (ignoreIfTyping(e)) return;
+      const mod = e.ctrlKey || e.metaKey;
+
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setStatsModalOpen(true);
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setExportModalOpen(true);
+        return;
+      }
+
+      if (mod && e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        setReportModalOpen(true);
+        return;
+      }
+
+      if (mod && !e.shiftKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault();
+        const views = [
+          { id: 'dashboard:overview', type: 'dashboard' as const, title: "Vue d'ensemble", icon: '📊', data: { view: 'overview' } },
+          { id: 'inbox:performance', type: 'inbox' as const, title: 'Performance', icon: '⚡', data: { queue: 'performance' } },
+          { id: 'inbox:financial', type: 'inbox' as const, title: 'Financier', icon: '💰', data: { queue: 'financial' } },
+          { id: 'inbox:trends', type: 'inbox' as const, title: 'Tendances', icon: '📈', data: { queue: 'trends' } },
+          { id: 'inbox:alerts', type: 'inbox' as const, title: 'Alertes', icon: '⚠️', data: { queue: 'alerts' } },
+        ];
+        const idx = parseInt(e.key) - 1;
+        if (views[idx]) openAndFocus(views[idx]);
+        return;
+      }
+
+      if (e.key === 'F11' || (mod && e.shiftKey && e.key.toLowerCase() === 'f')) {
+        e.preventDefault();
+        setFullscreen((p) => !p);
+        return;
+      }
+
+      if (e.key === '?' && !mod) {
+        e.preventDefault();
+        setShowHelp(true);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setStatsModalOpen(false);
+        setExportModalOpen(false);
+        setAlertConfigModalOpen(false);
+        setReportModalOpen(false);
+        setShowHelp(false);
+        if (fullscreen) setFullscreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openCommandPalette, openAndFocus, fullscreen]);
+
+  return (
+    <div className={cn('min-h-screen bg-slate-50 dark:bg-[#0f0f0f]', fullscreen && 'fixed inset-0 z-50')}>
+      {/* Header minimal */}
+      <header className="sticky top-0 z-30 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161616]">
+        <div className="mx-auto max-w-[1920px] px-4 sm:px-6">
+          <div className="flex h-14 items-center justify-between">
+            <div className="flex items-center gap-3">
+              <BarChart3 className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+              <h1 className="text-base font-semibold text-slate-800 dark:text-slate-200">Analytics</h1>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={openCommandPalette}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Command className="w-4 h-4" />
+                <span className="hidden sm:inline">Rechercher...</span>
+                <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">⌘K</kbd>
+              </button>
+
+              <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+
+              <button
+                type="button"
+                onClick={() => setShowSideRail((p) => !p)}
+                className={cn(
+                  'p-2 rounded-lg transition-colors',
+                  showSideRail ? 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                )}
+                title="Panneau latéral"
+              >
+                {showSideRail ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFullscreen((p) => !p)}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Plein écran"
+              >
+                {fullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowHelp(true)}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Options"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main + Side Rail */}
+      <div className="flex">
+        <main className={cn('flex-1 transition-all duration-200', showSideRail && 'xl:mr-72')}>
+          <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
+            {showDashboard ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">Tableau de bord</h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Vue synthétique des indicateurs clés</p>
+                  </div>
+                  <FluentButton variant="secondary" size="sm" onClick={() => setMode('workspace')}>
+                    <LayoutDashboard className="w-4 h-4" />
+                    Workspace
+                  </FluentButton>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <NavCard
+                    icon={<BarChart3 className="w-5 h-5" />}
+                    title="Vue d'ensemble"
+                    subtitle="Synthèse globale"
+                    onClick={() => openAndFocus({ id: 'dashboard:overview', type: 'dashboard', title: "Vue d'ensemble", icon: '📊', data: { view: 'overview' } })}
+                  />
+                  <NavCard
+                    icon={<Activity className="w-5 h-5" />}
+                    title="Performance"
+                    subtitle="KPIs opérationnels"
+                    onClick={() => openAndFocus({ id: 'inbox:performance', type: 'inbox', title: 'Performance', icon: '⚡', data: { queue: 'performance' } })}
+                  />
+                  <NavCard
+                    icon={<DollarSign className="w-5 h-5" />}
+                    title="Financier"
+                    subtitle="Budget & dépenses"
+                    onClick={() => openAndFocus({ id: 'inbox:financial', type: 'inbox', title: 'Financier', icon: '💰', data: { queue: 'financial' } })}
+                  />
+                  <NavCard
+                    icon={<TrendingUp className="w-5 h-5" />}
+                    title="Tendances"
+                    subtitle="Évolutions"
+                    onClick={() => openAndFocus({ id: 'inbox:trends', type: 'inbox', title: 'Tendances', icon: '📈', data: { queue: 'trends' } })}
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] overflow-hidden">
+                  <AnalyticsWorkspaceContent />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {hasTabs && <AnalyticsWorkspaceTabs />}
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] overflow-hidden">
+                  <AnalyticsWorkspaceContent />
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+
+        {showSideRail && (
+          <aside className="hidden xl:block fixed right-0 top-14 bottom-0 w-72 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161616] overflow-y-auto">
+            <AnalyticsSideRailClean onOpenView={openAndFocus} />
+          </aside>
+        )}
+      </div>
+
+      {/* Modals */}
+      <AnalyticsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
+      <AnalyticsExportModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} />
+      <AnalyticsAlertConfigModal open={alertConfigModalOpen} onClose={() => setAlertConfigModalOpen(false)} />
+      <AnalyticsReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} />
+      <AnalyticsCommandPalette />
+
+      {/* Help Modal */}
+      <FluentModal open={showHelp} onClose={() => setShowHelp(false)} title="Raccourcis & Actions">
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Navigation</h3>
+            <div className="space-y-1">
+              <ShortcutRow shortcut="⌘K" label="Rechercher / Commandes" />
+              <ShortcutRow shortcut="⌘1-5" label="Accès rapide aux vues" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Actions</h3>
+            <div className="space-y-1">
+              <ShortcutRow shortcut="⌘S" label="Statistiques" />
+              <ShortcutRow shortcut="⌘E" label="Export" />
+              <ShortcutRow shortcut="⌘⇧R" label="Rapport" />
+              <ShortcutRow shortcut="F11" label="Plein écran" />
+              <ShortcutRow shortcut="Esc" label="Fermer" />
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+            <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Outils</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => { setShowHelp(false); setStatsModalOpen(true); }} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Statistiques</span>
+              </button>
+              <button type="button" onClick={() => { setShowHelp(false); setExportModalOpen(true); }} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Export</span>
+              </button>
+              <button type="button" onClick={() => { setShowHelp(false); setReportModalOpen(true); }} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Rapports</span>
+              </button>
+              <button type="button" onClick={() => { setShowHelp(false); setAlertConfigModalOpen(true); }} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Alertes</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <FluentButton variant="secondary" onClick={() => setShowHelp(false)} className="w-full">Fermer</FluentButton>
+          </div>
+        </div>
+      </FluentModal>
+    </div>
+  );
+}
+
+function NavCard({ icon, title, subtitle, onClick }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-left p-3 rounded-lg border border-slate-700/30 hover:bg-orange-500/5 transition-colors"
+      className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all text-left group"
     >
-      <p className="text-sm font-semibold">{label}</p>
-      <p className="text-[10px] text-slate-400">{hint}</p>
+      <div className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">{icon}</div>
+      <div>
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{title}</div>
+        <div className="text-xs text-slate-400">{subtitle}</div>
+      </div>
     </button>
-  );
-}
-
-export default function AnalyticsPage() {
-  const sp = useSearchParams();
-  const { darkMode } = useAppStore();
-  const { addToast } = useBMOStore();
-
-  // Navigation/persistance simple (si votre hook gère un store)
-  const { updateFilters, getFilters } = usePageNavigation('analytics');
-
-  const [activeView, setActiveView] = useState<ViewType>('overview');
-  const [selectedBureau, setSelectedBureau] = useState<string>('ALL');
-  const [selectedProject, setSelectedProject] = useState<string>('ALL');
-  const [generatingReport, setGeneratingReport] = useState(false);
-
-  const [selectedBureaux, setSelectedBureaux] = useState<string[]>([]);
-  const [advancedFilters, setAdvancedFilters] = useState<Record<string, any>>({});
-
-  const [sidePanelData, setSidePanelData] = useState<any>(null);
-  const [showSidePanel, setShowSidePanel] = useState(false);
-  const lastAnomaliesNotifiedRef = useRef<{ count: number; ts: number } | null>(null);
-
-  const handleAdvancedFiltersChange = (next: Record<string, any>) => {
-    setAdvancedFilters(next);
-    const nextBureaux = Array.isArray(next?.bureaux) ? next.bureaux : [];
-    setSelectedBureaux(nextBureaux);
-  };
-
-  // UX : recherche + palette de commandes
-  const [q, setQ] = useState('');
-  const search = q.trim().toLowerCase();
-  const [cmdOpen, setCmdOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-  const exportRef = useRef<HTMLDivElement | null>(null);
-
-  // Init depuis URL + store navigation (sans casser vos composants existants)
-  useEffect(() => {
-    const view = sp.get('view') as ViewType | null;
-    const bureau = sp.get('bureau');
-    const project = sp.get('project');
-    const bureauxParam = sp.get('bureaux');
-    const period = sp.get('period') as 'month' | 'quarter' | 'year' | 'custom' | null;
-    const startDate = sp.get('startDate');
-    const endDate = sp.get('endDate');
-    const filterType = sp.get('type');
-    const minDemandesParam = sp.get('minDemandes');
-    const maxTauxRejetParam = sp.get('maxTauxRejet');
-    const minTauxValidationParam = sp.get('minTauxValidation');
-
-    if (view && ['overview', 'tendances', 'insights', 'comparaisons', 'predictions', 'anomalies', 'rapports', 'sources', 'finance', 'clients'].includes(view)) {
-      setActiveView(view);
-    }
-    if (bureau) setSelectedBureau(bureau);
-    if (project) setSelectedProject(project);
-
-    const urlAdvanced: Record<string, any> = {};
-    if (period && ['month', 'quarter', 'year', 'custom'].includes(period)) urlAdvanced.period = period;
-    if (startDate) urlAdvanced.startDate = startDate;
-    if (endDate) urlAdvanced.endDate = endDate;
-    if (filterType) urlAdvanced.type = filterType;
-
-    const minDemandes = minDemandesParam ? Number(minDemandesParam) : undefined;
-    const maxTauxRejet = maxTauxRejetParam ? Number(maxTauxRejetParam) : undefined;
-    const minTauxValidation = minTauxValidationParam ? Number(minTauxValidationParam) : undefined;
-    if (Number.isFinite(minDemandes)) urlAdvanced.minDemandes = minDemandes;
-    if (Number.isFinite(maxTauxRejet)) urlAdvanced.maxTauxRejet = maxTauxRejet;
-    if (Number.isFinite(minTauxValidation)) urlAdvanced.minTauxValidation = minTauxValidation;
-    if (bureauxParam) {
-      const parsed = bureauxParam
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (parsed.length) urlAdvanced.bureaux = parsed;
-    }
-    if (Object.keys(urlAdvanced).length) {
-      setAdvancedFilters((prev) => ({ ...prev, ...urlAdvanced }));
-      setSelectedBureaux(Array.isArray(urlAdvanced.bureaux) ? urlAdvanced.bureaux : []);
-    }
-
-    const stored = (getFilters?.() ?? {}) as any;
-    if (stored && typeof stored === 'object') {
-      setActiveView((prev) => (view ? prev : stored.activeView ?? prev));
-      setSelectedBureau((prev) => (bureau ? prev : stored.selectedBureau ?? prev));
-      setSelectedProject((prev) => (project ? prev : stored.selectedProject ?? prev));
-      setAdvancedFilters((prev) => (Object.keys(urlAdvanced).length ? prev : stored.advancedFilters ?? prev));
-      setSelectedBureaux((prev) => (bureauxParam ? prev : stored.selectedBureaux ?? prev));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Sync vers URL + store navigation (IMPORTANT: replace pour ne pas casser le scroll / l'historique)
-  useEffect(() => {
-    try {
-      const urlFilters: Record<string, string | number | boolean> = {
-        view: activeView,
-      };
-
-      if (selectedBureau && selectedBureau !== 'ALL') urlFilters.bureau = selectedBureau;
-      if (selectedProject && selectedProject !== 'ALL') urlFilters.project = selectedProject;
-
-      if (advancedFilters?.period) urlFilters.period = String(advancedFilters.period);
-      if (advancedFilters?.startDate) urlFilters.startDate = String(advancedFilters.startDate);
-      if (advancedFilters?.endDate) urlFilters.endDate = String(advancedFilters.endDate);
-      if (advancedFilters?.type) urlFilters.type = String(advancedFilters.type);
-      if (Number.isFinite(advancedFilters?.minDemandes)) urlFilters.minDemandes = Number(advancedFilters.minDemandes);
-      if (Number.isFinite(advancedFilters?.maxTauxRejet)) urlFilters.maxTauxRejet = Number(advancedFilters.maxTauxRejet);
-      if (Number.isFinite(advancedFilters?.minTauxValidation)) urlFilters.minTauxValidation = Number(advancedFilters.minTauxValidation);
-      if (selectedBureaux?.length) urlFilters.bureaux = selectedBureaux.join(',');
-
-      updateFilters?.(urlFilters, true);
-    } catch {
-      // ignore
-    }
-  }, [
-    activeView,
-    selectedBureau,
-    selectedProject,
-    advancedFilters?.period,
-    advancedFilters?.startDate,
-    advancedFilters?.endDate,
-    advancedFilters?.type,
-    advancedFilters?.minDemandes,
-    advancedFilters?.maxTauxRejet,
-    advancedFilters?.minTauxValidation,
-    selectedBureaux,
-    updateFilters,
-  ]);
-
-  // Raccourcis clavier : "/" recherche, Ctrl/⌘+K palette
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if ((e.metaKey || e.ctrlKey) && key === 'k') {
-        e.preventDefault();
-        setCmdOpen(true);
-      }
-      if (!e.metaKey && !e.ctrlKey && key === '/') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (key === 'escape') {
-        setCmdOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  // =========================
-  // Dataset cohérent par bureau (déverrouille Comparaisons / Heatmaps)
-  // =========================
-  const bureauExpandedAll = useMemo(() => {
-    return expandMonthlyDataByBureau(performanceData as any, bureaux, { jitter: 0.08 });
-  }, []);
-
-  const bureauExpandedPeriod = useMemo(() => {
-    return filterRowsByPeriod(bureauExpandedAll as any, {
-      period: advancedFilters?.period,
-      startDate: advancedFilters?.startDate,
-      endDate: advancedFilters?.endDate,
-    });
-  }, [bureauExpandedAll, advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
-
-  const bureauExpandedSelected = useMemo(() => {
-    if (!selectedBureaux?.length || selectedBureaux.includes('ALL')) return bureauExpandedPeriod as any[];
-    const set = new Set(selectedBureaux);
-    return (bureauExpandedPeriod as any[]).filter((r: any) => set.has(String(r.bureau)));
-  }, [bureauExpandedPeriod, selectedBureaux]);
-
-  const monthlyAgg = useMemo(() => {
-    return aggregateByMonth(bureauExpandedSelected as any);
-  }, [bureauExpandedSelected]);
-
-  const enrichedBureauData = useMemo(() => {
-    return (bureauExpandedSelected as any[]).map((d: any) => {
-      const demandes = Number(d.demandes ?? 0);
-      const validations = Number(d.validations ?? 0);
-      const rejets = Number(d.rejets ?? 0);
-      const denom = demandes <= 0 ? 1 : demandes;
-      return {
-        ...d,
-        tauxValidation: clamp(Math.round((validations / denom) * 100), 0, 100),
-        tauxRejet: clamp(Math.round((rejets / denom) * 100), 0, 100),
-      };
-    });
-  }, [bureauExpandedSelected]);
-
-  // Données enrichies (agrégées sur les bureaux filtrés) + seuils + recherche
-  const enrichedData = useMemo<EnrichedRow[]>(() => {
-    let data: EnrichedRow[] = (monthlyAgg as any[]).map((d: any) => {
-      const demandes = Number(d.demandes ?? 0);
-      const validations = Number(d.validations ?? 0);
-      const rejets = Number(d.rejets ?? 0);
-      const denom = demandes <= 0 ? 1 : demandes;
-      return {
-        ...d,
-        tauxValidation: clamp(Math.round((validations / denom) * 100), 0, 100),
-        tauxRejet: clamp(Math.round((rejets / denom) * 100), 0, 100),
-      };
-    });
-
-    if (Number.isFinite(advancedFilters?.minDemandes)) {
-      const min = Number(advancedFilters.minDemandes);
-      data = data.filter((d: any) => Number(d.demandes ?? 0) >= min);
-    }
-    if (Number.isFinite(advancedFilters?.maxTauxRejet)) {
-      const max = Number(advancedFilters.maxTauxRejet);
-      data = data.filter((d: any) => Number(d.tauxRejet ?? 0) <= max);
-    }
-    if (Number.isFinite(advancedFilters?.minTauxValidation)) {
-      const min = Number(advancedFilters.minTauxValidation);
-      data = data.filter((d: any) => Number(d.tauxValidation ?? 0) >= min);
-    }
-
-    if (search) {
-      data = data.filter((d: any) => {
-        const hay = `${d.month ?? ''} ${d.demandes ?? ''} ${d.validations ?? ''} ${d.rejets ?? ''} ${d.budget ?? ''} ${d.tauxValidation ?? ''} ${d.tauxRejet ?? ''}`.toLowerCase();
-        return hay.includes(search);
-      });
-    }
-
-    return data;
-  }, [monthlyAgg, advancedFilters?.minDemandes, advancedFilters?.maxTauxRejet, advancedFilters?.minTauxValidation, search]);
-
-  // Totaux annuels (sur données filtrées)
-  const yearlyTotals = useMemo(() => {
-    return enrichedData.reduce(
-      (acc, m: any) => ({
-        demandes: acc.demandes + Number(m.demandes ?? 0),
-        validations: acc.validations + Number(m.validations ?? 0),
-        rejets: acc.rejets + Number(m.rejets ?? 0),
-        budget: acc.budget + Number(m.budget ?? 0),
-      }),
-      { demandes: 0, validations: 0, rejets: 0, budget: 0 }
-    );
-  }, [enrichedData]);
-
-  const monthlyAverages = useMemo(() => {
-    const count = enrichedData.length || 1;
-    return {
-      demandes: Math.round(yearlyTotals.demandes / count),
-      validations: Math.round(yearlyTotals.validations / count),
-      rejets: Math.round(yearlyTotals.rejets / count),
-      budget: Number(yearlyTotals.budget / count).toFixed(1),
-    };
-  }, [yearlyTotals, enrichedData.length]);
-
-  // Previous period (6 premiers mois) stabilisé
-  const previousPeriodTotals = useMemo(() => {
-    const allAgg = aggregateByMonth(bureauExpandedAll as any);
-    return allAgg.slice(0, 6).reduce(
-      (acc: any, m: any) => ({
-        demandes: acc.demandes + Number(m.demandes ?? 0),
-        validations: acc.validations + Number(m.validations ?? 0),
-        rejets: acc.rejets + Number(m.rejets ?? 0),
-        budget: acc.budget + Number(m.budget ?? 0),
-      }),
-      { demandes: 0, validations: 0, rejets: 0, budget: 0 }
-    );
-  }, [bureauExpandedAll]);
-
-  // Anomalies "simples" (utile pour sidebar counts / badges)
-  const anomaliesCount = useMemo(() => {
-    // heuristique: tauxRejet > 20% ou baisse brutale de validations
-    let count = 0;
-    for (let i = 0; i < enrichedData.length; i++) {
-      const r = enrichedData[i] as any;
-      const prev = enrichedData[i - 1] as any;
-      if (Number(r.tauxRejet ?? 0) > 20) count++;
-      if (prev && Number(r.validations ?? 0) < Number(prev.validations ?? 0) * 0.6) count++;
-    }
-    return count;
-  }, [enrichedData]);
-
-  // Alerting (anti-spam) : notifier seulement sur changement + seuil
-  useEffect(() => {
-    if (!Number.isFinite(anomaliesCount) || anomaliesCount <= 0) return;
-    const now = Date.now();
-    const last = lastAnomaliesNotifiedRef.current;
-    const changed = !last || last.count !== anomaliesCount;
-    const cooledDown = !last || now - last.ts > 60_000;
-    if (!changed || !cooledDown) return;
-
-    lastAnomaliesNotifiedRef.current = { count: anomaliesCount, ts: now };
-    addToast(
-      anomaliesCount >= 5
-        ? `🚨 Pilotage: ${anomaliesCount} anomalies détectées (priorité haute)`
-        : `⚠️ Pilotage: ${anomaliesCount} anomalies détectées`,
-      anomaliesCount >= 5 ? 'error' : 'warning'
-    );
-  }, [anomaliesCount, addToast]);
-
-  // Sync counts sidebar (ex: anomalies)
-  useAutoSyncCounts('analytics', () => anomaliesCount, { interval: 15000, immediate: true });
-
-  // Sources (traçabilité) : useMemo pour éviter recalcul/hydratation "bruyante"
-  const dataSources = useMemo(() => {
-    const now = new Date().toLocaleString('fr-FR');
-    return [
-      {
-        indicateur: 'Demandes',
-        source: 'Module Demandes (demands)',
-        table: 'demands',
-        champs: 'id, status, date, bureau',
-        frequence: 'Temps réel',
-        lastSync: now,
-      },
-      {
-        indicateur: 'Validations',
-        source: 'Module Validation BC/Factures',
-        table: 'bcToValidate, facturesToValidate',
-        champs: 'status === "validated"',
-        frequence: 'Temps réel',
-        lastSync: now,
-      },
-      {
-        indicateur: 'Rejets',
-        source: 'Module Validation BC/Factures',
-        table: 'bcToValidate, facturesToValidate',
-        champs: 'status === "rejected"',
-        frequence: 'Temps réel',
-        lastSync: now,
-      },
-      {
-        indicateur: 'Budget traité',
-        source: 'Module Paiements N+1',
-        table: 'paymentsN1',
-        champs: 'SUM(amount) WHERE status = "validated"',
-        frequence: 'Quotidien',
-        lastSync: now,
-      },
-      {
-        indicateur: 'Dossiers bloqués',
-        source: 'Module Blocages',
-        table: 'blockedDossiers',
-        champs: 'delay >= 5',
-        frequence: 'Temps réel',
-        lastSync: now,
-      },
-      {
-        indicateur: 'Charge bureaux',
-        source: 'Calcul agrégé',
-        table: 'demands, tasks, projects',
-        champs: 'COUNT(*) GROUP BY bureau',
-        frequence: 'Horaire',
-        lastSync: now,
-      },
-    ];
-  }, []);
-
-  const financeEvolution = useMemo(() => {
-    return filterRowsByPeriod((financials as any)?.evolution ?? [], {
-      period: advancedFilters?.period,
-      startDate: advancedFilters?.startDate,
-      endDate: advancedFilters?.endDate,
-    });
-  }, [advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
-
-  const clientsEvolution = useMemo(() => {
-    return filterRowsByPeriod((clientsGlobalStats as any)?.evolutionMensuelle ?? [], {
-      period: advancedFilters?.period,
-      startDate: advancedFilters?.startDate,
-      endDate: advancedFilters?.endDate,
-    });
-  }, [advancedFilters?.period, advancedFilters?.startDate, advancedFilters?.endDate]);
-
-  const generateReport = async (type: ReportType) => {
-    setGeneratingReport(true);
-    addToast(`Génération du rapport ${type} en cours...`, 'info');
-
-    // simulate
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-
-    setGeneratingReport(false);
-    addToast(`Rapport ${type} généré avec succès !`, 'success');
-  };
-
-  const handleKpiClick = (kpiData: any) => {
-    setSidePanelData({
-      title: kpiData.title,
-      type: 'kpi',
-      details: kpiData.details,
-      trend: kpiData.trend,
-      metadata: {
-        'Dernière mise à jour': new Date().toLocaleString('fr-FR'),
-        Source: kpiData.source || 'Calcul automatique',
-      },
-    });
-    setShowSidePanel(true);
-  };
-
-  const exportFilteredCsv = () => {
-    const rows = enrichedData.map((r: any) => ({
-      month: r.month,
-      demandes: r.demandes,
-      validations: r.validations,
-      rejets: r.rejets,
-      tauxValidation: `${r.tauxValidation}%`,
-      tauxRejet: `${r.tauxRejet}%`,
-      budget: r.budget,
-    }));
-
-    const csv = toCsv(rows, { delimiter: ';', withBom: true });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    downloadBlob(blob, `analytics-${new Date().toISOString().slice(0, 10)}.csv`);
-
-    addToast('📤 Export CSV généré', 'success');
-  };
-
-  const resetAll = () => {
-    setQ('');
-    setAdvancedFilters({});
-    setSelectedBureaux([]);
-    setSelectedBureau('ALL');
-    setSelectedProject('ALL');
-    addToast('Filtres réinitialisés.', 'info');
-  };
-
-  const applySavedView = (state: {
-    activeView: string;
-    selectedBureau: string;
-    selectedProject: string;
-    advancedFilters: Record<string, any>;
-    selectedBureaux: string[];
-  }) => {
-    setActiveView(state.activeView as ViewType);
-    setSelectedBureau(state.selectedBureau ?? 'ALL');
-    setSelectedProject(state.selectedProject ?? 'ALL');
-    setAdvancedFilters(state.advancedFilters ?? {});
-    setSelectedBureaux(Array.isArray(state.selectedBureaux) ? state.selectedBureaux : []);
-  };
-
-  return (
-    <div ref={exportRef} className="space-y-6 p-4">
-      {/* Header "pilotage" + outils */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            <span className="text-3xl">📈</span>
-            Analytics & Pilotage Avancé
-            {anomaliesCount > 0 && (
-              <div className="flex items-center gap-2 ml-2">
-                <Badge variant="warning">{anomaliesCount} anomalies</Badge>
-                <Button size="sm" variant="ghost" onClick={() => setActiveView('anomalies')} className="h-7 px-2 text-xs">
-                  Voir
-                </Button>
-              </div>
-            )}
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Tableaux de bord intelligents • "/" recherche • "Ctrl/⌘+K" commandes
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <SavedViews
-            current={{
-              activeView,
-              selectedBureau,
-              selectedProject,
-              advancedFilters,
-              selectedBureaux,
-            }}
-            onApply={applySavedView}
-          />
-          <AdvancedFilters filters={advancedFilters} onFiltersChange={handleAdvancedFiltersChange} />
-          <AdvancedExport data={enrichedData} type="analytics" fileName="rapport-analytics" targetRef={exportRef} />
-          <Button size="sm" variant="ghost" onClick={exportFilteredCsv}>
-            📤 CSV
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setCmdOpen(true)}>
-            ⌘K
-          </Button>
-        </div>
-      </div>
-
-      {/* Empty state: aide au pilotage quand les filtres éliminent tout */}
-      {['overview', 'tendances', 'insights', 'comparaisons', 'predictions', 'anomalies', 'rapports', 'sources'].includes(activeView) &&
-        enrichedData.length === 0 && (
-          <Card className="border-orange-500/30">
-            <CardHeader>
-              <CardTitle className="text-sm">Aucune donnée pour ces filtres</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-2">
-              <p className="text-xs text-slate-400 flex-1 min-w-[220px]">
-                Ajustez la période / les bureaux, ou réinitialisez pour revenir à une vue exploitable.
-              </p>
-              <Button size="sm" variant="secondary" onClick={resetAll}>
-                Réinitialiser
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setActiveView('sources')}>
-                Voir sources
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-      {/* Recherche */}
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          ref={searchRef}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Rechercher (mois, bureau, chiffres)…"
-          aria-label="Rechercher dans les analytics"
-          className={cn(
-            'flex-1 min-w-[240px] px-3 py-2 rounded text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-          )}
-        />
-        <Button size="sm" variant="ghost" onClick={() => setQ('')}>
-          Effacer
-        </Button>
-      </div>
-
-      {/* Navigation onglets */}
-      <div className="flex gap-2 border-b border-slate-700/50 pb-2 overflow-x-auto">
-        <Button size="sm" variant={activeView === 'overview' ? 'default' : 'ghost'} onClick={() => setActiveView('overview')} className="whitespace-nowrap">
-          🏠 Vue d'ensemble
-        </Button>
-        <Button size="sm" variant={activeView === 'tendances' ? 'default' : 'ghost'} onClick={() => setActiveView('tendances')}>
-          📊 Tendances
-        </Button>
-        <Button size="sm" variant={activeView === 'insights' ? 'default' : 'ghost'} onClick={() => setActiveView('insights')}>
-          💡 Insights
-        </Button>
-        <Button size="sm" variant={activeView === 'comparaisons' ? 'default' : 'ghost'} onClick={() => setActiveView('comparaisons')}>
-          📊 Comparaisons
-        </Button>
-        <Button size="sm" variant={activeView === 'predictions' ? 'default' : 'ghost'} onClick={() => setActiveView('predictions')}>
-          🔮 Prédictions
-        </Button>
-        <Button size="sm" variant={activeView === 'anomalies' ? 'default' : 'ghost'} onClick={() => setActiveView('anomalies')}>
-          🚨 Anomalies
-        </Button>
-        <Button size="sm" variant={activeView === 'finance' ? 'default' : 'ghost'} onClick={() => setActiveView('finance')}>
-          💰 Finance
-        </Button>
-        <Button size="sm" variant={activeView === 'clients' ? 'default' : 'ghost'} onClick={() => setActiveView('clients')}>
-          👥 Clients
-        </Button>
-        <Button size="sm" variant={activeView === 'rapports' ? 'default' : 'ghost'} onClick={() => setActiveView('rapports')}>
-          📄 Rapports
-        </Button>
-        <Button size="sm" variant={activeView === 'sources' ? 'default' : 'ghost'} onClick={() => setActiveView('sources')}>
-          🔍 Sources
-        </Button>
-      </div>
-
-      {/* VUE: Overview */}
-      {activeView === 'overview' && (
-        <div className="space-y-6">
-          <AnalyticsDashboard
-            yearlyTotals={yearlyTotals}
-            monthlyAverages={monthlyAverages}
-            previousPeriod={previousPeriodTotals}
-          />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">📊 Évolution mensuelle : Demandes, Validations, Rejets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={enrichedData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={{
-                        background: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                    />
-                    <Legend />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="demandes"
-                      fill="#3B82F6"
-                      name="Demandes"
-                      radius={[4, 4, 0, 0]}
-                      onClick={(barData: any) =>
-                        handleKpiClick({
-                          title: `Demandes - ${barData?.month ?? ''}`,
-                          details: { demandes: barData?.demandes },
-                          trend: 'up',
-                        })
-                      }
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <Bar yAxisId="left" dataKey="validations" fill="#10B981" name="Validations" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="left" dataKey="rejets" fill="#EF4444" name="Rejets" radius={[4, 4, 0, 0]} />
-                    <Line yAxisId="right" type="monotone" dataKey="tauxValidation" stroke="#F97316" strokeWidth={2} name="Taux validation %" dot={{ fill: '#F97316' }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">💰 Évolution du budget traité (Milliards FCFA)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={enrichedData}>
-                    <defs>
-                      <linearGradient id="colorBudget" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#D4AF37" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        background: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                    />
-                    <Area type="monotone" dataKey="budget" stroke="#D4AF37" strokeWidth={2} fill="url(#colorBudget)" name="Budget (Mds)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <IntelligentInsights yearlyTotals={yearlyTotals} enrichedData={enrichedData} monthlyAverages={monthlyAverages} />
-          <PerformanceScore yearlyTotals={yearlyTotals} enrichedData={enrichedData} />
-          <PredictiveTimeline enrichedData={enrichedData} monthsAhead={3} />
-          <NarrativeReport yearlyTotals={yearlyTotals} enrichedData={enrichedData} monthlyAverages={monthlyAverages} />
-        </div>
-      )}
-
-      {/* VUE: Insights */}
-      {activeView === 'insights' && (
-        <div className="space-y-6">
-          <IntelligentInsights yearlyTotals={yearlyTotals} enrichedData={enrichedData} monthlyAverages={monthlyAverages} />
-          <AnomalyDetection performanceData={performanceData} enrichedData={enrichedData} />
-        </div>
-      )}
-
-      {/* VUE: Tendances */}
-      {activeView === 'tendances' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">📊 Évolution mensuelle : Demandes, Validations, Rejets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={enrichedData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={{
-                        background: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                    />
-                    <Legend />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="demandes"
-                      fill="#3B82F6"
-                      name="Demandes"
-                      radius={[4, 4, 0, 0]}
-                      onClick={(barData: any) =>
-                        handleKpiClick({
-                          title: `Demandes - ${barData?.month ?? ''}`,
-                          details: { demandes: barData?.demandes },
-                          trend: 'up',
-                        })
-                      }
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <Bar yAxisId="left" dataKey="validations" fill="#10B981" name="Validations" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="left" dataKey="rejets" fill="#EF4444" name="Rejets" radius={[4, 4, 0, 0]} />
-                    <Line yAxisId="right" type="monotone" dataKey="tauxValidation" stroke="#F97316" strokeWidth={2} name="Taux validation %" dot={{ fill: '#F97316' }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">💰 Évolution du budget traité (Milliards FCFA)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={enrichedData}>
-                    <defs>
-                      <linearGradient id="colorBudget2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#D4AF37" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        background: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                    />
-                    <Area type="monotone" dataKey="budget" stroke="#D4AF37" strokeWidth={2} fill="url(#colorBudget2)" name="Budget (Mds)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">📋 Données mensuelles détaillées</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                      <th className="px-4 py-2.5 text-left font-bold text-amber-500">Mois</th>
-                      <th className="px-4 py-2.5 text-right font-bold text-blue-400">Demandes</th>
-                      <th className="px-4 py-2.5 text-right font-bold text-emerald-400">Validations</th>
-                      <th className="px-4 py-2.5 text-right font-bold text-red-400">Rejets</th>
-                      <th className="px-4 py-2.5 text-right font-bold text-orange-400">Taux %</th>
-                      <th className="px-4 py-2.5 text-right font-bold text-amber-400">Budget (Mds)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {enrichedData.map((row: any, i: number) => (
-                      <tr
-                        key={i}
-                        className={cn(
-                          'border-t transition-colors hover:bg-slate-700/30 cursor-pointer',
-                          darkMode ? 'border-slate-700/50' : 'border-gray-100'
-                        )}
-                        onClick={() =>
-                          handleKpiClick({
-                            title: `Données du mois - ${row.month}`,
-                            details: row,
-                          })
-                        }
-                      >
-                        <td className="px-4 py-2 font-medium">{row.month}</td>
-                        <td className="px-4 py-2 text-right text-blue-400">{row.demandes}</td>
-                        <td className="px-4 py-2 text-right text-emerald-400">{row.validations}</td>
-                        <td className="px-4 py-2 text-right text-red-400">{row.rejets}</td>
-                        <td className="px-4 py-2 text-right text-orange-400">{row.tauxValidation}%</td>
-                        <td className="px-4 py-2 text-right text-amber-400">{row.budget}</td>
-                      </tr>
-                    ))}
-                    <tr
-                      className={cn(
-                        'border-t-2 font-bold',
-                        darkMode ? 'border-amber-500/50 bg-amber-500/10' : 'border-amber-300 bg-amber-50'
-                      )}
-                    >
-                      <td className="px-4 py-2">TOTAL</td>
-                      <td className="px-4 py-2 text-right text-blue-400">{yearlyTotals.demandes}</td>
-                      <td className="px-4 py-2 text-right text-emerald-400">{yearlyTotals.validations}</td>
-                      <td className="px-4 py-2 text-right text-red-400">{yearlyTotals.rejets}</td>
-                      <td className="px-4 py-2 text-right text-orange-400">
-                        {yearlyTotals.demandes > 0 ? ((yearlyTotals.validations / yearlyTotals.demandes) * 100).toFixed(1) : '0.0'}%
-                      </td>
-                      <td className="px-4 py-2 text-right text-amber-400">{Number(yearlyTotals.budget).toFixed(1)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* VUE: Comparaisons */}
-      {activeView === 'comparaisons' && (
-        <div className="space-y-6">
-          <MultiBureauComparator bureaux={bureaux} performanceData={enrichedBureauData} enrichedData={enrichedBureauData} />
-          <ComparisonChart bureaux={bureaux} performanceData={enrichedBureauData} selectedBureaux={selectedBureaux} />
-        </div>
-      )}
-
-      {/* VUE: Prédictions */}
-      {activeView === 'predictions' && (
-        <div className="space-y-6">
-          <PredictionInsights performanceData={enrichedData} />
-          <PredictiveTimeline enrichedData={enrichedData} monthsAhead={3} />
-          <div className="grid md:grid-cols-2 gap-4">
-            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="demandes" />
-            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="taux" />
-          </div>
-        </div>
-      )}
-
-      {/* VUE: Anomalies */}
-      {activeView === 'anomalies' && (
-        <div className="space-y-6">
-          <AnomalyDetection performanceData={enrichedData} enrichedData={enrichedData} />
-          <div className="grid md:grid-cols-2 gap-4">
-            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="rejets" />
-            <PerformanceHeatmap performanceData={enrichedBureauData} bureaux={bureaux} metric="validations" />
-          </div>
-        </div>
-      )}
-
-      {/* VUE: Finance */}
-      {activeView === 'finance' && (
-        <FinanceDashboard financials={financials} evolution={financeEvolution as any} />
-      )}
-
-      {/* VUE: Clients */}
-      {activeView === 'clients' && (
-        <ClientsDashboard clientsGlobalStats={clientsGlobalStats} evolution={clientsEvolution as any} />
-      )}
-
-      {/* VUE: Rapports */}
-      {activeView === 'rapports' && (
-        <div className="space-y-6">
-          <div className="grid md:grid-cols-3 gap-4">
-            <Card className="border-orange-500/30">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">👔 Rapport mensuel DG</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-slate-400">
-                  Synthèse exécutive avec KPIs clés, alertes critiques et recommandations.
-                </p>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span>Format:</span>
-                    <Badge>PDF</Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Période:</span>
-                    <span className="text-slate-400">Mois en cours</span>
-                  </div>
-                </div>
-                <Button className="w-full" onClick={() => generateReport('mensuel-dg')} disabled={generatingReport}>
-                  {generatingReport ? '⏳ Génération...' : '📄 Générer'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-blue-500/30">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">🏢 Rapport par bureau</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-slate-400">Performance détaillée d'un bureau avec comparatifs.</p>
-                <select
-                  className={cn(
-                    'w-full p-2 rounded text-xs',
-                    darkMode ? 'bg-slate-700 border-slate-600' : 'bg-gray-100 border-gray-300'
-                  )}
-                  value={selectedBureau}
-                  onChange={(e) => setSelectedBureau(e.target.value)}
-                >
-                  <option value="ALL">Tous les bureaux</option>
-                  {bureaux.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.code} - {b.name}
-                    </option>
-                  ))}
-                </select>
-                <Button className="w-full" variant="info" onClick={() => generateReport('bureau')} disabled={generatingReport}>
-                  {generatingReport ? '⏳ Génération...' : '📄 Générer'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-emerald-500/30">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">🏗️ Rapport par projet</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-slate-400">Suivi budgétaire et avancement d'un projet spécifique.</p>
-                <select
-                  className={cn(
-                    'w-full p-2 rounded text-xs',
-                    darkMode ? 'bg-slate-700 border-slate-600' : 'bg-gray-100 border-gray-300'
-                  )}
-                  value={selectedProject}
-                  onChange={(e) => setSelectedProject(e.target.value)}
-                >
-                  <option value="ALL">Tous les projets</option>
-                  {projects.map((p: any) => (
-                    <option key={p.id} value={p.id}>
-                      {p.id} - {p.name}
-                    </option>
-                  ))}
-                </select>
-                <Button className="w-full" variant="success" onClick={() => generateReport('projet')} disabled={generatingReport}>
-                  {generatingReport ? '⏳ Génération...' : '📄 Générer'}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          <NarrativeReport yearlyTotals={yearlyTotals} enrichedData={enrichedData} monthlyAverages={monthlyAverages} />
-        </div>
-      )}
-
-      {/* VUE: Sources */}
-      {activeView === 'sources' && (
-        <div className="space-y-6">
-          <Card className="border-blue-500/30">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">🔍 Traçabilité des données (Anti-contestation)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-slate-400 mb-4">
-                Chaque indicateur affiché est lié à une source de données vérifiable (table/module + règle de calcul).
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                      <th className="px-4 py-2.5 text-left font-bold">Indicateur</th>
-                      <th className="px-4 py-2.5 text-left font-bold">Source</th>
-                      <th className="px-4 py-2.5 text-left font-bold">Table/Module</th>
-                      <th className="px-4 py-2.5 text-left font-bold">Calcul</th>
-                      <th className="px-4 py-2.5 text-left font-bold">Fréquence</th>
-                      <th className="px-4 py-2.5 text-left font-bold">Dernière sync</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dataSources.map((source: any, i: number) => (
-                      <tr key={i} className={cn('border-t', darkMode ? 'border-slate-700/50' : 'border-gray-100')}>
-                        <td className="px-4 py-3">
-                          <span className="font-semibold text-orange-400">{source.indicateur}</span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400">{source.source}</td>
-                        <td className="px-4 py-3">
-                          <code className={cn('px-1.5 py-0.5 rounded text-[10px]', darkMode ? 'bg-slate-700' : 'bg-gray-200')}>
-                            {source.table}
-                          </code>
-                        </td>
-                        <td className="px-4 py-3">
-                          <code className={cn('px-1.5 py-0.5 rounded text-[10px]', darkMode ? 'bg-slate-700' : 'bg-gray-200')}>
-                            {source.champs}
-                          </code>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={source.frequence === 'Temps réel' ? 'success' : 'info'}>{source.frequence}</Badge>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400 text-[10px]">{source.lastSync}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Side panel KPI/details */}
-      <DetailsSidePanel
-        isOpen={showSidePanel}
-        onClose={() => {
-          setShowSidePanel(false);
-          setSidePanelData(null);
-        }}
-        data={sidePanelData}
-      />
-
-      {/* Command palette */}
-      {cmdOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Commandes rapides"
-          onClick={() => setCmdOpen(false)}
-        >
-          <Card className="w-full max-w-xl" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-sm">⌘K — Commandes rapides</p>
-                  <p className="text-xs text-slate-400">Astuce : "/" pour focus la recherche</p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => setCmdOpen(false)}>
-                  Fermer
-                </Button>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-2">
-                <CmdItem label="🏠 Vue d'ensemble" hint="KPIs + graphiques clés" onClick={() => { setActiveView('overview'); setCmdOpen(false); }} />
-                <CmdItem label="📊 Tendances" hint="Séries + tableau détaillé" onClick={() => { setActiveView('tendances'); setCmdOpen(false); }} />
-                <CmdItem label="💡 Insights" hint="Recommandations + anomalies" onClick={() => { setActiveView('insights'); setCmdOpen(false); }} />
-                <CmdItem label="📊 Comparaisons" hint="Multi-bureaux" onClick={() => { setActiveView('comparaisons'); setCmdOpen(false); }} />
-                <CmdItem label="🔮 Prédictions" hint="Projections & timeline" onClick={() => { setActiveView('predictions'); setCmdOpen(false); }} />
-                <CmdItem label="🚨 Anomalies" hint="Détections + heatmaps" onClick={() => { setActiveView('anomalies'); setCmdOpen(false); }} />
-                <CmdItem label="💰 Finance" hint="Résultat net + trésorerie" onClick={() => { setActiveView('finance'); setCmdOpen(false); }} />
-                <CmdItem label="👥 Clients" hint="Nouveaux + CA + top clients" onClick={() => { setActiveView('clients'); setCmdOpen(false); }} />
-                <CmdItem label="📄 Rapports" hint="Génération PDF" onClick={() => { setActiveView('rapports'); setCmdOpen(false); }} />
-                <CmdItem label="🔍 Sources" hint="Traçabilité des indicateurs" onClick={() => { setActiveView('sources'); setCmdOpen(false); }} />
-                <CmdItem label="📤 Export CSV" hint="Données filtrées" onClick={() => { exportFilteredCsv(); setCmdOpen(false); }} />
-              </div>
-
-              <div className="pt-2 border-t border-slate-700/40 flex items-center justify-between text-[10px] text-slate-400">
-                <span>ESC : fermer</span>
-                <span>Ctrl/⌘+K : ouvrir</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
   );
 }

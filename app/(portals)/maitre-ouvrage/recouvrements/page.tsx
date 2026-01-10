@@ -31,7 +31,7 @@ const generateSHA3Hash = (data: string): string => {
   return `SHA3-256:${Math.abs(hash).toString(16).padStart(16, '0').slice(0, 12)}`;
 };
 
-const detectRecoveryRisk = (delay: number, montant: string, lastActionType: string) => {
+const detectRecoveryRisk = (delay: number, montant: string, lastActionType?: string) => {
   const amount = parseFloat(montant.replace(/,/g, '')) || 0;
   if (delay > 90 && amount > 1000000) return 'critique';
   if (delay > 60) return 'élevé';
@@ -424,7 +424,7 @@ export default function RecouvrementsPage() {
                               📧
                             </Button>
                             {rec.status === 'relance' && (
-                              <Button size="xs" variant="urgent" onClick={() => handleEscalade(rec, 'huissier')} title="Escalader huissier" className="text-[10px]">
+                              <Button size="xs" variant="destructive" onClick={() => handleEscalade(rec, 'huissier')} title="Escalader huissier" className="text-[10px]">
                                 ⚖️
                               </Button>
                             )}
@@ -503,7 +503,7 @@ export default function RecouvrementsPage() {
               {selectedRecData.decisionBMO && (
                 <div className="p-2 rounded-lg bg-emerald-400/8 border border-emerald-400/30">
                   <p className="text-[10px] text-emerald-300/80">📜 Décision BMO</p>
-                  <p className="font-mono text-[10px]">{selectedRecData.decisionBMO}</p>
+                  <p className="font-mono text-[10px]">{selectedRecData.decisionBMO.decisionId}</p>
                 </div>
               )}
 

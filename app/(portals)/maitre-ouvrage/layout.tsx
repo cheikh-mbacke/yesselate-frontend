@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { BMOLayout } from '@/components/shared/layouts/BMOLayout';
+import { FluentProviderClient } from '@/components/shared/FluentProviderClient';
 
 export default function MaitreOuvrageLayout({ children }: { children: ReactNode }) {
   return (
-    <BMOLayout>
+    <FluentProviderClient>
+      <BMOLayout>
       {/* Skip link (accessibilité clavier) */}
       <a
         href="#main-content"
@@ -13,7 +15,7 @@ export default function MaitreOuvrageLayout({ children }: { children: ReactNode 
       </a>
 
       {/* Zone de scroll: doit s'adapter au layout parent (header déjà présent dans BMOLayout) */}
-      <div className="w-full flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className="w-full flex-1 min-h-0 overflow-hidden flex flex-col bg-[rgb(var(--bg))]">
         <main
           id="main-content"
           role="main"
@@ -23,6 +25,7 @@ export default function MaitreOuvrageLayout({ children }: { children: ReactNode 
             overflow-y-auto overscroll-contain scrollbar-gutter-stable scrollbar-subtle
             pb-[env(safe-area-inset-bottom)]
             focus:outline-none
+            bg-[rgb(var(--bg))]
           "
           style={{
             // évite les sauts de layout quand la scrollbar apparaît/disparaît
@@ -32,6 +35,7 @@ export default function MaitreOuvrageLayout({ children }: { children: ReactNode 
           {children}
         </main>
       </div>
-    </BMOLayout>
+      </BMOLayout>
+    </FluentProviderClient>
   );
 }

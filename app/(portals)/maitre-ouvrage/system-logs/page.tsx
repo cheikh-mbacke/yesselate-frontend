@@ -70,13 +70,13 @@ const ACTOR = {
 
 const LEVEL_CONFIG: Record<
   string,
-  { icon: string; variant: 'default' | 'info' | 'warning' | 'urgent' | 'success' }
+  { icon: string; variant: 'default' | 'info' | 'warning' | 'destructive' | 'success' }
 > = {
   debug: { icon: '🔧', variant: 'default' },
   info: { icon: 'ℹ️', variant: 'info' },
   warning: { icon: '⚠️', variant: 'warning' },
-  error: { icon: '❌', variant: 'urgent' },
-  critical: { icon: '🚨', variant: 'urgent' },
+  error: { icon: '❌', variant: 'destructive' },
+  critical: { icon: '🚨', variant: 'destructive' },
   security: { icon: '🔐', variant: 'warning' },
 };
 
@@ -412,12 +412,11 @@ function downloadTextFile(filename: string, content: string, mime = 'application
 }
 
 function toCsv(rows: Record<string, any>[]): string {
-  const keys = Array.from(
-    rows.reduce((set, r) => {
-      Object.keys(r).forEach((k) => set.add(k));
-      return set;
-    }, new Set<string>())
-  );
+  const keysSet: Set<string> = rows.reduce<Set<string>>((set, r) => {
+    Object.keys(r).forEach((k) => set.add(k));
+    return set;
+  }, new Set<string>());
+  const keys = [...keysSet];
   const esc = (v: any) => {
     const s = v === null || v === undefined ? '' : String(v);
     if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -466,11 +465,11 @@ type Alert = {
   createdAt: string;
 };
 
-function sevBadgeVariant(s: Alert['severity']): 'default' | 'info' | 'warning' | 'urgent' | 'success' {
+function sevBadgeVariant(s: Alert['severity']): 'default' | 'info' | 'warning' | 'destructive' | 'success' {
   if (s === 'low') return 'default';
   if (s === 'medium') return 'info';
   if (s === 'high') return 'warning';
-  return 'urgent';
+  return 'destructive';
 }
 
 function computeAlerts(logs: DerivedLog[]): Alert[] {
@@ -816,7 +815,7 @@ export default function SystemLogsPage() {
       details: `Scan intégrité terminé: OK=${ok} | MISMATCH=${mismatch} | total=${total}`,
     });
 
-    if (mismatch > 0) addToast(`🚨 Intégrité: ${mismatch} mismatch(s) détecté(s)`, 'urgent');
+    if (mismatch > 0) addToast(`🚨 Intégrité: ${mismatch} mismatch(s) détecté(s)`, 'error');
     else addToast('Intégrité: aucun mismatch détecté ✓', 'success');
   }
 
@@ -1119,7 +1118,7 @@ export default function SystemLogsPage() {
             <Badge variant="info" className="text-[10px]">{stats.total} logs</Badge>
             <Badge variant="default" className="text-[10px]">{stats.today} aujourd'hui</Badge>
             {integrityScan.total > 0 && (
-              <Badge variant={integrityScan.mismatch > 0 ? 'urgent' : 'success'} className="text-[10px]">
+              <Badge variant={integrityScan.mismatch > 0 ? 'destructive' : 'success'} className="text-[10px]">
                 Intégrité: {integrityScan.mismatch > 0 ? `${integrityScan.mismatch} mismatch` : 'OK'}
               </Badge>
             )}
@@ -1330,7 +1329,7 @@ export default function SystemLogsPage() {
               const integrity = matchCacheRef.current.get(log.id);
               const integrityBadge =
                 typeof integrity === 'boolean' ? (
-                  <Badge variant={integrity ? 'success' : 'urgent'} className="text-[9px]">{integrity ? 'intègre' : 'mismatch'}</Badge>
+                  <Badge variant={integrity ? 'success' : 'destructive'} className="text-[9px]">{integrity ? 'intègre' : 'mismatch'}</Badge>
                 ) : log.hash ? (
                   <Badge variant="warning" className="text-[9px]">hash</Badge>
                 ) : null;
@@ -1524,7 +1523,7 @@ export default function SystemLogsPage() {
                           });
 
                           if (v.ok === true) addToast('Hash vérifié ✓ (intègre)', 'success');
-                          else if (v.ok === false) addToast('Hash MISMATCH 🚨 (altération possible)', 'urgent');
+                          else if (v.ok === false) addToast('Hash MISMATCH 🚨 (altération possible)', 'error');
                           else addToast('Hash non vérifiable (pas de hash ou crypto indisponible)', 'warning');
                         }}
                       >

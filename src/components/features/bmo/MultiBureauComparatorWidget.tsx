@@ -47,16 +47,23 @@ export function MultiBureauComparatorWidget({
   const [viewMode, setViewMode] = useState<'table' | 'radar'>('table');
 
   const bureauMetrics = useMemo(() => {
-    const metrics: BureauMetrics[] = bureaux.map((bureau) => {
+    const metrics: BureauMetrics[] = bureaux.map((bureau, index) => {
       // Simulation des données par bureau (à remplacer par vraies données)
-      const baseDemandes = Math.floor(Math.random() * 100) + 50;
+      // Utilisation d'un seed basé sur le code du bureau pour consistance serveur/client
+      const seed = bureau.code.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const seededRandom = (min: number, max: number, offset: number = 0) => {
+        const x = Math.sin(seed + offset) * 10000;
+        return Math.floor((x - Math.floor(x)) * (max - min) + min);
+      };
+
+      const baseDemandes = seededRandom(50, 150, index);
       const baseValidations = Math.floor(baseDemandes * 0.75);
       const baseRejets = baseDemandes - baseValidations;
 
       const tauxValidation = baseDemandes > 0 ? (baseValidations / baseDemandes) * 100 : 0;
       const tauxRejet = baseDemandes > 0 ? (baseRejets / baseDemandes) * 100 : 0;
-      const charge = bureau.tasks || Math.floor(Math.random() * 50) + 10;
-      const efficacite = bureau.completion || Math.floor(Math.random() * 30) + 70;
+      const charge = bureau.tasks || seededRandom(10, 60, index + 100);
+      const efficacite = bureau.completion || seededRandom(70, 100, index + 200);
 
       // Score composite (0-100)
       const score = tauxValidation * 0.4 + efficacite * 0.3 + (100 - tauxRejet) * 0.2 + Math.min(100, charge) * 0.1;

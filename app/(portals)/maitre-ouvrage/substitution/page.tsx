@@ -32,6 +32,7 @@ const generateSHA3Hash = (data: string): string => {
 };
 
 interface SubstitutableDossier {
+  id?: string;
   ref: string;
   bureau: string;
   icon: string;
@@ -98,7 +99,9 @@ const exportSubstitutionsAsCSV = (
 
 export default function SubstitutionPage() {
   const { darkMode } = useAppStore();
-  const { addToast, addActionLog, decisionsBMO } = useBMOStore();
+  const { addToast, addActionLog } = useBMOStore();
+  // decisionsBMO n'existe pas encore dans le store - utiliser une valeur vide
+  const decisionsBMO: Array<{ targetId: string; id: string }> = [];
   const [viewMode, setViewMode] = useState<ViewMode>('all');
   const [reasonFilter, setReasonFilter] = useState<ReasonFilter>('all');
   const [selectedDossier, setSelectedDossier] = useState<SubstitutableDossier | null>(null);
@@ -365,9 +368,9 @@ export default function SubstitutionPage() {
       {/* Contenu */}
       {viewMode === 'all' ? (
         <div className="space-y-3">
-          {filteredDossiers.map((dossier) => (
+          {filteredDossiers.map((dossier, index) => (
             <SubstitutionCard
-              key={dossier.ref}
+              key={dossier.ref || dossier.id || `dossier-${index}`}
               dossier={dossier}
               darkMode={darkMode}
               onSubstitute={() => {
@@ -470,9 +473,9 @@ function CauseSection({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 pt-2">
-        {dossiers.map((dossier) => (
+        {dossiers.map((dossier, index) => (
           <SubstitutionCard
-            key={dossier.ref}
+            key={dossier.ref || dossier.id || `dossier-${index}`}
             dossier={dossier}
             darkMode={darkMode}
             compact
@@ -529,8 +532,8 @@ function SubstitutionCard({
           </div>
           <p className={cn('font-semibold', compact ? 'text-xs' : 'text-sm')}>{dossier.desc}</p>
           <p className="text-[10px] text-slate-400 mt-1">{dossier.reason}</p>
-          {dossier.linkedProjects?.length > 0 && (
-            <p className="text-[10px] text-blue-400 mt-1">📈 Lié à {dossier.linkedProjects.length} projet(s)</p>
+          {(dossier.linkedProjects?.length ?? 0) > 0 && (
+            <p className="text-[10px] text-blue-400 mt-1">📈 Lié à {dossier.linkedProjects?.length} projet(s)</p>
           )}
         </div>
         <div className="text-right">

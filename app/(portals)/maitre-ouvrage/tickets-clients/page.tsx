@@ -1,1142 +1,805 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { WorkspaceShell } from '@/components/features/_shared/WorkspaceShell';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
+import { useHotkeys } from 'react-hotkeys-hook';
+import {
+  Ticket,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  ArrowUpCircle,
+  Users,
+  Building2,
+  Plus,
+  Search,
+  Filter,
+  RefreshCw,
+  ChevronDown,
+  Settings,
+  Download,
+  MoreHorizontal,
+  Bell,
+  Zap,
+  BarChart2,
+  Map as MapIcon,
+  Columns3,
+  ArrowLeft,
+  ArrowRight,
+  HelpCircle,
+  Command,
+  XCircle,
+  Pause,
+  UserCheck,
+  TrendingUp,
+  Target,
+  Shield,
+} from 'lucide-react';
+import { FluentButton } from '@/components/ui/fluent-button';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { employees } from '@/lib/data';
-import { clientDemands, clientDemandStats, clients } from '@/lib/data/bmo-mock-4';
-import type { ClientDemand } from '@/lib/data/bmo-mock-4';
 
-type DemandStatus = ClientDemand['status'];
-type DemandType = ClientDemand['type'];
-type Priority = ClientDemand['priority'];
+// Import stores et composants workspace
+import {
+  useTicketsClientWorkspaceStore,
+  type TicketTab,
+  type TicketStatus,
+  type TicketPriority,
+} from '@/lib/stores/ticketsClientWorkspaceStore';
+import { TicketsClientWorkspaceTabs } from '@/components/features/tickets-client/workspace/TicketsClientWorkspaceTabs';
+import { TicketsClientLiveCounters, type TicketCounters } from '@/components/features/tickets-client/workspace/TicketsClientLiveCounters';
+import { TicketsClientCommandPalette } from '@/components/features/tickets-client/workspace/TicketsClientCommandPalette';
+import { TicketsClientWorkspaceContent } from '@/components/features/tickets-client/workspace/TicketsClientWorkspaceContent';
+import {
+  TicketsClientStatsModal,
+  TicketsClientExportModal,
+  TicketsClientSLAManagerModal,
+  TicketsClientEscaladeCenterModal,
+  TicketsClientHelpModal,
+  TicketsClientClientsManagerModal,
+  TicketsClientChantiersManagerModal,
+  TicketsClientBulkActionsModal,
+  TicketsClientSettingsModal,
+} from '@/components/features/tickets-client/workspace/TicketsClientModals';
 
-type QueueKey =
-  | 'inbox'
-  | 'sla_breached'
-  | 'unassigned'
-  | 'urgent'
-  | 'escalated'
-  | 'in_progress'
-  | 'resolved'
-  | 'new_project';
+// ============================================
+// MOCK DATA
+// ============================================
 
-type SortKey = 'triage' | 'date_desc' | 'priority_desc' | 'client_az';
-
-type SavedView = {
-  id: string;
-  name: string;
-  queue: QueueKey;
-  status: DemandStatus | 'all';
-  type: DemandType | 'all';
-  search: string;
-  sort: SortKey;
-  onlySlaBreached: boolean;
+const MOCK_COUNTERS: TicketCounters = {
+  total: 156,
+  nouveau: 12,
+  enCours: 34,
+  enAttenteClient: 8,
+  enAttenteInterne: 5,
+  escalade: 3,
+  resolu: 67,
+  clos: 24,
+  annule: 3,
+  horsDelaiSLA: 4,
+  critique: 2,
+  haute: 7,
 };
 
-type Employee = (typeof employees)[number];
-
-function safePreview(s: string, max = 140) {
-  return s.replace(/\s+/g, ' ').trim().slice(0, max);
-}
-
-function makeId(prefix: string) {
-  // randomUUID si dispo sinon fallback
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function parseDateSafe(dateStr: string): Date | null {
-  const d = new Date(dateStr);
-  if (!Number.isNaN(d.getTime())) return d;
-
-  // support "DD/MM/YYYY"
-  const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const dd = Number(m[1]);
-    const mm = Number(m[2]) - 1;
-    const yyyy = Number(m[3]);
-    const d2 = new Date(yyyy, mm, dd);
-    if (!Number.isNaN(d2.getTime())) return d2;
-  }
-  return null;
-}
-
-function daysSince(dateStr: string): number | null {
-  const d = parseDateSafe(dateStr);
-  if (!d) return null;
-  const diff = Date.now() - d.getTime();
-  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
-}
-
-function getSlaDays(priority: Priority) {
-  // règle simple (industrialisation : SLA par client/contrat)
-  if (priority === 'urgent') return 1;
-  if (priority === 'high') return 2;
-  return 4;
-}
-
-function priorityScore(p: Priority) {
-  if (p === 'urgent') return 3;
-  if (p === 'high') return 2;
-  return 1;
-}
-
-function statusLabel(s: DemandStatus) {
-  if (s === 'pending') return 'Attente';
-  if (s === 'in_progress') return 'En cours';
-  if (s === 'resolved') return 'Résolu';
-  if (s === 'escalated') return 'Escaladé';
-  return s;
-}
-
-function statusVariant(s: DemandStatus): 'warning' | 'info' | 'success' | 'urgent' {
-  if (s === 'pending') return 'warning';
-  if (s === 'in_progress') return 'info';
-  if (s === 'resolved') return 'success';
-  return 'urgent';
-}
-
-function priorityVariant(p: Priority): 'urgent' | 'warning' | 'default' {
-  if (p === 'urgent') return 'urgent';
-  if (p === 'high') return 'warning';
-  return 'default';
-}
-
-function typeIcon(type: DemandType) {
-  switch (type) {
-    case 'devis':
-      return '📋';
-    case 'reclamation':
-      return '⚠️';
-    case 'information':
-      return 'ℹ️';
-    case 'modification':
-      return '✏️';
-    case 'nouveau_projet':
-      return '🏗️';
-    case 'facturation':
-      return '💳';
-    default:
-      return '📝';
-  }
-}
-
-function typeLabel(type: DemandType) {
-  switch (type) {
-    case 'devis':
-      return 'Devis';
-    case 'reclamation':
-      return 'Réclamation';
-    case 'information':
-      return 'Information';
-    case 'modification':
-      return 'Modification';
-    case 'nouveau_projet':
-      return 'Nouveau projet';
-    case 'facturation':
-      return 'Facturation';
-    default:
-      return type;
-  }
-}
-
-function triageRank(d: ClientDemand) {
-  const age = daysSince(d.date) ?? 0;
-  const sla = getSlaDays(d.priority);
-  const breached = age > sla && d.status !== 'resolved';
-
-  // triage : SLA+ > urgent > escalated > pending > age
-  const base =
-    (breached ? 1000 : 0) +
-    (d.priority === 'urgent' ? 300 : d.priority === 'high' ? 200 : 100) +
-    (d.status === 'escalated' ? 80 : d.status === 'pending' ? 60 : d.status === 'in_progress' ? 40 : 0) +
-    Math.min(50, age);
-
-  return base;
-}
-
-function suggestBureau(d: ClientDemand): string {
-  const s = `${d.subject} ${d.description}`.toLowerCase();
-  if (d.type === 'facturation' || s.includes('facture') || s.includes('paiement')) return 'Finance';
-  if (d.type === 'devis' || s.includes('devis') || s.includes('prix')) return 'Achats';
-  if (d.type === 'reclamation' || s.includes('retard') || s.includes('incident')) return 'Qualité';
-  if (d.type === 'modification' || s.includes('plan') || s.includes('changement')) return 'Terrain';
-  if (d.type === 'nouveau_projet') return 'BMO';
-  return 'BMO';
-}
-
-const RESPONSE_TEMPLATES: Array<{ key: string; label: string; text: string }> = [
+const MOCK_ALERTS = [
   {
-    key: 'ack',
-    label: 'Accusé de réception',
-    text: "Bonjour,\n\nNous avons bien reçu votre demande. Elle est en cours de prise en charge. Nous revenons vers vous sous 24h.\n\nCordialement.",
+    id: '1',
+    type: 'critical' as const,
+    message: '2 tickets critiques dépassent leur SLA',
+    action: 'Voir les tickets',
   },
   {
-    key: 'need-info',
-    label: "Demande d'informations",
-    text: "Bonjour,\n\nPour traiter votre demande, pouvez-vous nous préciser :\n- …\n- …\n\nDès réception, nous lançons la prise en charge.\n\nCordialement.",
-  },
-  {
-    key: 'resolved',
-    label: 'Clôture / Résolution',
-    text: "Bonjour,\n\nVotre demande a été traitée. Pouvez-vous confirmer que tout est conforme de votre côté ?\n\nCordialement.",
+    id: '2',
+    type: 'warning' as const,
+    message: '3 tickets en escalade nécessitent une attention',
+    action: 'Traiter',
   },
 ];
 
-const DEFAULT_VIEWS: SavedView[] = [
-  { id: 'v-inbox', name: 'Inbox', queue: 'inbox', status: 'all', type: 'all', search: '', sort: 'triage', onlySlaBreached: false },
-  { id: 'v-now', name: 'À traiter maintenant', queue: 'sla_breached', status: 'all', type: 'all', search: '', sort: 'triage', onlySlaBreached: true },
-  { id: 'v-unassigned', name: 'Non assignées', queue: 'unassigned', status: 'all', type: 'all', search: '', sort: 'triage', onlySlaBreached: false },
-  { id: 'v-newproj', name: 'Nouveaux projets', queue: 'new_project', status: 'all', type: 'nouveau_projet', search: '', sort: 'triage', onlySlaBreached: false },
+const MOCK_RECENT_TICKETS = [
+  {
+    id: 'TKT-2024-0156',
+    titre: 'Retard livraison béton - Chantier Montpellier',
+    client: 'EIFFAGE',
+    chantier: 'Résidence Les Oliviers',
+    status: 'nouveau' as TicketStatus,
+    priority: 'haute' as TicketPriority,
+    slaRemaining: '4h',
+    assignedTo: 'Jean Dupont',
+    createdAt: 'Il y a 2h',
+  },
+  {
+    id: 'TKT-2024-0155',
+    titre: 'Réclamation qualité enduit façade',
+    client: 'VINCI',
+    chantier: 'Tour Horizon',
+    status: 'en_cours' as TicketStatus,
+    priority: 'normale' as TicketPriority,
+    slaRemaining: '12h',
+    assignedTo: 'Marie Martin',
+    createdAt: 'Il y a 4h',
+  },
+  {
+    id: 'TKT-2024-0154',
+    titre: 'Demande modification plans électriques',
+    client: 'BOUYGUES',
+    chantier: 'Centre Commercial Est',
+    status: 'en_attente_client' as TicketStatus,
+    priority: 'basse' as TicketPriority,
+    slaRemaining: '24h',
+    assignedTo: 'Pierre Durand',
+    createdAt: 'Hier',
+  },
+  {
+    id: 'TKT-2024-0153',
+    titre: 'Incident sécurité - Échafaudage',
+    client: 'COLAS',
+    chantier: 'Pont Neuf',
+    status: 'escalade' as TicketStatus,
+    priority: 'critique' as TicketPriority,
+    slaRemaining: 'Dépassé',
+    assignedTo: 'Direction',
+    createdAt: 'Il y a 6h',
+  },
+  {
+    id: 'TKT-2024-0152',
+    titre: 'Facturation travaux supplémentaires',
+    client: 'SPIE',
+    chantier: 'Usine Logistique Nord',
+    status: 'resolu' as TicketStatus,
+    priority: 'normale' as TicketPriority,
+    slaRemaining: '-',
+    assignedTo: 'Sophie Lemaire',
+    createdAt: 'Hier',
+  },
 ];
 
-export default function DemandesClientsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog, currentUser } = useBMOStore();
+// ============================================
+// TYPES
+// ============================================
 
-  // Données locales (mock) -> prêtes à être branchées sur API.
-  const [demands, setDemands] = useState<ClientDemand[]>(clientDemands);
+type ActiveSection = 'dashboard' | 'workspace';
 
-  // Split view : ticket sélectionné (dossier)
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const activeDemand = useMemo(() => demands.find((d) => d.id === activeId) ?? null, [demands, activeId]);
+// ============================================
+// HELPER COMPONENTS
+// ============================================
 
-  // Sélection multiple (bulk)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const selectedCount = selectedIds.size;
+const STATUS_CONFIG: Record<TicketStatus, { label: string; color: string; icon: React.ReactNode }> = {
+  nouveau: { label: 'Nouveau', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300', icon: <Ticket className="w-3 h-3" /> },
+  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', icon: <Clock className="w-3 h-3" /> },
+  en_attente_client: { label: 'Attente client', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', icon: <UserCheck className="w-3 h-3" /> },
+  en_attente_interne: { label: 'Attente interne', color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/30 dark:text-slate-300', icon: <Pause className="w-3 h-3" /> },
+  escalade: { label: 'Escaladé', color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300', icon: <ArrowUpCircle className="w-3 h-3" /> },
+  resolu: { label: 'Résolu', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', icon: <CheckCircle2 className="w-3 h-3" /> },
+  clos: { label: 'Clôturé', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400', icon: <CheckCircle2 className="w-3 h-3" /> },
+  annule: { label: 'Annulé', color: 'bg-slate-100 text-slate-500 dark:bg-slate-800/30 dark:text-slate-500', icon: <XCircle className="w-3 h-3" /> },
+};
 
-  // Vue / filtres
-  const [views, setViews] = useState<SavedView[]>(DEFAULT_VIEWS);
-  const [activeViewId, setActiveViewId] = useState<string>(DEFAULT_VIEWS[0].id);
+const PRIORITY_CONFIG: Record<TicketPriority, { label: string; color: string }> = {
+  critique: { label: 'Critique', color: 'bg-rose-500 text-white' },
+  haute: { label: 'Haute', color: 'bg-orange-500 text-white' },
+  normale: { label: 'Normale', color: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' },
+  basse: { label: 'Basse', color: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500' },
+};
 
-  const activeView = useMemo(() => views.find((v) => v.id === activeViewId) ?? DEFAULT_VIEWS[0], [views, activeViewId]);
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
-  const [statusFilter, setStatusFilter] = useState<DemandStatus | 'all'>(activeView.status);
-  const [typeFilter, setTypeFilter] = useState<DemandType | 'all'>(activeView.type);
-  const [queue, setQueue] = useState<QueueKey>(activeView.queue);
-  const [sort, setSort] = useState<SortKey>(activeView.sort);
-  const [onlySlaBreached, setOnlySlaBreached] = useState<boolean>(activeView.onlySlaBreached);
-  const [search, setSearch] = useState<string>(activeView.search);
+export default function TicketsClientsPage() {
+  // ===== STATE =====
+  const [activeSection, setActiveSection] = useState<ActiveSection>('dashboard');
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [counters, setCounters] = useState<TicketCounters>(MOCK_COUNTERS);
+  const [alerts, setAlerts] = useState(MOCK_ALERTS);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Workbench (actions)
-  const [showAssign, setShowAssign] = useState(false);
-  const [showRespond, setShowRespond] = useState(false);
-  const [responseText, setResponseText] = useState('');
-  const [isBusy, setIsBusy] = useState(false);
+  // Modals
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showSLAManager, setShowSLAManager] = useState(false);
+  const [showEscaladeCenter, setShowEscaladeCenter] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showClientsManager, setShowClientsManager] = useState(false);
+  const [showChantiersManager, setShowChantiersManager] = useState(false);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
 
-  const searchRef = useRef<HTMLInputElement | null>(null);
+  // Workspace Store
+  const {
+    tabs,
+    activeTabId,
+    openTab,
+    goBack,
+    goForward,
+    canGoBack,
+    canGoForward,
+  } = useTicketsClientWorkspaceStore();
 
-  // Persistence vues
+  // ===== EFFECTS =====
+  
+  // Initial load
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('bmo.ticketViews.v10');
-      if (raw) {
-        const parsed = JSON.parse(raw) as SavedView[];
-        if (Array.isArray(parsed) && parsed.length) setViews(parsed);
-      }
-    } catch {
-      // ignore
-    }
+    const timer = setTimeout(() => setIsLoading(false), 800);
+    return () => clearTimeout(timer);
   }, []);
 
+  // Auto-refresh every 60s
   useEffect(() => {
-    try {
-      localStorage.setItem('bmo.ticketViews.v10', JSON.stringify(views));
-    } catch {
-      // ignore
-    }
-  }, [views]);
-
-  // Appliquer la vue active aux filtres quand on change de vue
-  useEffect(() => {
-    setQueue(activeView.queue);
-    setStatusFilter(activeView.status);
-    setTypeFilter(activeView.type);
-    setSearch(activeView.search);
-    setSort(activeView.sort);
-    setOnlySlaBreached(activeView.onlySlaBreached);
-    setSelectedIds(new Set());
-  }, [activeViewId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Keyboard (pro UX)
-  useEffect(() => {
-    let seq = '';
-    const onKey = (e: KeyboardEvent) => {
-      // Focus recherche
-      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
-
-      // Fermer dossier / modals
-      if (e.key === 'Escape') {
-        setShowAssign(false);
-        setShowRespond(false);
-        setActiveId(null);
-        return;
-      }
-
-      // "g a / g p / g i / g r" : change queue rapide
-      seq = (seq + e.key).slice(-2);
-      if (seq === 'ga') setQueue('inbox');
-      if (seq === 'gp') setStatusFilter('pending');
-      if (seq === 'gi') setStatusFilter('in_progress');
-      if (seq === 'gr') setStatusFilter('resolved');
-    };
-
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const interval = setInterval(() => {
+      setLastRefresh(new Date());
+      // Simulate counter update
+      setCounters((prev) => ({
+        ...prev,
+        nouveau: prev.nouveau + Math.floor(Math.random() * 2),
+      }));
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Stats
-  const stats = useMemo(() => {
-    const total = demands.length;
-    const pending = demands.filter((d) => d.status === 'pending').length;
-    const inProgress = demands.filter((d) => d.status === 'in_progress').length;
-    const resolved = demands.filter((d) => d.status === 'resolved').length;
-    const escalated = demands.filter((d) => d.status === 'escalated').length;
+  // ===== CALLBACKS =====
+  
+  const handleRefresh = useCallback(() => {
+    setIsLoading(true);
+    setTimeout(() => {
+      setLastRefresh(new Date());
+      setIsLoading(false);
+    }, 500);
+  }, []);
 
-    // SLA breached
-    const slaBreached = demands.filter((d) => {
-      const age = daysSince(d.date) ?? 0;
-      return d.status !== 'resolved' && age > getSlaDays(d.priority);
-    }).length;
-
-    return {
-      total,
-      pending,
-      inProgress,
-      resolved,
-      escalated,
-      slaBreached,
-      avgResponseTime: clientDemandStats.avgResponseTime,
-    };
-  }, [demands]);
-
-  // Queues pro (files)
-  const queuedDemands = useMemo(() => {
-    let list = demands.slice();
-
-    // queue
-    if (queue === 'sla_breached') {
-      list = list.filter((d) => {
-        const age = daysSince(d.date) ?? 0;
-        return d.status !== 'resolved' && age > getSlaDays(d.priority);
-      });
-    } else if (queue === 'unassigned') {
-      list = list.filter((d) => !d.assignedTo);
-    } else if (queue === 'urgent') {
-      list = list.filter((d) => d.priority === 'urgent');
-    } else if (queue === 'escalated') {
-      list = list.filter((d) => d.status === 'escalated');
-    } else if (queue === 'in_progress') {
-      list = list.filter((d) => d.status === 'in_progress');
-    } else if (queue === 'resolved') {
-      list = list.filter((d) => d.status === 'resolved');
-    } else if (queue === 'new_project') {
-      list = list.filter((d) => d.type === 'nouveau_projet');
-    } else {
-      // inbox = tout sauf résolu par défaut (comme un vrai tool)
-      list = list.filter((d) => d.status !== 'resolved');
-    }
-
-    // filters
-    if (statusFilter !== 'all') list = list.filter((d) => d.status === statusFilter);
-    if (typeFilter !== 'all') list = list.filter((d) => d.type === typeFilter);
-
-    if (onlySlaBreached) {
-      list = list.filter((d) => {
-        const age = daysSince(d.date) ?? 0;
-        return d.status !== 'resolved' && age > getSlaDays(d.priority);
-      });
-    }
-
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter((d) => {
-        const hay = `${d.id} ${d.clientName} ${d.subject} ${d.description}`.toLowerCase();
-        return hay.includes(q);
-      });
-    }
-
-    // sort
-    if (sort === 'triage') list.sort((a, b) => triageRank(b) - triageRank(a));
-    if (sort === 'date_desc') list.sort((a, b) => (parseDateSafe(b.date)?.getTime() ?? 0) - (parseDateSafe(a.date)?.getTime() ?? 0));
-    if (sort === 'priority_desc') list.sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority));
-    if (sort === 'client_az') list.sort((a, b) => a.clientName.localeCompare(b.clientName));
-
-    return list;
-  }, [demands, queue, statusFilter, typeFilter, onlySlaBreached, search, sort]);
-
-  // --- Actions (audit-ready) --------------------------------------------------
-
-  const log = (action: string, target: ClientDemand, details: string) => {
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action,
-      module: 'tickets-clients',
-      targetId: target.id,
-      targetType: 'Demande client',
-      targetLabel: target.subject,
-      details,
-      bureau: currentUser.bureau,
+  const handleCreateTicket = useCallback(() => {
+    openTab({
+      id: `wizard-${Date.now()}`,
+      type: 'wizard',
+      title: 'Nouveau ticket',
+      icon: '✨',
     });
-  };
+    setActiveSection('workspace');
+  }, [openTab]);
 
-  const openDemand = (id: string) => {
-    setActiveId(id);
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const handleOpenTicket = useCallback((ticketId: string, title: string) => {
+    openTab({
+      id: `ticket-${ticketId}`,
+      type: 'ticket',
+      title: title || ticketId,
+      icon: '🎫',
+      data: { ticketId },
     });
-  };
+    setActiveSection('workspace');
+  }, [openTab]);
 
-  const selectAllVisible = () => {
-    setSelectedIds(new Set(queuedDemands.map((d) => d.id)));
-  };
+  const handleOpenQueue = useCallback((queue: string, label: string) => {
+    openTab({
+      id: `inbox-${queue}`,
+      type: 'inbox',
+      title: label,
+      icon: '📥',
+      data: { queue },
+    });
+    setActiveSection('workspace');
+  }, [openTab]);
 
-  const clearSelection = () => setSelectedIds(new Set());
+  const handleDismissAlert = useCallback((alertId: string) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+  }, []);
 
-  const bulkUpdate = async (mut: (d: ClientDemand) => ClientDemand, label: string) => {
-    if (!selectedIds.size) return;
-    setIsBusy(true);
-    try {
-      const ids = new Set(selectedIds);
-      setDemands((prev) => prev.map((d) => (ids.has(d.id) ? mut(d) : d)));
+  // ===== HOTKEYS =====
+  
+  useHotkeys('mod+k', (e) => {
+    e.preventDefault();
+    setShowCommandPalette(true);
+  }, []);
 
-      addToast(`✓ Action groupée: ${label} (${ids.size})`, 'success');
-      clearSelection();
-    } finally {
-      setIsBusy(false);
-    }
-  };
+  useHotkeys('mod+n', (e) => {
+    e.preventDefault();
+    handleCreateTicket();
+  }, [handleCreateTicket]);
 
-  const assignOne = (demand: ClientDemand, emp: Employee) => {
-    const actionId = makeId('ACT');
-    const updated = {
-      ...demand,
-      assignedTo: emp.name,
-      assignedBureau: emp.bureau,
-      status: demand.status === 'pending' ? ('in_progress' as DemandStatus) : demand.status,
-    };
+  useHotkeys('mod+r', (e) => {
+    e.preventDefault();
+    handleRefresh();
+  }, [handleRefresh]);
 
-    setDemands((prev) => prev.map((d) => (d.id === demand.id ? updated : d)));
-    log('assign', demand, `ActionId:${actionId} | Assigné à ${emp.name} (${emp.bureau})`);
-    addToast(`✓ ${demand.id} assignée à ${emp.name}`, 'success');
-  };
+  useHotkeys('mod+[', (e) => {
+    e.preventDefault();
+    if (canGoBack()) goBack();
+  }, [canGoBack, goBack]);
 
-  const escalateOne = (demand: ClientDemand) => {
-    const actionId = makeId('ACT');
-    const updated = { ...demand, status: 'escalated' as DemandStatus };
-    setDemands((prev) => prev.map((d) => (d.id === demand.id ? updated : d)));
-    log('escalate', demand, `ActionId:${actionId} | Escaladé (prio:${demand.priority})`);
-    addToast(`⬆️ ${demand.id} escaladée`, 'warning');
-  };
+  useHotkeys('mod+]', (e) => {
+    e.preventDefault();
+    if (canGoForward()) goForward();
+  }, [canGoForward, goForward]);
 
-  const convertToProject = (demand: ClientDemand) => {
-    const actionId = makeId('ACT');
-    const projectId = `PRJ-${Date.now().toString().slice(-4)}`;
-    const updated = { ...demand, project: projectId };
-    setDemands((prev) => prev.map((d) => (d.id === demand.id ? updated : d)));
-    log('convert_to_project', demand, `ActionId:${actionId} | Converti en projet ${projectId}`);
-    addToast(`✓ Converti en ${projectId}`, 'success');
-  };
-
-  const respondOne = async (demand: ClientDemand) => {
-    if (!responseText.trim()) return;
-    setIsBusy(true);
-    try {
-      const actionId = makeId('ACT');
-      const updated: ClientDemand = {
-        ...demand,
-        response: responseText.trim(),
-        responseTime: Math.max(1, daysSince(demand.date) ?? 1),
-        status: 'resolved' as DemandStatus,
-      };
-
-      setDemands((prev) => prev.map((d) => (d.id === demand.id ? updated : d)));
-      log('response', demand, `ActionId:${actionId} | Réponse:"${safePreview(responseText)}"`);
-      addToast(`✓ Réponse envoyée • ${demand.id}`, 'success');
-
-      setShowRespond(false);
-      setResponseText('');
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const saveCurrentAsView = () => {
-    const name = `Vue ${views.length + 1}`;
-    const v: SavedView = {
-      id: makeId('VIEW'),
-      name,
-      queue,
-      status: statusFilter,
-      type: typeFilter,
-      search,
-      sort,
-      onlySlaBreached,
-    };
-    setViews((prev) => [v, ...prev]);
-    setActiveViewId(v.id);
-    addToast(`✓ Vue sauvegardée: ${name}`, 'success');
-  };
-
-  const resetFiltersToView = () => {
-    setQueue(activeView.queue);
-    setStatusFilter(activeView.status);
-    setTypeFilter(activeView.type);
-    setSearch(activeView.search);
-    setSort(activeView.sort);
-    setOnlySlaBreached(activeView.onlySlaBreached);
-    addToast('↩︎ Vue restaurée', 'info');
-  };
-
-  // --- UI ---------------------------------------------------------------------
-
-  const leftPane = (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🎛️ Cockpit Tickets
-            <Badge variant="warning">{stats.pending}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Total: {stats.total} • SLA+: <span className="text-red-400 font-bold">{stats.slaBreached}</span> • Délai moy.:{' '}
-            <span className="text-emerald-400 font-bold">{stats.avgResponseTime}j</span>
-          </p>
-        </div>
-
+  // ===== RENDER =====
+  
+  return (
+    <WorkspaceShell
+      title="Tickets Clients"
+      description="Gestion des tickets et réclamations clients BTP"
+      headerActions={
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={saveCurrentAsView}>
-            💾 Sauver vue
-          </Button>
-          <Button onClick={() => addToast('Nouvelle demande manuelle', 'info')}>+ Saisir</Button>
+          {/* Navigation Back/Forward */}
+          {activeSection === 'workspace' && (
+            <div className="flex items-center gap-1 mr-2">
+              <button
+                onClick={goBack}
+                disabled={!canGoBack()}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  canGoBack()
+                    ? 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                    : 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                )}
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={goForward}
+                disabled={!canGoForward()}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  canGoForward()
+                    ? 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                    : 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                )}
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="relative hidden md:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Rechercher un ticket..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-64 pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-orange-500/30"
+            />
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+              ⌘K
+            </kbd>
+          </div>
+
+          {/* Create Ticket */}
+          <FluentButton onClick={handleCreateTicket} className="gap-2">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Nouveau ticket</span>
+          </FluentButton>
+
+          {/* Actions Menu */}
+          <div className="relative">
+            <FluentButton
+              variant="secondary"
+              onClick={() => setShowActionsMenu(!showActionsMenu)}
+              className="gap-2"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </FluentButton>
+
+            {showActionsMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowActionsMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50">
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowStatsModal(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <BarChart2 className="w-4 h-4 text-blue-500" />
+                    Statistiques
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowExportModal(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Download className="w-4 h-4 text-emerald-500" />
+                    Exporter
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowSLAManager(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    Gestion SLA
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowEscaladeCenter(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <ArrowUpCircle className="w-4 h-4 text-rose-500" />
+                    Centre d&apos;escalade
+                  </button>
+                  <div className="border-t border-slate-200 dark:border-slate-700 my-2" />
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowClientsManager(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Users className="w-4 h-4 text-purple-500" />
+                    Gestion clients
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowChantiersManager(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Building2 className="w-4 h-4 text-orange-500" />
+                    Carte chantiers
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowBulkActions(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Zap className="w-4 h-4 text-cyan-500" />
+                    Actions en masse
+                  </button>
+                  <div className="border-t border-slate-200 dark:border-slate-700 my-2" />
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowSettingsModal(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <Settings className="w-4 h-4 text-slate-500" />
+                    Paramètres
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowHelpModal(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  >
+                    <HelpCircle className="w-4 h-4 text-slate-400" />
+                    Aide
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Refresh */}
+          <FluentButton
+            variant="ghost"
+            onClick={handleRefresh}
+            className={cn(isLoading && 'animate-spin')}
+          >
+            <RefreshCw className="w-4 h-4" />
+          </FluentButton>
+        </div>
+      }
+    >
+      {/* Section Toggle */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-lg">
+          <button
+            onClick={() => setActiveSection('dashboard')}
+            className={cn(
+              'px-4 py-2 text-sm font-medium rounded-md transition-colors',
+              activeSection === 'dashboard'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            )}
+          >
+            Tableau de bord
+          </button>
+          <button
+            onClick={() => setActiveSection('workspace')}
+            className={cn(
+              'px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2',
+              activeSection === 'workspace'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            )}
+          >
+            Espace de travail
+            {tabs.length > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {tabs.length}
+              </Badge>
+            )}
+          </button>
+        </div>
+
+        <div className="text-sm text-slate-500">
+          Dernière mise à jour : {lastRefresh.toLocaleTimeString('fr-FR')}
         </div>
       </div>
 
-      {/* Queues (files) */}
-      <div className="grid grid-cols-7 gap-2">
-        <QueueCard label="Inbox" value={stats.total - stats.resolved} active={queue === 'inbox'} onClick={() => setQueue('inbox')} dark={darkMode} />
-        <QueueCard label="SLA+" value={stats.slaBreached} active={queue === 'sla_breached'} onClick={() => setQueue('sla_breached')} dark={darkMode} accent="red" />
-        <QueueCard label="Non assignées" value={demands.filter((d) => !d.assignedTo).length} active={queue === 'unassigned'} onClick={() => setQueue('unassigned')} dark={darkMode} />
-        <QueueCard label="Urgent" value={demands.filter((d) => d.priority === 'urgent').length} active={queue === 'urgent'} onClick={() => setQueue('urgent')} dark={darkMode} accent="amber" />
-        <QueueCard label="Escaladées" value={stats.escalated} active={queue === 'escalated'} onClick={() => setQueue('escalated')} dark={darkMode} accent="orange" />
-        <QueueCard label="En cours" value={stats.inProgress} active={queue === 'in_progress'} onClick={() => setQueue('in_progress')} dark={darkMode} accent="blue" />
-        <QueueCard label="Résolues" value={stats.resolved} active={queue === 'resolved'} onClick={() => setQueue('resolved')} dark={darkMode} accent="emerald" />
-      </div>
-
-      {/* Vues sauvegardées + filtres */}
-      <Card>
-        <CardContent className="p-3 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400">Vue</span>
-            <select
-              value={activeViewId}
-              onChange={(e) => setActiveViewId(e.target.value)}
+      {/* Alerts */}
+      {alerts.length > 0 && activeSection === 'dashboard' && (
+        <div className="space-y-2 mb-6">
+          {alerts.map((alert) => (
+            <div
+              key={alert.id}
               className={cn(
-                'px-2 py-1 rounded text-xs',
-                darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
+                'flex items-center justify-between p-3 rounded-lg border',
+                alert.type === 'critical'
+                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/30'
+                  : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/30'
               )}
             >
-              {views.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-
-            <Button size="sm" variant="secondary" onClick={resetFiltersToView}>
-              ↩︎ Restaurer
-            </Button>
-
-            <div className="flex-1" />
-
-            <span className="text-[10px] text-slate-500">Raccourcis: "/" recherche • "Esc" fermer • "g a/p/i/r"</span>
-          </div>
-
-          <div className="grid grid-cols-5 gap-2">
-            <div className="col-span-2">
-              <input
-                ref={searchRef}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="🔎 Recherche (id, client, sujet, contenu)…"
-                className={cn(
-                  'w-full px-3 py-2 rounded text-sm',
-                  darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-                )}
-              />
-            </div>
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as DemandStatus | 'all')}
-              className={cn('px-2 py-2 rounded text-sm', darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200')}
-            >
-              <option value="all">Statut: Tous</option>
-              <option value="pending">En attente</option>
-              <option value="in_progress">En cours</option>
-              <option value="escalated">Escaladé</option>
-              <option value="resolved">Résolu</option>
-            </select>
-
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as DemandType | 'all')}
-              className={cn('px-2 py-2 rounded text-sm', darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200')}
-            >
-              <option value="all">Type: Tous</option>
-              <option value="nouveau_projet">🏗️ Nouveau projet</option>
-              <option value="reclamation">⚠️ Réclamation</option>
-              <option value="modification">✏️ Modification</option>
-              <option value="information">ℹ️ Information</option>
-              <option value="facturation">💳 Facturation</option>
-              <option value="devis">📋 Devis</option>
-            </select>
-
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortKey)}
-              className={cn('px-2 py-2 rounded text-sm', darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200')}
-            >
-              <option value="triage">Tri: Triage</option>
-              <option value="date_desc">Tri: Date</option>
-              <option value="priority_desc">Tri: Priorité</option>
-              <option value="client_az">Tri: Client</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
-              <input type="checkbox" checked={onlySlaBreached} onChange={(e) => setOnlySlaBreached(e.target.checked)} />
-              SLA dépassé uniquement
-            </label>
-
-            <div className="flex-1" />
-
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setSearch('');
-                setStatusFilter('all');
-                setTypeFilter('all');
-                setOnlySlaBreached(false);
-              }}
-            >
-              Réinitialiser filtres
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Bulk bar */}
-      {selectedCount > 0 && (
-        <Card className="border-amber-500/30">
-          <CardContent className="p-3 flex flex-wrap items-center gap-2">
-            <Badge variant="warning">{selectedCount} sélectionnées</Badge>
-
-            <Button
-              size="sm"
-              variant="info"
-              disabled={isBusy}
-              onClick={() => setShowAssign(true)}
-            >
-              → Assigner
-            </Button>
-
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={isBusy}
-              onClick={() =>
-                bulkUpdate(
-                  (d) => ({ ...d, status: 'escalated' as DemandStatus }),
-                  'Escalader'
-                )
-              }
-            >
-              ⬆️ Escalader
-            </Button>
-
-            <Button
-              size="sm"
-              variant="success"
-              disabled={isBusy}
-              onClick={() =>
-                bulkUpdate(
-                  (d) => ({ ...d, status: 'resolved' as DemandStatus }),
-                  'Marquer résolu'
-                )
-              }
-            >
-              ✓ Résolu
-            </Button>
-
-            <div className="flex-1" />
-            <Button size="sm" variant="secondary" onClick={clearSelection}>
-              Annuler sélection
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Liste (case list) */}
-      <Card>
-        <CardHeader className="py-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">
-              📥 {queueLabel(queue)} • <span className="text-slate-400">{queuedDemands.length} éléments</span>
-            </CardTitle>
-
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={selectAllVisible}>
-                Tout sélectionner
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          <div className="max-h-[62vh] overflow-auto">
-            {queuedDemands.map((d) => {
-              const age = daysSince(d.date) ?? 0;
-              const sla = getSlaDays(d.priority);
-              const breached = d.status !== 'resolved' && age > sla;
-              const isActive = d.id === activeId;
-
-              return (
-                <button
-                  key={d.id}
-                  onClick={() => openDemand(d.id)}
+              <div className="flex items-center gap-3">
+                <AlertCircle
                   className={cn(
-                    'w-full text-left px-3 py-2 border-t flex items-start gap-3 transition-all',
-                    darkMode ? 'border-slate-700/50 hover:bg-slate-700/30' : 'border-gray-100 hover:bg-gray-50',
-                    isActive && (darkMode ? 'bg-slate-700/40' : 'bg-orange-50'),
-                    breached && 'ring-1 ring-red-500/30'
+                    'w-5 h-5',
+                    alert.type === 'critical' ? 'text-rose-500' : 'text-amber-500'
+                  )}
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">
+                  {alert.message}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className={cn(
+                    'text-sm font-medium px-3 py-1 rounded-md transition-colors',
+                    alert.type === 'critical'
+                      ? 'text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30'
+                      : 'text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/30'
                   )}
                 >
-                  <div className="pt-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(d.id)}
-                      onChange={() => toggleSelect(d.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
+                  {alert.action}
+                </button>
+                <button
+                  onClick={() => handleDismissAlert(alert.id)}
+                  className="p-1 text-slate-400 hover:text-slate-600"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">
-                          {d.id}
-                        </span>
-                        <span className="text-[10px] text-slate-400 truncate">
-                          {d.clientName}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {typeIcon(d.type)} {typeLabel(d.type)}
-                        </span>
-                      </div>
+      {/* Content */}
+      {activeSection === 'dashboard' ? (
+        <div className="space-y-6">
+          {/* Live Counters */}
+          <TicketsClientLiveCounters
+            counters={counters}
+            onCounterClick={(queue) => handleOpenQueue(queue, `File: ${queue}`)}
+          />
 
-                      <div className="flex items-center gap-1">
-                        <Badge variant={priorityVariant(d.priority)} className="text-[9px]">
-                          {d.priority}
-                        </Badge>
-                        <Badge variant={statusVariant(d.status)} className="text-[9px]">
-                          {statusLabel(d.status)}
-                        </Badge>
-                        {breached && (
-                          <span title={`SLA dépassé (${age}j > ${sla}j)`} className="text-[10px] text-red-400 font-bold">
-                            SLA+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Nouveaux', count: counters.nouveau, queue: 'nouveau', icon: Ticket, color: 'blue' },
+              { label: 'Critiques', count: counters.critique, queue: 'critique', icon: AlertCircle, color: 'rose' },
+              { label: 'Escaladés', count: counters.escalade, queue: 'escalade', icon: ArrowUpCircle, color: 'orange' },
+              { label: 'Hors SLA', count: counters.horsDelaiSLA, queue: 'hors_sla', icon: Clock, color: 'amber' },
+            ].map((item) => (
+              <button
+                key={item.queue}
+                onClick={() => handleOpenQueue(item.queue, item.label)}
+                className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-600 transition-all text-left group"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <item.icon className={cn(
+                    'w-5 h-5',
+                    item.color === 'blue' && 'text-blue-500',
+                    item.color === 'rose' && 'text-rose-500',
+                    item.color === 'orange' && 'text-orange-500',
+                    item.color === 'amber' && 'text-amber-500',
+                  )} />
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                </div>
+                <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {item.count}
+                </div>
+                <div className="text-sm text-slate-500">{item.label}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Recent Tickets Table */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                Tickets récents
+              </h3>
+              <button
+                onClick={() => handleOpenQueue('all', 'Tous les tickets')}
+                className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+              >
+                Voir tout →
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {MOCK_RECENT_TICKETS.map((ticket) => {
+                const statusConfig = STATUS_CONFIG[ticket.status];
+                const priorityConfig = PRIORITY_CONFIG[ticket.priority];
+
+                return (
+                  <button
+                    key={ticket.id}
+                    onClick={() => handleOpenTicket(ticket.id, ticket.titre)}
+                    className="w-full px-6 py-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-sm text-slate-500">{ticket.id}</span>
+                        <span className={cn('px-2 py-0.5 text-xs rounded-full', statusConfig.color)}>
+                          {statusConfig.label}
+                        </span>
+                        {(ticket.priority === 'critique' || ticket.priority === 'haute') && (
+                          <span className={cn('px-2 py-0.5 text-xs rounded-full', priorityConfig.color)}>
+                            {priorityConfig.label}
                           </span>
                         )}
                       </div>
-                    </div>
-
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate">{d.subject}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{safePreview(d.description)}</p>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <p className="text-[10px] text-slate-500">{d.date} • {age}j</p>
-                        <p className="text-[10px] text-slate-500">
-                          {d.assignedTo ? (
-                            <span className="text-blue-400">{d.assignedTo}</span>
-                          ) : (
-                            <span className="text-slate-500">Non assigné</span>
-                          )}
-                        </p>
+                      <h4 className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                        {ticket.titre}
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          {ticket.client}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Building2 className="w-3 h-3" />
+                          {ticket.chantier}
+                        </span>
                       </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
 
-            {queuedDemands.length === 0 && (
-              <div className="p-6 text-center text-sm text-slate-400">Aucun résultat</div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const rightPane = (
-    <div className={cn('space-y-3', !activeDemand && 'opacity-70')}>
-      <Card>
-        <CardHeader className="py-2">
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-sm">
-              {activeDemand ? (
-                <>
-                  {typeIcon(activeDemand.type)} Dossier {activeDemand.id}
-                </>
-              ) : (
-                '📄 Ouvrir un dossier'
-              )}
-            </CardTitle>
-
-            <div className="flex items-center gap-2">
-              {activeDemand && (
-                <Button size="sm" variant="ghost" onClick={() => setActiveId(null)}>
-                  ✕
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
-          {!activeDemand ? (
-            <div className="text-sm text-slate-400">
-              Sélectionne une demande à gauche pour afficher le dossier complet.
-            </div>
-          ) : (
-            <>
-              {/* Client */}
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-slate-400">Client</p>
-                    <Link
-                      href={`/maitre-ouvrage/clients?id=${activeDemand.clientId}`}
-                      className="font-bold text-blue-400 hover:underline"
-                    >
-                      {activeDemand.clientName}
-                    </Link>
-
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Suggestion routing: <span className="text-amber-400 font-bold">{suggestBureau(activeDemand)}</span>
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="flex gap-1 justify-end">
-                      <Badge variant={priorityVariant(activeDemand.priority)}>{activeDemand.priority}</Badge>
-                      <Badge variant={statusVariant(activeDemand.status)}>{statusLabel(activeDemand.status)}</Badge>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-1">{activeDemand.date}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sujet / contenu */}
-              <div>
-                <h3 className="font-bold text-sm">{activeDemand.subject}</h3>
-                <p className="text-xs text-slate-300 mt-1 whitespace-pre-wrap">{activeDemand.description}</p>
-              </div>
-
-              {/* Meta */}
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                {activeDemand.attachments ? (
-                  <span className="px-2 py-1 rounded bg-slate-700/30">📎 {activeDemand.attachments} PJ</span>
-                ) : (
-                  <span className="px-2 py-1 rounded bg-slate-700/30">📎 0 PJ</span>
-                )}
-                {activeDemand.project ? (
-                  <Link
-                    href={`/maitre-ouvrage/projets-en-cours?id=${activeDemand.project}`}
-                    className="px-2 py-1 rounded bg-orange-500/10 text-orange-400 hover:underline"
-                  >
-                    → Projet {activeDemand.project}
-                  </Link>
-                ) : (
-                  <span className="px-2 py-1 rounded bg-slate-700/30">Aucun projet lié</span>
-                )}
-              </div>
-
-              {/* Assignation */}
-              <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-slate-700/40">
-                <div className="text-xs">
-                  <span className="text-slate-400">Assigné :</span>{' '}
-                  {activeDemand.assignedTo ? (
-                    <>
-                      <span className="text-blue-400 font-semibold">{activeDemand.assignedTo}</span>{' '}
-                      {activeDemand.assignedBureau && <BureauTag bureau={activeDemand.assignedBureau} />}
-                    </>
-                  ) : (
-                    <span className="text-slate-500">Non assigné</span>
-                  )}
-                </div>
-                <Button size="sm" variant="info" onClick={() => setShowAssign(true)}>
-                  → Assigner
-                </Button>
-              </div>
-
-              {/* Réponse */}
-              {activeDemand.response ? (
-                <div className={cn('p-3 rounded-lg border-l-4 border-l-emerald-500', darkMode ? 'bg-emerald-500/10' : 'bg-emerald-50')}>
-                  <p className="text-xs text-slate-400 mb-1">Réponse (en {activeDemand.responseTime ?? '-'}j)</p>
-                  <p className="text-sm text-emerald-400 whitespace-pre-wrap">{activeDemand.response}</p>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-2">
-                  <Button className="flex-1" variant="success" onClick={() => setShowRespond(true)}>
-                    ✓ Répondre & clôturer
-                  </Button>
-                  {activeDemand.type === 'nouveau_projet' && (
-                    <Button variant="warning" onClick={() => convertToProject(activeDemand)}>
-                      🏗️ Convertir
-                    </Button>
-                  )}
-                  {activeDemand.status !== 'escalated' && activeDemand.status !== 'resolved' && (
-                    <Button variant="destructive" onClick={() => escalateOne(activeDemand)}>
-                      ⬆️ Escalader
-                    </Button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Panel Traçabilité */}
-      <Card className="border-emerald-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">🧾</span>
-            <div>
-              <h3 className="font-bold text-sm text-emerald-400">Case timeline (audit)</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Chaque action importante doit être un <span className="text-orange-400 font-bold">événement</span> (assign, escalate, response, convert…).
-                Là, c'est déjà branché sur ton store (addActionLog). Prochaine étape : event-sourcing côté serveur (ledger immuable).
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Modal Assign */}
-      {showAssign && activeDemand && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && setShowAssign(false)}>
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle className="text-sm">→ Assigner {activeDemand.id}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className={cn('p-2 rounded text-xs', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <p className="text-slate-400">
-                  Sujet: <span className="text-white">{activeDemand.subject}</span>
-                </p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Suggestion: <span className="text-amber-400 font-bold">{suggestBureau(activeDemand)}</span>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {employees.map((emp) => (
-                  <button
-                    key={emp.id}
-                    disabled={isBusy}
-                    className={cn(
-                      'p-2 rounded flex items-center gap-2 text-left transition-all',
-                      darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-gray-100 hover:bg-gray-200',
-                      isBusy && 'opacity-60 cursor-not-allowed'
-                    )}
-                    onClick={() => {
-                      // si bulk
-                      if (selectedIds.size > 0) {
-                        void bulkUpdate(
-                          (d) => ({
-                            ...d,
-                            assignedTo: emp.name,
-                            assignedBureau: emp.bureau,
-                            status: d.status === 'pending' ? ('in_progress' as DemandStatus) : d.status,
-                          }),
-                          `Assigner à ${emp.name}`
-                        );
-                        setShowAssign(false);
-                        return;
-                      }
-
-                      assignOne(activeDemand, emp);
-                      setShowAssign(false);
-                    }}
-                  >
-                    <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-xs font-bold">
-                      {emp.initials}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold">{emp.name}</p>
-                      <p className="text-[10px] text-slate-400">{emp.bureau}</p>
+                    <div className="text-right text-sm">
+                      <div className={cn(
+                        'font-medium',
+                        ticket.slaRemaining === 'Dépassé' ? 'text-rose-500' : 'text-slate-600 dark:text-slate-400'
+                      )}>
+                        SLA: {ticket.slaRemaining}
+                      </div>
+                      <div className="text-slate-400 text-xs mt-1">
+                        {ticket.assignedTo}
+                      </div>
+                      <div className="text-slate-400 text-xs">
+                        {ticket.createdAt}
+                      </div>
                     </div>
                   </button>
-                ))}
-              </div>
+                );
+              })}
+            </div>
+          </div>
 
-              <Button variant="secondary" className="w-full" onClick={() => setShowAssign(false)}>
-                Annuler
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Performance Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                  <Target className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="text-sm text-slate-500">Conformité SLA</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">94.2%</div>
+                </div>
+              </div>
+              <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: '94.2%' }} />
+              </div>
+            </div>
+
+            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <Clock className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <div className="text-sm text-slate-500">Temps résolution moy.</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">4.2h</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-emerald-600">
+                <TrendingUp className="w-4 h-4" />
+                -18% vs mois précédent
+              </div>
+            </div>
+
+            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                  <Shield className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <div className="text-sm text-slate-500">Satisfaction client</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">92%</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-emerald-600">
+                <TrendingUp className="w-4 h-4" />
+                +3% vs mois précédent
+              </div>
+            </div>
+          </div>
         </div>
-      )}
+      ) : (
+        <div className="space-y-4">
+          {/* Workspace Tabs */}
+          <TicketsClientWorkspaceTabs />
 
-      {/* Modal Respond */}
-      {showRespond && activeDemand && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && setShowRespond(false)}>
-          <Card className="w-full max-w-xl">
-            <CardHeader>
-              <CardTitle className="text-sm">✓ Répondre & clôturer {activeDemand.id}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-400">Template :</span>
-                <select
-                  className={cn('px-2 py-1 rounded text-xs', darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200')}
-                  onChange={(e) => {
-                    const t = RESPONSE_TEMPLATES.find((x) => x.key === e.target.value);
-                    if (t) setResponseText(t.text);
-                  }}
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Choisir…
-                  </option>
-                  {RESPONSE_TEMPLATES.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex-1" />
-                <Badge variant="info">Clôture automatique</Badge>
+          {/* Workspace Content */}
+          {activeTabId ? (
+            <TicketsClientWorkspaceContent />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                <Ticket className="w-8 h-8 text-slate-400" />
               </div>
-
-              <textarea
-                rows={7}
-                value={responseText}
-                onChange={(e) => setResponseText(e.target.value)}
-                placeholder="Votre réponse au client…"
-                className={cn('w-full px-3 py-2 rounded text-sm', darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200')}
-              />
-
-              <div className="flex gap-2">
-                <Button className="flex-1" disabled={!responseText.trim() || isBusy} onClick={() => void respondOne(activeDemand)}>
-                  {isBusy ? 'Envoi…' : '✓ Envoyer & clôturer'}
-                </Button>
-                <Button variant="secondary" disabled={isBusy} onClick={() => setShowRespond(false)}>
-                  Annuler
-                </Button>
-              </div>
-
-              <p className="text-[10px] text-slate-500">
-                Prochaine étape "market-grade" : envoi réel (email/whatsapp), pièces jointes, signature, et ledger serveur immuable.
+              <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
+                Aucun onglet ouvert
+              </h3>
+              <p className="text-sm text-slate-500 mb-6 max-w-md">
+                Ouvrez un ticket depuis le tableau de bord ou créez un nouveau ticket pour commencer.
               </p>
-            </CardContent>
-          </Card>
+              <div className="flex items-center gap-3">
+                <FluentButton onClick={handleCreateTicket}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Nouveau ticket
+                </FluentButton>
+                <FluentButton variant="secondary" onClick={() => setActiveSection('dashboard')}>
+                  Retour au tableau de bord
+                </FluentButton>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </div>
-  );
 
-  return (
-    <div className="grid grid-cols-12 gap-4">
-      <div className="col-span-12 xl:col-span-7">{leftPane}</div>
-      <div className="col-span-12 xl:col-span-5">{rightPane}</div>
-    </div>
-  );
-}
+      {/* Modals */}
+      <TicketsClientCommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onOpenStats={() => setShowStatsModal(true)}
+        onOpenExport={() => setShowExportModal(true)}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenSLAManager={() => setShowSLAManager(true)}
+        onOpenEscaladeCenter={() => setShowEscaladeCenter(true)}
+        onOpenClientManager={() => setShowClientsManager(true)}
+        onOpenChantierMap={() => setShowChantiersManager(true)}
+        onCreateTicket={handleCreateTicket}
+        onRefresh={handleRefresh}
+      />
 
-/* ---- UI helpers ---- */
-
-function queueLabel(q: QueueKey) {
-  if (q === 'inbox') return 'Inbox';
-  if (q === 'sla_breached') return 'SLA dépassé';
-  if (q === 'unassigned') return 'Non assignées';
-  if (q === 'urgent') return 'Urgent';
-  if (q === 'escalated') return 'Escaladées';
-  if (q === 'in_progress') return 'En cours';
-  if (q === 'resolved') return 'Résolues';
-  if (q === 'new_project') return 'Nouveaux projets';
-  return q;
-}
-
-function QueueCard(props: {
-  label: string;
-  value: number;
-  active: boolean;
-  onClick: () => void;
-  dark: boolean;
-  accent?: 'red' | 'amber' | 'orange' | 'blue' | 'emerald';
-}) {
-  const { label, value, active, onClick, dark, accent } = props;
-  const accentRing =
-    accent === 'red'
-      ? 'ring-red-500'
-      : accent === 'amber'
-      ? 'ring-amber-500'
-      : accent === 'orange'
-      ? 'ring-orange-500'
-      : accent === 'blue'
-      ? 'ring-blue-500'
-      : accent === 'emerald'
-      ? 'ring-emerald-500'
-      : 'ring-orange-500';
-
-  const accentText =
-    accent === 'red'
-      ? 'text-red-400'
-      : accent === 'amber'
-      ? 'text-amber-400'
-      : accent === 'orange'
-      ? 'text-orange-400'
-      : accent === 'blue'
-      ? 'text-blue-400'
-      : accent === 'emerald'
-      ? 'text-emerald-400'
-      : 'text-white';
-
-  return (
-    <Card className={cn('cursor-pointer transition-all', active && `ring-2 ${accentRing}`)} onClick={onClick}>
-      <CardContent className="p-3 text-center">
-        <p className={cn('text-2xl font-bold', accent ? accentText : '')}>{value}</p>
-        <p className="text-[10px] text-slate-400">{label}</p>
-      </CardContent>
-    </Card>
+      <TicketsClientStatsModal open={showStatsModal} onClose={() => setShowStatsModal(false)} />
+      <TicketsClientExportModal open={showExportModal} onClose={() => setShowExportModal(false)} />
+      <TicketsClientSLAManagerModal open={showSLAManager} onClose={() => setShowSLAManager(false)} />
+      <TicketsClientEscaladeCenterModal open={showEscaladeCenter} onClose={() => setShowEscaladeCenter(false)} />
+      <TicketsClientHelpModal open={showHelpModal} onClose={() => setShowHelpModal(false)} />
+      <TicketsClientClientsManagerModal open={showClientsManager} onClose={() => setShowClientsManager(false)} />
+      <TicketsClientChantiersManagerModal open={showChantiersManager} onClose={() => setShowChantiersManager(false)} />
+      <TicketsClientBulkActionsModal open={showBulkActions} onClose={() => setShowBulkActions(false)} />
+      <TicketsClientSettingsModal open={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
+    </WorkspaceShell>
   );
 }

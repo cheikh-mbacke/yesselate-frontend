@@ -577,6 +577,7 @@ export interface RecoveryAction {
   montant?: string;
   document?: string; // Référence au document associé
   result?: string;
+  hash?: string;
 }
 
 export interface RecoveryDocument {
@@ -611,6 +612,14 @@ export interface Recovery {
   documents: RecoveryDocument[];
   linkedLitigation?: string; // ID du litige si escaladé
   echeancier?: RecoveryEcheancier;
+  decisionBMO?: {
+    origin: string;
+    decisionId: string;
+    hash: string;
+    validatorRole: string;
+  };
+  hash?: string;
+  lastActionType?: string;
 }
 
 export interface RecoveryEcheancier {
@@ -871,9 +880,11 @@ export interface AuditItem {
 
 // --- Organigramme ---
 export interface OrgMember {
+  id?: string;
   name: string;
   role: string;
   initials: string;
+  skills?: string[];
 }
 
 export interface OrgBureau {
@@ -998,7 +1009,93 @@ export type ActionLogType =
   | 'changer-statut'
   | 'mass-done'
   | 'mass-cancel'
-  | 'mass-replan';
+  | 'mass-replan'
+  // Actions déplacements
+  | 'generate_ordre_mission'
+  | 'approve'
+  // Actions échanges structures
+  | 'respond'
+  | 'escalate'
+  | 'close'
+  | 'create'
+  // Actions audit
+  | 'create_action'
+  | 'resolve_finding'
+  | 'start_finding'
+  | 'update_action_status'
+  | 'generate_report'
+  // Actions validation paiements
+  | 'blocage'
+  | 'complement'
+  | 'bf_validation'
+  | 'export_evidence'
+  // Actions employés
+  | 'view_profile'
+  | 'mitigation_plan'
+  | 'edit'
+  | 'evaluate'
+  // Actions contrats
+  | 'signature'
+  | 'renvoi'
+  | 'arbitrage'
+  // Actions system logs
+  | 'integrity_scan_start'
+  | 'integrity_scan_end'
+  | 'incident_create'
+  | 'export_evidence_pack'
+  | 'verify_hash'
+  // Actions recouvrements
+  | 'relance'
+  | 'escalade'
+  // Actions organigramme
+  | 'update_position'
+  // Actions évaluations
+  | 'view'
+  | 'validate_recommendation'
+  | 'schedule_formation'
+  | 'download_cr'
+  // Actions bloqués
+  | 'substitution_open'
+  | 'resolution'
+  | 'bulk'
+  // Actions conférences
+  | 'create_from_dossier'
+  | 'join'
+  | 'copy_link'
+  | 'generate_summary'
+  | 'validate_summary'
+  | 'extract_decisions'
+  | 'open_calendar'
+  | 'open_integrations'
+  | 'open_visio'
+  // Actions tickets clients
+  | 'assign'
+  | 'convert_to_project'
+  | 'response'
+  // Actions déplacements
+  | 'generate_ordre_mission'
+  | 'approve'
+  | 'reject'
+  // Actions échanges
+  | 'respond'
+  | 'forward'
+  | 'archive'
+  | 'transfer'
+  // Actions employés & RH
+  | 'view_profile'
+  | 'view'
+  | 'update'
+  | 'delete'
+  | 'assign'
+  | 'unassign'
+  | 'activate'
+  | 'deactivate'
+  | 'send'
+  | 'receive'
+  | 'complete'
+  | 'cancel'
+  | 'schedule'
+  | 'reschedule';
 
 export interface ActionLog {
   id: string;
@@ -1018,6 +1115,8 @@ export interface ActionLog {
   newValue?: string;          // Pour les modifications
   bureau?: string;
   hash?: string;              // 🔑 Hash de traçabilité (SHA-256)
+  decisionId?: unknown;       // Référence à une décision BMO
+  meta?: Record<string, unknown>; // Métadonnées supplémentaires
 }
 
 // --- Paramètres utilisateur ---

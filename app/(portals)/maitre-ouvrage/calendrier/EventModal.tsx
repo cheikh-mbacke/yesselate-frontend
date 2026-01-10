@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { X, Star, Save, CalendarDays, Repeat, Users, Building2, Target } from 'lucide-react';
-import type { CalendarItem, Priority, Severity, Status, CalendarKind } from '../page';
+import type { CalendarItem, Priority, Severity, Status, CalendarKind } from './types';
 
 type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'quarterly';
 
@@ -60,7 +60,7 @@ export function EventModal({
     assignees: [],
     start: initialDate || new Date(),
     end: new Date((initialDate?.getTime() || Date.now()) + 60 * 60000),
-    priority: 'normal',
+    priority: 'normale',
     severity: 'info',
     status: 'open',
     project: '',
@@ -79,9 +79,9 @@ export function EventModal({
         bureau: editingItem.bureau,
         assignees: editingItem.assignees || [],
         start: new Date(editingItem.start),
-        end: new Date(editingItem.end),
+        end: editingItem.end ? new Date(editingItem.end) : new Date(new Date(editingItem.start).getTime() + 60 * 60000),
         priority: editingItem.priority,
-        severity: editingItem.severity,
+        severity: editingItem.severity || 'info',
         status: editingItem.status,
         project: editingItem.project || '',
         recurrence: 'none',

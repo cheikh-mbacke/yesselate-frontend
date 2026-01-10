@@ -1,178 +1,227 @@
-// ============================================
-// Export iCal pour compatibilité calendriers externes
-// ============================================
+/**
+ * GÉNÉRATEUR DE FICHIERS iCAL (RFC 5545)
+ * 
+ * Génère des fichiers .ics compatibles avec :
+ * - Google Calendar
+ * - Microsoft Outlook
+ * - Apple Calendar
+ * - Autres clients compatibles iCal
+ */
 
-export interface CalendarItem {
+export interface ICalEvent {
   id: string;
   title: string;
-  description?: string;
-  kind: string;
-  bureau?: string;
-  assignees?: { id: string; name: string }[];
-  start: string;
-  end: string;
-  priority: string;
-  severity: string;
-  status: string;
-  linkedTo?: { type: string; id: string; label?: string };
-  slaDueAt?: string;
-  project?: string;
-  originalSource?: string;
+  description: string;
+  start: Date;
+  end: Date;
+  location?: string;
+  status?: string;
+  priority?: string;
 }
 
 /**
- * Génère un fichier .ics (iCalendar) à partir d'items calendrier
+ * Générer un fichier iCal à partir d'événements
  */
-export function generateICal(items: CalendarItem[]): string {
-  const lines: string[] = [];
+export function generateICalFile(events: ICalEvent[]): string {
+  const now = new Date();
+  const timestamp = formatICalDate(now);
 
   // En-tête iCal
-  lines.push('BEGIN:VCALENDAR');
-  lines.push('VERSION:2.0');
-  lines.push('PRODID:-//Yesselate//BMO Calendar//FR');
-  lines.push('CALSCALE:GREGORIAN');
-  lines.push('METHOD:PUBLISH');
+  let ical = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Bureau Maître d\'Ouvrage//Calendrier BMO//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Calendrier BMO',
+    'X-WR-TIMEZONE:Africa/Dakar',
+    'X-WR-CALDESC:Événements du Bureau Maître d\'Ouvrage',
+  ].join('\r\n');
 
-  // Événements
-  for (const item of items) {
-    lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${item.id}@yesselate.com`);
-    lines.push(`DTSTART:${formatICalDate(new Date(item.start))}`);
-    lines.push(`DTEND:${formatICalDate(new Date(item.end))}`);
-    lines.push(`SUMMARY:${escapeICalText(item.title)}`);
-    
-    if (item.description) {
-      lines.push(`DESCRIPTION:${escapeICalText(item.description)}`);
-    }
-    
-    if (item.bureau) {
-      lines.push(`LOCATION:${escapeICalText(item.bureau)}`);
-    }
-    
-    lines.push(`PRIORITY:${getICalPriority(item.priority)}`);
-    lines.push(`STATUS:${getICalStatus(item.status)}`);
-    
-    if (item.slaDueAt) {
-      lines.push(`DTSTAMP:${formatICalDate(new Date(item.slaDueAt))}`);
-    }
-    
-    lines.push('END:VEVENT');
+  // Ajouter chaque événement
+  for (const event of events) {
+    ical += '\r\n' + generateVEvent(event, timestamp);
   }
 
-  // Fin
-  lines.push('END:VCALENDAR');
+  // Pied de page
+  ical += '\r\nEND:VCALENDAR\r\n';
+
+  return ical;
+}
+
+/**
+ * Générer un VEVENT individuel
+ */
+function generateVEvent(event: ICalEvent, timestamp: string): string {
+  const lines = [
+    'BEGIN:VEVENT',
+    `UID:${event.id}@bmo.sn`,
+    `DTSTAMP:${timestamp}`,
+    `DTSTART:${formatICalDate(event.start)}`,
+    `DTEND:${formatICalDate(event.end)}`,
+    `SUMMARY:${escapeICalText(event.title)}`,
+  ];
+
+  // Description (optionnelle)
+  if (event.description) {
+    lines.push(`DESCRIPTION:${escapeICalText(event.description)}`);
+  }
+
+  // Lieu (optionnel)
+  if (event.location) {
+    lines.push(`LOCATION:${escapeICalText(event.location)}`);
+  }
+
+  // Statut
+  const status = mapStatus(event.status);
+  if (status) {
+    lines.push(`STATUS:${status}`);
+  }
+
+  // Priorité
+  const priority = mapPriority(event.priority);
+  if (priority !== null) {
+    lines.push(`PRIORITY:${priority}`);
+  }
+
+  // Catégories
+  lines.push('CATEGORIES:BMO,Calendrier');
+
+  // Organisation
+  lines.push('ORGANIZER:CN=BMO:mailto:contact@bmo.sn');
+
+  // Fin de l'événement
+  lines.push('END:VEVENT');
 
   return lines.join('\r\n');
 }
 
 /**
- * Télécharge un fichier .ics
+ * Formater une date au format iCal (yyyyMMddTHHmmssZ)
  */
-export function downloadICal(items: CalendarItem[], filename = 'calendrier.ics') {
-  const content = generateICal(items);
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function formatICalDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+  return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
 }
 
 /**
- * Parse un fichier .ics (basique)
+ * Échapper le texte pour iCal
+ * - Échapper les virgules, points-virgules, backslashes
+ * - Gérer les retours à la ligne
  */
-export function parseICal(content: string): CalendarItem[] {
-  // Implémentation basique - à améliorer pour production
-  const items: CalendarItem[] = [];
-  const events = content.split('BEGIN:VEVENT');
-  
-  for (const event of events.slice(1)) {
-    const uid = extractICalField(event, 'UID');
-    const summary = extractICalField(event, 'SUMMARY');
-    const dtstart = extractICalField(event, 'DTSTART');
-    const dtend = extractICalField(event, 'DTEND');
-    const description = extractICalField(event, 'DESCRIPTION');
-    const location = extractICalField(event, 'LOCATION');
-    
-    if (uid && summary && dtstart && dtend) {
-      items.push({
-        id: uid.split('@')[0],
-        title: unescapeICalText(summary),
-        description: description ? unescapeICalText(description) : undefined,
-        kind: 'other',
-        start: parseICalDate(dtstart).toISOString(),
-        end: parseICalDate(dtend).toISOString(),
-        priority: 'normal',
-        severity: 'info',
-        status: 'open',
-        bureau: location || undefined,
-      });
-    }
-  }
-  
-  return items;
-}
-
-// Helpers privés
-function formatICalDate(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-}
-
-function parseICalDate(dateStr: string): Date {
-  // Format: 20251224T100000Z ou 20251224
-  const clean = dateStr.replace(/[TZ]/g, '');
-  if (clean.length === 8) {
-    const year = parseInt(clean.slice(0, 4));
-    const month = parseInt(clean.slice(4, 6)) - 1;
-    const day = parseInt(clean.slice(6, 8));
-    return new Date(year, month, day);
-  }
-  if (clean.length >= 14) {
-    const year = parseInt(clean.slice(0, 4));
-    const month = parseInt(clean.slice(4, 6)) - 1;
-    const day = parseInt(clean.slice(6, 8));
-    const hour = parseInt(clean.slice(8, 10) || '0');
-    const minute = parseInt(clean.slice(10, 12) || '0');
-    const second = parseInt(clean.slice(12, 14) || '0');
-    return new Date(year, month, day, hour, minute, second);
-  }
-  return new Date();
-}
-
 function escapeICalText(text: string): string {
   return text
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\n/g, '\\n');
+    .replace(/\\/g, '\\\\')   // Backslash
+    .replace(/;/g, '\\;')      // Point-virgule
+    .replace(/,/g, '\\,')      // Virgule
+    .replace(/\n/g, '\\n')     // Retour à la ligne
+    .replace(/\r/g, '');       // Supprimer CR
 }
 
-function unescapeICalText(text: string): string {
-  return text
-    .replace(/\\n/g, '\n')
-    .replace(/\\,/g, ',')
-    .replace(/\\;/g, ';')
-    .replace(/\\\\/g, '\\');
+/**
+ * Mapper le statut de l'événement au format iCal
+ */
+function mapStatus(status?: string): string | null {
+  if (!status) return null;
+
+  const statusMap: Record<string, string> = {
+    'open': 'CONFIRMED',
+    'done': 'CONFIRMED',
+    'snoozed': 'TENTATIVE',
+    'ack': 'CONFIRMED',
+    'blocked': 'CANCELLED',
+  };
+
+  return statusMap[status] || 'CONFIRMED';
 }
 
-function getICalPriority(priority: string): string {
-  if (priority === 'critical') return '1';
-  if (priority === 'urgent') return '2';
-  return '5';
+/**
+ * Mapper la priorité au format iCal (0-9, où 0 = non défini, 1 = haute, 5 = moyenne, 9 = basse)
+ */
+function mapPriority(priority?: string): number | null {
+  if (!priority) return 5; // Moyenne par défaut
+
+  const priorityMap: Record<string, number> = {
+    'critical': 1,
+    'urgent': 2,
+    'normal': 5,
+  };
+
+  return priorityMap[priority] || 5;
 }
 
-function getICalStatus(status: string): string {
-  if (status === 'done') return 'CONFIRMED';
-  if (status === 'ack') return 'CANCELLED';
-  return 'TENTATIVE';
+/**
+ * Générer un seul événement iCal (utile pour invitations)
+ */
+export function generateSingleEventICal(event: ICalEvent): string {
+  return generateICalFile([event]);
 }
 
-function extractICalField(content: string, field: string): string | null {
-  const regex = new RegExp(`${field}:(.+?)(?:\\r?\\n|$)`, 'i');
-  const match = content.match(regex);
-  return match ? match[1].trim() : null;
-}
+/**
+ * Générer un fichier iCal avec récurrence
+ */
+export function generateRecurringEventICal(
+  event: ICalEvent,
+  recurrence: {
+    frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+    interval?: number;
+    until?: Date;
+    count?: number;
+    byDay?: string[]; // MO, TU, WE, TH, FR, SA, SU
+  }
+): string {
+  const now = new Date();
+  const timestamp = formatICalDate(now);
 
+  // Construire la règle RRULE
+  let rrule = `FREQ=${recurrence.frequency}`;
+
+  if (recurrence.interval && recurrence.interval > 1) {
+    rrule += `;INTERVAL=${recurrence.interval}`;
+  }
+
+  if (recurrence.until) {
+    rrule += `;UNTIL=${formatICalDate(recurrence.until)}`;
+  } else if (recurrence.count) {
+    rrule += `;COUNT=${recurrence.count}`;
+  }
+
+  if (recurrence.byDay && recurrence.byDay.length > 0) {
+    rrule += `;BYDAY=${recurrence.byDay.join(',')}`;
+  }
+
+  // Générer l'événement avec RRULE
+  let ical = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Bureau Maître d\'Ouvrage//Calendrier BMO//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${event.id}@bmo.sn`,
+    `DTSTAMP:${timestamp}`,
+    `DTSTART:${formatICalDate(event.start)}`,
+    `DTEND:${formatICalDate(event.end)}`,
+    `SUMMARY:${escapeICalText(event.title)}`,
+    `RRULE:${rrule}`,
+  ];
+
+  if (event.description) {
+    ical.push(`DESCRIPTION:${escapeICalText(event.description)}`);
+  }
+
+  if (event.location) {
+    ical.push(`LOCATION:${escapeICalText(event.location)}`);
+  }
+
+  ical.push('END:VEVENT');
+  ical.push('END:VCALENDAR');
+
+  return ical.join('\r\n') + '\r\n';
+}

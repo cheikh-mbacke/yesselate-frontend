@@ -1,0 +1,639 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// StakeholderRole: "OWNER" | "APPROVER" | "REVIEWER" | "CONTRIBUTOR" | "INFORMED"
+// TaskStatus: "OPEN" | "IN_PROGRESS" | "DONE" | "BLOCKED"
+// DemandStatus: "pending" | "validated" | "rejected"
+// Priority: "urgent" | "high" | "normal" | "low"
+
+model Demand {
+  id          String   @id
+  subject     String
+  bureau      String
+  type        String
+  status      String   @default("pending") // "pending" | "validated" | "rejected"
+  priority    String   @default("normal") // "urgent" | "high" | "normal" | "low"
+  amount      Int?
+  icon        String?
+  requestedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Informations demandeur
+  requesterId      String?
+  requesterName    String?
+  requesterEmail   String?
+  requesterPhone   String?
+  requesterService String?
+
+  // Contexte et justification
+  description   String? // Description détaillée
+  justification String? // Pourquoi cette demande ?
+  objectives    String? // Objectifs attendus
+  beneficiaries String? // Qui en bénéficie ?
+  urgencyReason String? // Raison de l'urgence (si urgent)
+
+  // Budget
+  budgetCode      String? // Code budgétaire
+  budgetLine      String? // Ligne budgétaire
+  budgetAvailable Int? // Budget disponible
+
+  // Dates importantes
+  expectedDate DateTime? // Date souhaitée de réalisation
+  deadline     DateTime? // Date limite
+
+  // Affectation
+  assignedToId   String?
+  assignedToName String?
+
+  // Documents (JSON array of {name, url, type})
+  documents String? // JSON string
+
+  // Recommandations
+  recommendation String? // Avis/recommandation du service
+
+  // Notes internes
+  internalNotes String?
+
+  events       DemandEvent[]
+  stakeholders DemandStakeholder[]
+  tasks        DemandTask[]
+  risks        DemandRisk[]
+
+  @@index([status, priority, requestedAt])
+  @@index([bureau])
+  @@index([requesterId])
+}
+
+model DemandEvent {
+  id        String   @id @default(cuid())
+  demandId  String
+  at        DateTime @default(now())
+  actorId   String
+  actorName String
+  action    String
+  details   String?
+
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+
+  @@index([demandId, at])
+}
+
+model DemandStakeholder {
+  id         String  @id @default(cuid())
+  demandId   String
+  personId   String
+  personName String
+  role       String // "OWNER" | "APPROVER" | "REVIEWER" | "CONTRIBUTOR" | "INFORMED"
+  required   Int     @default(0) // 0 = false, 1 = true (SQLite boolean)
+  note       String?
+
+  createdAt DateTime @default(now())
+
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+
+  @@index([demandId])
+  @@index([personId])
+}
+
+model DemandTask {
+  id             String    @id @default(cuid())
+  demandId       String
+  title          String
+  description    String?
+  status         String    @default("OPEN") // "OPEN" | "IN_PROGRESS" | "DONE" | "BLOCKED"
+  dueAt          DateTime?
+  assignedToId   String?
+  assignedToName String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+
+  @@index([demandId])
+  @@index([status])
+}
+
+model DemandRisk {
+  id       String @id @default(cuid())
+  demandId String
+
+  category    String // "Juridique", "Budget", "SLA", "Réputation", etc.
+  opportunity Int    @default(0) // 0 = false, 1 = true (SQLite boolean)
+
+  probability Int // 1..5
+  impact      Int // 1..5
+  mitigation  String?
+  ownerName   String?
+
+  createdAt DateTime @default(now())
+
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+
+  @@index([demandId])
+  @@index([category])
+}
+
+// ============================================
+// DÉLÉGATIONS DE POUVOIRS — SYSTÈME COMPLET
+// ============================================
+
+// Statuts possibles d'une délégation
+// "draft" | "submitted" | "active" | "suspended" | "revoked" | "expired"
+
+model Delegation {
+  id    String  @id // DEL-2024-001
+  code  String? // Code court unique pour référence
+  title String // Intitulé officiel
+
+  // Catégorie et statut
+  category String // "SIGNATURE" | "ENGAGEMENT" | "PAIEMENT" | "VALIDATION" | "REPRESENTATION" | "OPERATIONNEL"
+  status   String @default("draft")
+
+  // Objet et description
+  object      String // Ce que cette délégation autorise (résumé)
+  description String? // Description complète
+  legalBasis  String? // Base juridique / référence réglementaire
+
+  // === DÉLÉGANT (Grantor) ===
+  grantorId    String
+  grantorName  String
+  grantorRole  String? // Fonction du délégant (DG, Président, Directeur...)
+  grantorEmail String?
+
+  // === DÉLÉGATAIRE (Delegate) ===
+  delegateId    String
+  delegateName  String
+  delegateRole  String? // Fonction du délégataire
+  delegateEmail String?
+  delegatePhone String?
+
+  // Bureau principal
+  bureau String
+
+  // === PÉRIODE DE VALIDITÉ ===
+  startsAt      DateTime
+  endsAt        DateTime
+  extendable    Int      @default(1) // 0 = false, 1 = true
+  maxExtensions Int      @default(2) // Nombre max de prolongations
+  extensionDays Int      @default(90) // Durée par prolongation
+
+  // === PÉRIMÈTRE (Scope) ===
+  // Mode: "ALL" = tous, "INCLUDE" = liste blanche, "EXCLUDE" = liste noire
+  projectScopeMode  String  @default("ALL")
+  projectScopeList  String? // JSON array des projectIds
+  bureauScopeMode   String  @default("ALL")
+  bureauScopeList   String? // JSON array des bureaux
+  supplierScopeMode String  @default("ALL")
+  supplierScopeList String? // JSON array des fournisseurs
+  categoryScopeList String? // JSON array des catégories d'achats
+
+  // === LIMITES ===
+  maxAmount         Int? // Plafond montant par opération (XOF)
+  maxTotalAmount    Int? // Plafond cumulé sur période
+  currency          String  @default("XOF")
+  maxDailyOps       Int? // Nombre max d'opérations/jour
+  maxMonthlyOps     Int? // Nombre max d'opérations/mois
+  allowedHoursStart Int? // Heure début autorisée (0-23)
+  allowedHoursEnd   Int? // Heure fin autorisée (0-23)
+  allowedDays       String? // JSON array ["MON","TUE",...] ou null = tous
+
+  // === CONTRÔLES REQUIS ===
+  requiresDualControl   Int @default(0) // Double validation
+  requiresLegalReview   Int @default(0) // Visa juridique
+  requiresFinanceCheck  Int @default(0) // Visa finance
+  requiresStepUpAuth    Int @default(0) // 2FA pour confirmer
+  requiresDocumentation Int @default(1) // Pièces justificatives obligatoires
+
+  // === UTILISATION ===
+  usageCount       Int       @default(0)
+  usageTotalAmount Int       @default(0)
+  lastUsedAt       DateTime?
+  lastUsedFor      String?
+  lastUsedAmount   Int?
+
+  // === TRAÇABILITÉ CRYPTOGRAPHIQUE ===
+  decisionHash String? // Hash de la décision initiale
+  headHash     String? // Hash de tête de chaîne audit
+
+  // === SUSPENSION / RÉVOCATION ===
+  suspendedAt     DateTime?
+  suspendedById   String?
+  suspendedByName String?
+  suspendReason   String?
+  revokedAt       DateTime?
+  revokedById     String?
+  revokedByName   String?
+  revokeReason    String?
+
+  // === DOCUMENTS DE RÉFÉRENCE ===
+  decisionRef  String? // N° de la décision
+  decisionDate DateTime?
+  attachments  String? // JSON array [{name, url, type}]
+
+  // Notes internes
+  notes String?
+
+  // Méta
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdById   String?
+  createdByName String?
+
+  // Relations
+  policies    DelegationPolicy[]
+  actors      DelegationActor[]
+  engagements DelegationEngagement[]
+  events      DelegationEvent[]
+  usages      DelegationUsage[]
+
+  @@index([status, endsAt])
+  @@index([delegateId])
+  @@index([grantorId])
+  @@index([bureau])
+  @@index([category])
+}
+
+// === POLITIQUES (règles de la délégation) ===
+// Chaque délégation peut avoir plusieurs policies, chacune avec ses propres limites
+model DelegationPolicy {
+  id           String @id @default(cuid())
+  delegationId String
+
+  // Type d'action autorisée
+  action String // "APPROVE_PAYMENT" | "SIGN_CONTRACT" | "APPROVE_PURCHASE_ORDER" | "VALIDATE_CHANGE_ORDER" | "APPROVE_RECEPTION" | "SIGN_MINUTES" | "REPRESENT_ENTITY"
+
+  // Limites spécifiques à cette policy
+  maxAmount Int?
+  currency  String @default("XOF")
+
+  // Périmètre spécifique (surcharge le périmètre général)
+  allowedProjects   String? // JSON array
+  allowedBureaux    String? // JSON array
+  allowedSuppliers  String? // JSON array
+  excludedSuppliers String? // JSON array
+  allowedCategories String? // JSON array
+
+  // Contrôles spécifiques
+  requiresDualControl  Int @default(0)
+  requiresLegalReview  Int @default(0)
+  requiresFinanceCheck Int @default(0)
+  requiresStepUpAuth   Int @default(0)
+
+  // Seuil de step-up (si montant > seuil → validation sup.)
+  stepUpThreshold Int?
+
+  // Actif
+  enabled Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  delegation Delegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+
+  @@index([delegationId])
+  @@index([action])
+}
+
+// === ACTEURS IMPLIQUÉS ===
+// Matrice des rôles : qui est impliqué dans cette délégation
+model DelegationActor {
+  id           String @id @default(cuid())
+  delegationId String
+
+  userId    String
+  userName  String
+  userRole  String? // Fonction
+  userEmail String?
+
+  // Rôle dans la délégation
+  roleType String // "GRANTOR" | "DELEGATE" | "CO_APPROVER" | "CONTROLLER" | "AUDITOR" | "WITNESS" | "BACKUP" | "IMPACTED"
+
+  required       Int @default(1) // 0 = optionnel, 1 = obligatoire
+  canApprove     Int @default(0) // Peut valider des usages
+  canRevoke      Int @default(0) // Peut révoquer
+  mustBeNotified Int @default(1) // Doit être notifié
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  delegation Delegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+
+  @@unique([delegationId, userId, roleType])
+  @@index([delegationId])
+  @@index([userId])
+}
+
+// === ENGAGEMENTS ===
+// Obligations du délégataire + check-lists
+model DelegationEngagement {
+  id           String @id @default(cuid())
+  delegationId String
+
+  // Type d'engagement
+  engagementType String // "OBLIGATION" | "PROHIBITION" | "ALERT" | "REPORTING" | "DOCUMENTATION" | "COMPLIANCE"
+
+  title       String // Titre court
+  description String // Description complète
+
+  // Criticité
+  criticality String @default("MEDIUM") // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+
+  // Pièces/documents associés
+  requiredDocs String? // JSON array [{type, description, mandatory}]
+
+  // Fréquence de reporting (si engagementType = "REPORTING")
+  frequency String? // "DAILY" | "WEEKLY" | "MONTHLY" | "PER_USE" | "ON_DEMAND"
+
+  // Actif
+  enabled Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  delegation Delegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+
+  @@index([delegationId])
+}
+
+// === ÉVÉNEMENTS D'AUDIT (chaînés) ===
+model DelegationEvent {
+  id           String @id @default(cuid())
+  delegationId String
+
+  // Type d'événement
+  eventType String // "CREATED" | "SUBMITTED" | "APPROVED" | "ACTIVATED" | "USED" | "EXTENDED" | "MODIFIED" | "SUSPENDED" | "REACTIVATED" | "REVOKED" | "EXPIRED" | "REJECTED" | "COMMENT"
+
+  // Acteur
+  actorId   String
+  actorName String
+  actorRole String?
+
+  // Détails
+  summary String? // Résumé court
+  details String? // Détails complets (JSON ou texte)
+
+  // Contexte d'utilisation (si eventType = "USED")
+  usageContext String? // JSON: {projectId, bureau, supplierId, amount, documentRef, documentType}
+
+  // Document cible (si applicable)
+  targetDocId   String?
+  targetDocRef  String?
+  targetDocType String? // "BC" | "PAIEMENT" | "CONTRAT" | "AVENANT" | "PV" | "RECEPTION"
+  targetAmount  Int?
+
+  // Résultat de l'évaluation (si USED)
+  evaluationResult  String? // "ALLOWED" | "DENIED" | "PENDING_CONTROL"
+  evaluationReasons String? // JSON array des raisons
+  controlsRequired  String? // JSON {dual, legal, finance, stepUp}
+
+  // Chaînage cryptographique
+  previousHash String?
+  eventHash    String // SHA256(previousHash + payload)
+
+  // Validation (pour dual control)
+  validatedById   String?
+  validatedByName String?
+  validatedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  delegation Delegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+
+  @@index([delegationId, createdAt])
+  @@index([eventType])
+  @@index([actorId])
+}
+
+// === USAGES DE LA DÉLÉGATION ===
+// Historique détaillé de chaque utilisation
+model DelegationUsage {
+  id           String @id @default(cuid())
+  delegationId String
+
+  // Contexte de l'usage
+  projectId    String?
+  projectName  String?
+  bureau       String?
+  supplierId   String?
+  supplierName String?
+  category     String?
+
+  // Document associé
+  documentId   String?
+  documentRef  String // Référence du document (BC-2024-001, PAY-2024-123...)
+  documentType String // "BC" | "PAIEMENT" | "CONTRAT" | "AVENANT" | "PV" | "RECEPTION"
+  documentDate DateTime?
+
+  // Montant
+  amount   Int
+  currency String @default("XOF")
+
+  // Qui a utilisé
+  usedById   String
+  usedByName String
+
+  // Résultat
+  status String @default("PENDING") // "PENDING" | "AUTHORIZED" | "DENIED" | "PENDING_CONTROL" | "CANCELLED"
+
+  // Évaluation
+  evaluationResult String? // JSON complet du résultat
+  controlsRequired String? // JSON {dual, legal, finance}
+
+  // Validations (dual control)
+  dualControlById   String?
+  dualControlByName String?
+  dualControlAt     DateTime?
+
+  legalReviewById   String?
+  legalReviewByName String?
+  legalReviewAt     DateTime?
+  legalReviewNotes  String?
+
+  financeCheckById   String?
+  financeCheckByName String?
+  financeCheckAt     DateTime?
+  financeCheckNotes  String?
+
+  // Lien vers l'événement d'audit
+  eventId String?
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  delegation Delegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+
+  @@index([delegationId])
+  @@index([documentRef])
+  @@index([status])
+  @@index([projectId])
+}
+
+// ============================================
+// CALENDRIER — SYSTÈME DE GESTION D'ÉVÉNEMENTS
+// ============================================
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String // Titre de l'événement
+  description String? // Description détaillée
+  
+  // Type d'événement
+  kind String // "meeting" | "site-visit" | "validation" | "payment" | "contract" | "deadline" | "absence" | "other"
+  
+  // Bureau associé (optionnel)
+  bureau String?
+  
+  // Date et heure
+  start DateTime
+  end   DateTime
+  
+  // Priorité et statut
+  priority String @default("normal") // "normal" | "urgent" | "critical"
+  status   String @default("open") // "open" | "done" | "snoozed" | "ack" | "blocked"
+  
+  // Projet associé (optionnel)
+  project String?
+  
+  // SLA
+  slaDueAt DateTime? // Date limite SLA
+  
+  // Localisation et ressources
+  location  String? // Lieu (adresse, salle, etc.)
+  equipment String? // Équipement nécessaire
+  
+  // Budget (si applicable)
+  budget Int?
+  
+  // Notes
+  notes String?
+  
+  // Métadonnées
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  assignees    CalendarEventAssignee[]
+  linkedEntity CalendarEventLink?
+  recurrence   CalendarRecurrence?
+  auditLogs    CalendarEventAudit[]
+  
+  @@index([start, end])
+  @@index([status, priority])
+  @@index([bureau])
+  @@index([kind])
+  @@index([slaDueAt])
+}
+
+// === PARTICIPANTS ===
+model CalendarEventAssignee {
+  id      String @id @default(cuid())
+  eventId String
+  
+  userId   String
+  userName String
+  role     String @default("participant") // "organizer" | "participant" | "optional" | "resource"
+  
+  // Statut de présence (pour après l'événement)
+  attended       Int       @default(0) // 0 = false, 1 = true
+  attendanceNote String?
+  respondedAt    DateTime?
+  
+  createdAt DateTime @default(now())
+  
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+// === LIENS VERS D'AUTRES ENTITÉS ===
+// Un événement peut être lié à une demande, délégation, BC, etc.
+model CalendarEventLink {
+  id      String @id @default(cuid())
+  eventId String @unique
+  
+  entityType String // "demand" | "delegation" | "bc" | "payment" | "contract" | "other"
+  entityId   String
+  label      String? // Libellé pour affichage
+  
+  createdAt DateTime @default(now())
+  
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@index([entityType, entityId])
+}
+
+// === RÉCURRENCE ===
+model CalendarRecurrence {
+  id      String @id @default(cuid())
+  eventId String @unique
+  
+  // Configuration de récurrence
+  frequency String // "daily" | "weekly" | "monthly" | "yearly"
+  interval  Int    @default(1) // Tous les X jours/semaines/mois/années
+  
+  // Jours de la semaine (pour weekly)
+  daysOfWeek String? // JSON array ["MON", "WED", "FRI"]
+  
+  // Jour du mois (pour monthly)
+  dayOfMonth Int? // 1..31
+  
+  // Mois de l'année (pour yearly)
+  monthOfYear Int? // 1..12
+  
+  // Fin de récurrence
+  endDate DateTime? // Date de fin
+  count   Int? // Nombre d'occurrences
+  
+  // Exceptions (dates à exclure)
+  exceptions String? // JSON array de dates ISO
+  
+  createdAt DateTime @default(now())
+  
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+// === AUDIT TRAIL ===
+model CalendarEventAudit {
+  id      String @id @default(cuid())
+  eventId String
+  
+  action String // "CREATED" | "UPDATED" | "DELETED" | "CANCELLED" | "COMPLETED" | "RESCHEDULED" | "COMMENT"
+  
+  actorId   String
+  actorName String
+  
+  details String? // JSON avec détails du changement
+  
+  createdAt DateTime @default(now())
+  
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@index([eventId, createdAt])
+  @@index([actorId])
+}
+
+// === RÉSOLUTION DE CONFLITS ===
+model ConflictResolution {
+  id String @id @default(cuid())
+  
+  conflictId String // Format: "eventId1-eventId2"
+  resolution String // "reschedule_first" | "reschedule_second" | "merge" | "cancel_first" | "cancel_second" | "ignore"
+  
+  resolvedBy   String
+  resolvedAt   DateTime
+  notes        String?
+  
+  @@index([conflictId])
+}

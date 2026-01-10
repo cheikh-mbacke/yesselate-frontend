@@ -135,7 +135,8 @@ export const organigramme: Organigramme = {
 };
 
 // --- Navigation sidebar (RÉORGANISÉE selon chaîne de valeur DG) ---
-// Ordre logique : Pilotage → Exécution → Projets & Clients → Finance & Contentieux → RH & Ressources → Gouvernance & Système
+// Ordre logique : Pilotage → Exécution → Projets & Clients → Finance & Contentieux → RH & Ressources → Communication → Gouvernance
+// OPTIMISÉE le 10/01/2026 : Suppression redondances, réorganisation arbitrages, ajout alerts
 export const navSections: NavSection[] = [
   {
     title: 'Pilotage',
@@ -144,6 +145,7 @@ export const navSections: NavSection[] = [
       { id: 'governance', icon: '🏛️', label: 'Gouvernance', badge: 7, badgeType: 'warning' },
       { id: 'calendrier', icon: '📅', label: 'Calendrier' },
       { id: 'analytics', icon: '📈', label: 'Analytics & Rapports' },
+      { id: 'alerts', icon: '🔔', label: 'Centre d\'alertes', badge: 5, badgeType: 'urgent' },
     ],
   },
   {
@@ -155,6 +157,7 @@ export const navSections: NavSection[] = [
       { id: 'validation-paiements', icon: '💳', label: 'Validation Paiements...', badge: 5, badgeType: 'gray' },
       { id: 'blocked', icon: '🚨', label: 'Dossiers bloqués', badge: 4, badgeType: 'urgent' },
       { id: 'substitution', icon: '🔄', label: 'Substitution', badge: 4, badgeType: 'warning' },
+      { id: 'arbitrages-vivants', icon: '⚖️', label: 'Arbitrages & Goulots', badge: 3, badgeType: 'warning' },
     ],
   },
   {
@@ -162,7 +165,7 @@ export const navSections: NavSection[] = [
     items: [
       { id: 'projets-en-cours', icon: '🏗️', label: 'Projets en cours', badge: 8, badgeType: 'gray' },
       { id: 'clients', icon: '👥', label: 'Clients' },
-      { id: 'tickets-clients', icon: '📋', label: 'Tickets clients' },
+      { id: 'tickets-clients', icon: '🎫', label: 'Tickets clients' },
     ],
   },
   {
@@ -179,10 +182,7 @@ export const navSections: NavSection[] = [
       { id: 'employes', icon: '👤', label: 'Employés & Agents', badge: 8, badgeType: 'gray' },
       { id: 'missions', icon: '🎯', label: 'Missions', badge: 2, badgeType: 'warning' },
       { id: 'evaluations', icon: '📊', label: 'Évaluations', badge: 2, badgeType: 'info' },
-      { id: 'demandes-rh', icon: '📝', label: 'Demandes RH', badge: 10, badgeType: 'warning' },
-      { id: 'depenses', icon: '💸', label: 'Demandes Dépenses', badge: 2, badgeType: 'gray' },
-      { id: 'deplacements', icon: '✈️', label: 'Déplacements', badge: 1, badgeType: 'urgent' },
-      { id: 'paie-avances', icon: '💰', label: 'Paie & Avances', badge: 1, badgeType: 'urgent' },
+      { id: 'demandes-rh', icon: '📝', label: 'Demandes RH', badge: 14, badgeType: 'warning' },
       { id: 'delegations', icon: '🔑', label: 'Délégations' },
       { id: 'organigramme', icon: '📐', label: 'Organigramme' },
     ],
@@ -192,16 +192,15 @@ export const navSections: NavSection[] = [
     items: [
       { id: 'echanges-bureaux', icon: '💬', label: 'Échanges Inter-Bureaux', badge: 5, badgeType: 'gray' },
       { id: 'echanges-structures', icon: '🏛️', label: 'Échanges Structures' },
-      { id: 'arbitrages-vivants', icon: '🎯', label: 'Gouvernance & Décisions', badge: 3, badgeType: 'warning' },
       { id: 'conferences', icon: '📹', label: 'Conférences Décisionnelles' },
       { id: 'messages-externes', icon: '📨', label: 'Messages Externes' },
     ],
   },
   {
-    title: 'Gouvernance',
+    title: 'Système',
     items: [
-      { id: 'decisions', icon: '⚖️', label: 'Décisions' },
-      { id: 'audit', icon: '🔍', label: 'Audit' },
+      { id: 'decisions', icon: '📋', label: 'Registre Décisions' },
+      { id: 'audit', icon: '🔍', label: 'Audit & Conformité' },
       { id: 'logs', icon: '📜', label: 'Journal des Actions' },
       { id: 'system-logs', icon: '🔧', label: 'Logs Système' },
       { id: 'ia', icon: '🤖', label: 'Intelligence Artificielle' },

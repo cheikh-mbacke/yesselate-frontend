@@ -8,10 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { messagesExternes } from '@/lib/data';
 
+// Type pour les messages
+type MessageItem = typeof messagesExternes[number];
+
 // WHY: Export CSV enrichi — traçabilité RACI incluse
 const exportMessagesAsCSV = (
-  messages: typeof messagesExternes,
-  addToast: (msg: string, variant: string) => void
+  messages: MessageItem[],
+  addToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void
 ) => {
   const headers = [
     'ID',

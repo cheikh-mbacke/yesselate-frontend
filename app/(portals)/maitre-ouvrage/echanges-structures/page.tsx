@@ -307,13 +307,13 @@ export default function EchangesStructuresPage() {
         </div>
         <div className="flex gap-1 flex-wrap">
           <span className="text-xs text-slate-400 self-center mr-1">Type:</span>
-          {[
-            { id: 'all', label: 'Tous' },
-            { id: 'alerte_risque', label: '🚨' },
-            { id: 'demande_info', label: '❓' },
-            { id: 'demande_validation', label: '✅' },
-            { id: 'signalement_blocage', label: '🚫' },
-          ].map((f) => (
+          {([
+            { id: 'all' as TypeFilter, label: 'Tous' },
+            { id: 'alerte_risque' as TypeFilter, label: '🚨' },
+            { id: 'demande_info' as TypeFilter, label: '❓' },
+            { id: 'demande_validation' as TypeFilter, label: '✅' },
+            { id: 'signalement_blocage' as TypeFilter, label: '🚫' },
+          ] as const).map((f) => (
             <Button key={f.id} size="sm" variant={typeFilter === f.id ? 'default' : 'secondary'} onClick={() => setTypeFilter(f.id)}>{f.label}</Button>
           ))}
         </div>

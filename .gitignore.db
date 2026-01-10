@@ -1,0 +1,11 @@
+# Ajoutez ces lignes à votre .gitignore existant
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+node_modules/@prisma
+
+# Environment
+.env
+.env.local
+

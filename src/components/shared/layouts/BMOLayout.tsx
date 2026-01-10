@@ -14,14 +14,15 @@ interface BMOLayoutProps {
 }
 
 export function BMOLayout({ children }: BMOLayoutProps) {
-  const { darkMode, sidebarOpen } = useAppStore();
+  const { sidebarOpen, darkMode } = useAppStore();
 
   return (
     <AutoSyncProvider>
       <div
         className={cn(
           'min-h-screen flex',
-          darkMode ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-900'
+          'bg-[rgb(var(--bg))] text-[rgb(var(--text))]',
+          darkMode ? 'dark' : 'light'
         )}
       >
         {/* Sidebar */}

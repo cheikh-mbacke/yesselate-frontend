@@ -1,1666 +1,1675 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useArbitragesWorkspaceStore } from '@/lib/stores/arbitragesWorkspaceStore';
+
+import { ArbitragesWorkspaceTabs } from '@/components/features/arbitrages/workspace/ArbitragesWorkspaceTabs';
+import { ArbitragesWorkspaceContent } from '@/components/features/arbitrages/workspace/ArbitragesWorkspaceContent';
+import { ArbitragesCommandPalette } from '@/components/features/arbitrages/workspace/ArbitragesCommandPalette';
+import { ArbitragesDirectionPanel } from '@/components/features/arbitrages/workspace/ArbitragesDirectionPanel';
+import { ArbitragesAlertsBanner } from '@/components/features/arbitrages/workspace/ArbitragesAlertsBanner';
+import { ArbitragesLiveCounters } from '@/components/features/arbitrages/workspace/ArbitragesLiveCounters';
+import { ArbitragesStatsModal } from '@/components/features/arbitrages/workspace/ArbitragesStatsModal';
+import { ArbitragesTimeline } from '@/components/features/arbitrages/workspace/ArbitragesTimeline';
+import { ArbitragesNotifications } from '@/components/features/arbitrages/workspace/ArbitragesNotifications';
+import { ArbitragestoastProvider, useArbitragestoast } from '@/components/features/arbitrages/workspace/ArbitragesToast';
+
+import { WorkspaceShell, type ShellAction, type ShellBadge } from '@/components/features/workspace/WorkspaceShell';
+import { FluentModal } from '@/components/ui/fluent-modal';
+import { FluentButton } from '@/components/ui/fluent-button';
+
+import {
+  Scale,
+  HelpCircle,
+  RefreshCw,
+  Download,
+  Plus,
+  BarChart3,
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Clock,
+  Shield,
+  Activity,
+  Maximize,
+  Minimize,
+  Keyboard,
+  LayoutGrid,
+  Zap,
+  TrendingUp,
+  ChevronRight,
+  Star,
+  StarOff,
+  History,
+  Bell,
+  Command,
+  Filter,
+  Settings,
+  Eye,
+  FileText,
+  Workflow,
+  Brain,
+  Users,
+  Calendar,
+  PanelRightOpen,
+  PanelRightClose,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { arbitragesVivants, coordinationStats, arbitrages, bureauxGovernance } from '@/lib/data';
-import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
-import type { ArbitrageVivant, Arbitration } from '@/lib/types/bmo.types';
 
-type MainTab = 'arbitrages' | 'bureaux';
-type Filter = 'all' | 'ouverts' | 'tranche' | 'pending' | 'resolved';
-type SelectedType = 'vivant' | 'simple' | null;
-type ViewTab = 'contexte' | 'options' | 'parties' | 'documents';
+// ================================
+// Types
+// ================================
 
-type Vivant = ArbitrageVivant & { _type: 'vivant' };
-type Simple = Arbitration & { _type: 'simple' };
-type AnyArb = Vivant | Simple;
-
-type Bureau = (typeof bureauxGovernance)[number];
-
-const parseFrDate = (d?: string | null) => {
-  if (!d) return null;
-  // dd/mm/yyyy
-  const parts = d.split('/');
-  if (parts.length !== 3) return null;
-  const [dd, mm, yyyy] = parts.map((x) => Number(x));
-  if (!dd || !mm || !yyyy) return null;
-  const iso = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
+type ArbitrageStats = {
+  total: number;
+  ouverts: number;
+  tranches: number;
+  critiques: number;
+  enRetard: number;
+  expositionTotale: number;
+  simplesPending: number;
+  simplesResolved: number;
+  simplesUrgent: number;
+  bureauxSurcharge: number;
+  totalGoulots: number;
+  byBureau?: { bureau: string; count: number; critiques: number }[];
+  byType?: { type: string; count: number }[];
+  trends?: { daily: number; weekly: number; monthly: number };
+  avgResolutionTime?: number;
+  ts: string;
 };
 
-const isUrgentDeadline = (deadline?: string | null) => {
-  const d = parseFrDate(deadline);
-  if (!d) return false;
-  const in3 = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-  return d <= in3;
+type EscaladeItem = {
+  id: string;
+  subject: string;
+  riskLevel: 'critique' | 'eleve' | 'modere' | 'faible';
+  daysOverdue: number;
+  exposure: number;
+  score: number;
 };
 
-const STATUS_LEFT_BORDER: Record<string, string> = {
-  // vivants
-  critique: 'border-l-red-500',
-  eleve: 'border-l-orange-500',
-  modere: 'border-l-amber-500',
-  faible: 'border-l-emerald-500',
+type ExportFormat = 'csv' | 'json' | 'pdf';
+type ExportQueue = 'all' | 'ouverts' | 'critiques' | 'urgents' | 'tranches';
 
-  // simples (impact)
-  critical: 'border-l-red-500',
-  high: 'border-l-orange-500',
-  medium: 'border-l-amber-500',
-  low: 'border-l-emerald-500',
+type Mode = 'dashboard' | 'workspace';
+type DashboardTab = 'overview' | 'bureaux' | 'timeline' | 'favorites';
 
-  // fallback
-  default: 'border-l-slate-500',
+type UIPrefs = {
+  mode: Mode;
+  dashboardTab: DashboardTab;
+  fullscreen: boolean;
+  autoRefresh: boolean;
+  refreshMs: number;
+  showSidebar: boolean;
 };
 
-const RISK_PANEL: Record<string, string> = {
-  critique: 'bg-red-500/10 border border-red-500/30',
-  eleve: 'bg-orange-500/10 border border-orange-500/30',
-  modere: 'bg-amber-500/10 border border-amber-500/30',
-  faible: 'bg-emerald-500/10 border border-emerald-500/30',
-  default: 'bg-slate-500/10 border border-slate-500/30',
+type PinnedArbitrage = {
+  id: string;
+  subject: string;
+  riskLevel: string;
+  pinnedAt: string;
 };
 
-const getTypeIcon = (type: string) => {
-  const icons: Record<string, string> = {
-    conflit_bureaux: '⚔️',
-    blocage_projet: '🚫',
-    depassement_budget: '💸',
-    litige_client: '⚖️',
-    urgence_rh: '👥',
-    risque_strategique: '🎯',
-  };
-  return icons[type] || '⚖️';
-};
+const UI_PREF_KEY = 'bmo.arbitrages.ui.v2';
+const PINNED_KEY = 'bmo.arbitrages.pinned.v1';
+const DEFAULT_REFRESH_MS = 60_000;
 
-const formatMoney = (amount: number) => new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
+// ================================
+// Helpers
+// ================================
 
-const safeCopy = async (text: string) => {
+function ignoreIfTyping(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  const tag = t?.tagName?.toLowerCase();
+  if (t?.isContentEditable) return true;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return false;
+}
+
+function readUIPrefs(): UIPrefs | null {
+  if (typeof window === 'undefined') return null;
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
+    const raw = localStorage.getItem(UI_PREF_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<UIPrefs>;
+    return {
+      mode: p.mode === 'workspace' ? 'workspace' : 'dashboard',
+      dashboardTab: ['overview', 'bureaux', 'timeline', 'favorites'].includes(p.dashboardTab || '') 
+        ? p.dashboardTab as DashboardTab 
+        : 'overview',
+      fullscreen: typeof p.fullscreen === 'boolean' ? p.fullscreen : false,
+      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
+      refreshMs: typeof p.refreshMs === 'number' && p.refreshMs >= 15_000 ? p.refreshMs : DEFAULT_REFRESH_MS,
+      showSidebar: typeof p.showSidebar === 'boolean' ? p.showSidebar : true,
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function writeUIPrefs(p: UIPrefs) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(UI_PREF_KEY, JSON.stringify(p));
+  } catch {
+    // no-op
+  }
+}
+
+function readPinnedArbitrages(): PinnedArbitrage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PINNED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(x => x && typeof x === 'object' && x.id).slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedArbitrages(items: PinnedArbitrage[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PINNED_KEY, JSON.stringify(items.slice(0, 20)));
+  } catch {
+    // no-op
+  }
+}
+
+function formatMoney(v: number) {
+  try {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(v);
+  } catch {
+    return `${Math.round(v)} FCFA`;
+  }
+}
+
+function safeFRTime(isoOrDate?: string): string {
+  if (!isoOrDate) return '—';
+  const d = new Date(isoOrDate);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('fr-FR');
+}
+
+function useInterval(fn: () => void, delay: number | null): void {
+  const ref = useRef(fn);
+  useEffect(() => {
+    ref.current = fn;
+  }, [fn]);
+  useEffect(() => {
+    if (delay === null) return;
+    const id = window.setInterval(() => ref.current(), delay);
+    return () => window.clearInterval(id);
+  }, [delay]);
+}
+
+// ================================
+// Helper UI components
+// ================================
+
+const ActionLabel = ({
+  icon,
+  text,
+  right,
+}: {
+  icon?: React.ReactNode;
+  text: React.ReactNode;
+  right?: React.ReactNode;
+}) => (
+  <span className="inline-flex items-center gap-2 whitespace-nowrap leading-none">
+    {icon}
+    <span className="leading-none">{text}</span>
+    {right}
+  </span>
+);
+
+const CountChip = ({ v }: { v: number }) => (
+  <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-white/10 dark:bg-black/20 border border-slate-200/20 dark:border-slate-700/40">
+    {v}
+  </span>
+);
+
+const Chip = ({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'orange' | 'blue' | 'emerald' | 'amber' | 'rose' | 'purple' }) => {
+  const tones: Record<string, string> = {
+    slate: 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-200/40 dark:border-slate-700/50',
+    orange: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/20',
+    blue: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20',
+    emerald: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+    amber: 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-500/20',
+    rose: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
+    purple: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20',
+  };
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium border', tones[tone])}>
+      {children}
+    </span>
+  );
 };
 
-function CmdItem({
+function StatCard({
+  icon,
   label,
+  value,
+  tone,
   hint,
   onClick,
 }: {
+  icon: React.ReactNode;
   label: string;
-  hint: string;
-  onClick: () => void;
+  value: React.ReactNode;
+  hint?: string;
+  tone?: 'neutral' | 'amber' | 'rose' | 'emerald' | 'blue' | 'orange' | 'purple';
+  onClick?: () => void;
 }) {
+  const toneCls =
+    tone === 'rose'
+      ? 'bg-rose-50 dark:bg-rose-900/20'
+      : tone === 'amber'
+        ? 'bg-amber-50 dark:bg-amber-900/20'
+        : tone === 'emerald'
+          ? 'bg-emerald-50 dark:bg-emerald-900/20'
+          : tone === 'blue'
+            ? 'bg-blue-50 dark:bg-blue-900/20'
+            : tone === 'orange'
+              ? 'bg-orange-50 dark:bg-orange-900/20'
+              : tone === 'purple'
+                ? 'bg-purple-50 dark:bg-purple-900/20'
+                : 'bg-slate-50 dark:bg-slate-900/30';
+
+  const Wrapper = onClick ? 'button' : 'div';
+
   return (
-    <button
+    <Wrapper
+      className={cn(
+        'p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-left transition-all',
+        toneCls,
+        onClick && 'hover:scale-[1.02] hover:shadow-md cursor-pointer'
+      )}
       onClick={onClick}
-      className="text-left p-3 rounded-lg border border-slate-700/30 hover:bg-blue-500/5 transition-colors"
     >
-      <p className="text-sm font-semibold">{label}</p>
-      <p className="text-[10px] text-slate-400">{hint}</p>
-    </button>
+      <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+        <span className="shrink-0">{icon}</span>
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <div className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">{value}</div>
+      {hint && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</div>}
+    </Wrapper>
   );
 }
 
-export default function ArbitragesVivantsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
+function ShortcutRow({ shortcut, label }: { shortcut: string; label: string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 text-sm">
+      <span className="text-slate-600 dark:text-slate-400">{label}</span>
+      <kbd className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-xs border border-slate-300 dark:border-slate-700">
+        {shortcut}
+      </kbd>
+    </div>
+  );
+}
 
-  const router = useRouter();
-  const searchParams = useSearchParams();
+const IconButton = ({
+  title,
+  onClick,
+  children,
+  className,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      'p-2 rounded-xl border transition-colors',
+      'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
+      className
+    )}
+    title={title}
+    type="button"
+  >
+    {children}
+  </button>
+);
 
-  const [mainTab, setMainTab] = useState<MainTab>('arbitrages');
+// ================================
+// Rail d'escalade (Top 5 décisions critiques)
+// ================================
 
-  const [filter, setFilter] = useState<Filter>('all');
-  const [q, setQ] = useState('');
-  const search = q.trim().toLowerCase();
-  const searchRef = useRef<HTMLInputElement | null>(null);
+function EscaladeRail({
+  items,
+  onOpenArbitrage,
+  onPinArbitrage,
+  pinnedIds,
+}: {
+  items: EscaladeItem[];
+  onOpenArbitrage: (id: string, subject: string) => void;
+  onPinArbitrage?: (item: EscaladeItem) => void;
+  pinnedIds?: string[];
+}) {
+  if (items.length === 0) return null;
 
-  const [selectedArbitrageId, setSelectedArbitrageId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<SelectedType>(null);
-
-  const [viewTab, setViewTab] = useState<ViewTab>('contexte');
-  const [onlyIssues, setOnlyIssues] = useState(false);
-
-  const [selectedBureau, setSelectedBureau] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [onlyOverloaded, setOnlyOverloaded] = useState(false);
-
-  const [cmdOpen, setCmdOpen] = useState(false);
-
-  // Init depuis URL
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    const f = searchParams.get('filter') as Filter | null;
-    const id = searchParams.get('id');
-    const t = searchParams.get('type') as SelectedType | null;
-    const query = searchParams.get('q');
-    const issues = searchParams.get('issues');
-    const bureau = searchParams.get('bureau');
-
-    if (tab === 'bureaux') setMainTab('bureaux');
-    if (tab === 'arbitrages') setMainTab('arbitrages');
-
-    if (f && ['all', 'ouverts', 'tranche', 'pending', 'resolved'].includes(f)) setFilter(f);
-    if (typeof query === 'string') setQ(query);
-    if (issues === '1') setOnlyIssues(true);
-
-    if (id) {
-      setSelectedArbitrageId(id);
-      setSelectedType(t === 'vivant' || t === 'simple' ? t : null);
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case 'critique':
+        return 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30';
+      case 'eleve':
+        return 'bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-500/30';
+      case 'modere':
+        return 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30';
+      default:
+        return 'bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-500/30';
     }
-    if (bureau) setSelectedBureau(bureau);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Sync URL (state -> query)
-  useEffect(() => {
-    const params = new URLSearchParams();
-
-    params.set('tab', mainTab);
-    if (mainTab === 'arbitrages') {
-      params.set('filter', filter);
-      if (q.trim()) params.set('q', q.trim());
-      if (onlyIssues) params.set('issues', '1');
-
-      if (selectedArbitrageId) params.set('id', selectedArbitrageId);
-      if (selectedType) params.set('type', selectedType);
-    }
-
-    if (mainTab === 'bureaux') {
-      if (selectedBureau) params.set('bureau', selectedBureau);
-      if (q.trim()) params.set('q', q.trim());
-      if (onlyOverloaded) params.set('over', '1');
-    }
-
-    router.replace(`?${params.toString()}`, { scroll: false });
-  }, [mainTab, filter, q, onlyIssues, selectedArbitrageId, selectedType, selectedBureau, onlyOverloaded, router]);
-
-  // Reset viewTab au changement d'arbitrage sélectionné
-  useEffect(() => {
-    if (selectedArbitrageId) setViewTab('contexte');
-  }, [selectedArbitrageId]);
-
-  // Raccourcis clavier
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && k === 'k') {
-        e.preventDefault();
-        setCmdOpen(true);
-      }
-      if (!e.ctrlKey && !e.metaKey && k === '/') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (k === 'escape') setCmdOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  // Combiner les deux sources (stable)
-  const allArbitrages: AnyArb[] = useMemo(() => {
-    const vivants = arbitragesVivants.map((a) => ({ ...a, _type: 'vivant' as const }));
-    const simples = arbitrages.map((a) => ({ ...a, _type: 'simple' as const }));
-    return [...vivants, ...simples];
-  }, []);
-
-  const isVivant = (a: AnyArb): a is Vivant => a._type === 'vivant';
-
-  const isArbIssue = (a: AnyArb) => {
-    if (isVivant(a)) {
-      const open = ['ouvert', 'en_deliberation', 'decision_requise'].includes(a.status);
-      const risky = a.context?.riskLevel === 'critique' || a.context?.riskLevel === 'eleve';
-      const overdue = Boolean(a.timing?.isOverdue);
-      return open && (risky || overdue);
-    }
-    // simple
-    const simple = a as Simple;
-    const urgent = simple.status === 'pending' && isUrgentDeadline(simple.deadline);
-    const criticalImpact = simple.impact === 'critical' || simple.impact === 'high';
-    return a.status === 'pending' && (urgent || criticalImpact);
   };
-
-  const filteredArbitrages = useMemo(() => {
-    let list = [...allArbitrages];
-
-    // filtre "mode"
-    list = list.filter((a) => {
-      if (filter === 'ouverts') return a._type === 'vivant' && ['ouvert', 'en_deliberation', 'decision_requise'].includes((a as Vivant).status);
-      if (filter === 'tranche') return a._type === 'vivant' && (a as Vivant).status === 'tranche';
-      if (filter === 'pending') return a._type === 'simple' && (a as Simple).status === 'pending';
-      if (filter === 'resolved') return a._type === 'simple' && (a as Simple).status === 'resolved';
-      return true;
-    });
-
-    if (onlyIssues) list = list.filter((a) => isArbIssue(a));
-
-    if (search) {
-      list = list.filter((a) => {
-        const hay = isVivant(a)
-          ? `${a.id} ${a.subject} ${a.status} ${a.type} ${a.context?.linkedEntity?.type ?? ''} ${a.context?.linkedEntity?.label ?? ''}`.toLowerCase()
-          : (() => {
-              const simple = a as Simple;
-              return `${simple.id} ${simple.subject} ${simple.status} ${simple.impact ?? ''} ${simple.deadline ?? ''} ${simple.requestedBy ?? ''} ${Array.isArray(simple.parties) ? simple.parties.join(' ') : ''}`.toLowerCase();
-            })();
-        return hay.includes(search);
-      });
-    }
-
-    // tri : urgences / critiques d'abord
-    return list.sort((a, b) => {
-      const aIssue = isArbIssue(a) ? 0 : 1;
-      const bIssue = isArbIssue(b) ? 0 : 1;
-      if (aIssue !== bIssue) return aIssue - bIssue;
-
-      // vivants : overdue puis jours restants
-      if (isVivant(a) && isVivant(b)) {
-        const ao = a.timing?.isOverdue ? 0 : 1;
-        const bo = b.timing?.isOverdue ? 0 : 1;
-        if (ao !== bo) return ao - bo;
-        return Number(a.timing?.daysRemaining ?? 999) - Number(b.timing?.daysRemaining ?? 999);
-      }
-
-      // simples : deadline plus proche d'abord
-      if (!isVivant(a) && !isVivant(b)) {
-        const ad = parseFrDate(isVivant(a) ? undefined : (a as Simple).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-        const bd = parseFrDate(isVivant(b) ? undefined : (b as Simple).deadline)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-        return ad - bd;
-      }
-
-      // mixer : vivants ouverts avant simples pending
-      return isVivant(a) ? -1 : 1;
-    });
-  }, [allArbitrages, filter, onlyIssues, search]);
-
-  // Stats combinées
-  const stats = useMemo(() => {
-    const vivantsStats = coordinationStats.arbitrages;
-
-    const simplesTotal = arbitrages.length;
-    const simplesPending = arbitrages.filter((a) => a.status === 'pending').length;
-    const simplesResolved = arbitrages.filter((a) => a.status === 'resolved').length;
-    const simplesUrgent = arbitrages.filter((a: Arbitration) => a.status === 'pending' && isUrgentDeadline(a.deadline)).length;
-
-    return {
-      ...vivantsStats,
-      simplesTotal,
-      simplesPending,
-      simplesResolved,
-      simplesUrgent,
-    };
-  }, []);
-
-  const selected: AnyArb | null = useMemo(() => {
-    if (!selectedArbitrageId) return null;
-    const found = allArbitrages.find((a) => a.id === selectedArbitrageId) ?? null;
-    return found;
-  }, [selectedArbitrageId, allArbitrages]);
-
-  // Auto-corriger selectedType si besoin
-  useEffect(() => {
-    if (selected) setSelectedType(selected._type);
-  }, [selected]);
-
-  // --- Actions arbitrages ---
-  const handleTrancher = (arb: AnyArb | null, optionId?: string) => {
-    if (!arb) return;
-
-    const isV = arb._type === 'vivant';
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: isV ? 'arbitrages-vivants' : 'arbitrages',
-      action: 'validation',
-      targetId: arb.id,
-      targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Arbitrage tranché: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}${optionId ? ` - Option ${optionId}` : ''}`,
-    });
-
-    addToast(
-      isV
-        ? 'Arbitrage tranché - Décision enregistrée au registre avec hash SHA3-256'
-        : 'Arbitrage tranché - Décision enregistrée',
-      'success'
-    );
-  };
-
-  const handlePostpone = (arb: AnyArb | null) => {
-    if (!arb) return;
-
-    const isV = arb._type === 'vivant';
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: isV ? 'arbitrages-vivants' : 'arbitrages',
-      action: 'modification',
-      targetId: arb.id,
-      targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Report arbitrage: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}`,
-    });
-
-    addToast('Report enregistré avec justification obligatoire', 'warning');
-  };
-
-  const handleRequestComplement = (arb: AnyArb | null) => {
-    if (!arb) return;
-
-    const isV = arb._type === 'vivant';
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: isV ? 'arbitrages-vivants' : 'arbitrages',
-      action: 'modification',
-      targetId: arb.id,
-      targetType: isV ? 'ArbitrageVivant' : 'Arbitration',
-      details: `Demande complément: ${isVivant(arb) ? arb.subject : (arb as Simple).subject}`,
-    });
-
-    addToast('Demande de complément envoyée aux parties', 'info');
-  };
-
-  const handleScheduleHearing = (arb: AnyArb | null) => {
-    if (!arb || arb._type !== 'vivant') return;
-
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'arbitrages-vivants',
-      action: 'creation',
-      targetId: arb.id,
-      targetType: 'ArbitrageVivant',
-      details: `Planification audition: ${arb.subject}`,
-    });
-    addToast('Planifier une audition/conférence → Création conférence liée', 'info');
-  };
-
-  const exportSelectedJson = () => {
-    if (!selected) return;
-
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      type: selected._type,
-      data: selected,
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `arbitrage-${selected.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    addToast('📤 Export JSON généré', 'success');
-  };
-
-  const copySelectedHash = async () => {
-    if (!selected) return;
-
-    const hash =
-      selected._type === 'vivant'
-        ? (selected as Vivant).decision?.decisionId ?? ''
-        : '';
-
-    if (!hash) return addToast('Aucun hash à copier', 'warning');
-
-    const ok = await safeCopy(hash);
-    addToast(ok ? 'Hash copié' : 'Impossible de copier (clipboard)', ok ? 'success' : 'warning');
-  };
-
-  // --- Stats bureaux ---
-  const bureauxStats = useMemo(() => {
-    const totalAgents = bureauxGovernance.reduce((acc, b) => acc + b.agents, 0);
-    const avgCharge = Math.round(bureauxGovernance.reduce((acc, b) => acc + b.charge, 0) / bureauxGovernance.length);
-    const avgCompletion = Math.round(bureauxGovernance.reduce((acc, b) => acc + b.completion, 0) / bureauxGovernance.length);
-    const bureauxSurcharge = bureauxGovernance.filter((b) => b.charge > 85).length;
-    const totalGoulots = bureauxGovernance.reduce((acc, b) => acc + b.goulots.length, 0);
-    return { totalAgents, avgCharge, avgCompletion, bureauxSurcharge, totalGoulots };
-  }, []);
-
-  const selectedB: Bureau | null = useMemo(() => {
-    return selectedBureau ? bureauxGovernance.find((b) => b.code === selectedBureau) ?? null : null;
-  }, [selectedBureau]);
-
-  const handleAdjustResponsibilities = (bureau: Bureau | null) => {
-    if (!bureau) return;
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'bureaux',
-      action: 'modification',
-      targetId: bureau.code,
-      targetType: 'Bureau',
-      details: `Ajustement responsabilités ${bureau.name}`,
-    });
-    addToast('Ajustement des responsabilités initié', 'success');
-  };
-
-  const handleReportBottleneck = (bureau: Bureau, goulot: string) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'bureaux',
-      action: 'creation',
-      targetId: bureau.code,
-      targetType: 'Bureau',
-      details: `Goulot remonté: ${goulot}`,
-    });
-    addToast('Goulot remonté au DG', 'warning');
-  };
-
-  const filteredBureaux = useMemo(() => {
-    let list = [...bureauxGovernance];
-
-    if (onlyOverloaded) list = list.filter((b) => b.charge > 85);
-
-    if (search) {
-      list = list.filter((b) => {
-        const hay = `${b.code} ${b.name} ${b.head} ${b.modifiedBy} ${(b.goulots || []).join(' ')} ${(b.raciActivities || []).join(' ')}`.toLowerCase();
-        return hay.includes(search);
-      });
-    }
-
-    // tri : surcharge puis goulots puis charge desc
-    return list.sort((a, b) => {
-      const ao = a.charge > 85 ? 0 : 1;
-      const bo = b.charge > 85 ? 0 : 1;
-      if (ao !== bo) return ao - bo;
-
-      const ag = (a.goulots?.length ?? 0) > 0 ? 0 : 1;
-      const bg = (b.goulots?.length ?? 0) > 0 ? 0 : 1;
-      if (ag !== bg) return ag - bg;
-
-      return b.charge - a.charge;
-    });
-  }, [onlyOverloaded, search]);
-
-  // Helpers class border pour cartes arbitrages (tailwind-safe)
-  const leftBorderForArb = (arb: AnyArb) => {
-    if (arb._type === 'vivant') {
-      const risk = arb.context?.riskLevel || 'default';
-      return STATUS_LEFT_BORDER[risk] || STATUS_LEFT_BORDER.default;
-    }
-    const impact = (arb as any).impact || 'default';
-    return STATUS_LEFT_BORDER[impact] || STATUS_LEFT_BORDER.default;
-  };
-
-  const isResolved = (arb: AnyArb) =>
-    (arb._type === 'vivant' && (arb as Vivant).status === 'tranche') ||
-    (arb._type === 'simple' && (arb as Simple).status === 'resolved');
 
   return (
-    <div className="space-y-4">
-      {/* Header + actions rapides */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-50/50 to-orange-50/50 dark:from-rose-900/10 dark:to-orange-900/10 dark:border-rose-800/50 p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 rounded-xl bg-rose-500/20">
+          <Zap className="w-5 h-5 text-rose-600" />
+        </div>
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🎯 Gouvernance & Décisions
-            {mainTab === 'arbitrages' && <Badge variant="urgent">{stats.ouverts} en cours</Badge>}
-            {mainTab === 'bureaux' && <Badge variant="info">{bureauxGovernance.length} bureaux</Badge>}
-            {mainTab === 'arbitrages' && (onlyIssues || stats.critiques > 0 || stats.simplesUrgent > 0) && (
-              <Badge variant="warning">{(stats.critiques ?? 0) + (stats.simplesUrgent ?? 0)} alertes</Badge>
-            )}
-          </h1>
-
-          <p className="text-sm text-slate-400">
-            {mainTab === 'arbitrages'
-              ? 'Cellules de crise immersives • Options IA • Chronomètre décisionnel • Registre + hash'
-              : 'Charge • complétion • budget • goulots • traçabilité par bureau'}
-            {' • '}
-            "/" recherche • "Ctrl/⌘+K" commandes
+          <h3 className="text-lg font-bold text-rose-800 dark:text-rose-200">Rail d'escalade</h3>
+          <p className="text-xs text-rose-600/80 dark:text-rose-400/80">
+            Top 5 décisions à trancher (criticité × retard × exposition)
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setCmdOpen(true)}>
-            ⌘K
-          </Button>
-          {selected && mainTab === 'arbitrages' && (
-            <>
-              <Button size="sm" variant="ghost" onClick={copySelectedHash}>
-                📋 Hash
-              </Button>
-              <Button size="sm" variant="ghost" onClick={exportSelectedJson}>
-                📤 Export
-              </Button>
-            </>
-          )}
-        </div>
       </div>
 
-      {/* Recherche (commune) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          ref={searchRef}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={mainTab === 'arbitrages' ? 'Rechercher (id, sujet, statut, parties, entité liée)…' : 'Rechercher (code, bureau, responsable, goulots)…'}
-          className={cn(
-            'flex-1 min-w-[240px] px-3 py-2 rounded text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-          )}
-        />
+      <div className="space-y-2">
+        {items.map((item, idx) => {
+          const isPinned = pinnedIds?.includes(item.id);
+          return (
+            <div
+              key={item.id}
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200/50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 hover:bg-white dark:hover:bg-slate-900 transition-all group"
+            >
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 font-bold text-sm">
+                #{idx + 1}
+              </div>
+              <button
+                onClick={() => onOpenArbitrage(item.id, item.subject)}
+                className="flex-1 text-left min-w-0"
+              >
+                <div className="font-medium text-slate-800 dark:text-slate-200 truncate group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+                  {item.subject}
+                </div>
+                <div className="flex items-center gap-2 text-xs mt-1">
+                  <span className={cn('px-2 py-0.5 rounded-full border', getRiskColor(item.riskLevel))}>
+                    {item.riskLevel}
+                  </span>
+                  {item.daysOverdue > 0 && (
+                    <span className="text-rose-600 dark:text-rose-400">+{item.daysOverdue}j retard</span>
+                  )}
+                  <span className="text-amber-600 dark:text-amber-400">{formatMoney(item.exposure)}</span>
+                </div>
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <div className="text-xs text-slate-500">Score</div>
+                  <div className="font-bold text-rose-600">{item.score}</div>
+                </div>
+                {onPinArbitrage && (
+                  <button
+                    onClick={() => onPinArbitrage(item)}
+                    className="p-1.5 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                    title={isPinned ? 'Déjà épinglé' : 'Épingler'}
+                  >
+                    {isPinned ? (
+                      <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                    ) : (
+                      <Star className="w-4 h-4 text-slate-400 group-hover:text-amber-500" />
+                    )}
+                  </button>
+                )}
+                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-rose-500 transition-colors" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
-        <Button size="sm" variant="ghost" onClick={() => setQ('')}>
-          Effacer
-        </Button>
+// ================================
+// Main Component Content
+// ================================
 
-        {mainTab === 'arbitrages' ? (
-          <Button size="sm" variant={onlyIssues ? 'default' : 'secondary'} onClick={() => setOnlyIssues((v) => !v)}>
-            🚨 {onlyIssues ? 'Issues: ON' : 'Issues: OFF'}
-          </Button>
+function ArbitragesVivantsPageContent() {
+  const { tabs, openTab } = useArbitragesWorkspaceStore();
+  const toast = useArbitragestoast();
+
+  // UI State
+  const [mode, setMode] = useState<Mode>('dashboard');
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  // Stats
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [statsData, setStatsData] = useState<ArbitrageStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  // Escalade rail
+  const [escaladeItems, setEscaladeItems] = useState<EscaladeItem[]>([]);
+
+  // Auto refresh
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshMs, setRefreshMs] = useState<number>(DEFAULT_REFRESH_MS);
+
+  // Help
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // Export
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
+  const [exportQueue, setExportQueue] = useState<ExportQueue>('all');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Timeline
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelineArbitrageId, setTimelineArbitrageId] = useState<string | undefined>(undefined);
+
+  // Pinned (Watchlist)
+  const [pinned, setPinned] = useState<PinnedArbitrage[]>([]);
+
+  // Abort controllers
+  const abortStatsRef = useRef<AbortController | null>(null);
+  const abortExportRef = useRef<AbortController | null>(null);
+
+  const hasTabs = tabs.length > 0;
+  const showDashboard = mode === 'dashboard' && !hasTabs;
+
+  // ----------------
+  // Init prefs
+  // ----------------
+  useEffect(() => {
+    const p = readUIPrefs();
+    if (p) {
+      setMode(p.mode);
+      setDashboardTab(p.dashboardTab);
+      setFullscreen(p.fullscreen);
+      setAutoRefresh(p.autoRefresh);
+      setRefreshMs(p.refreshMs);
+      setShowSidebar(p.showSidebar);
+    }
+    setPinned(readPinnedArbitrages());
+  }, []);
+
+  useEffect(() => {
+    writeUIPrefs({ mode, dashboardTab, fullscreen, autoRefresh, refreshMs, showSidebar });
+  }, [mode, dashboardTab, fullscreen, autoRefresh, refreshMs, showSidebar]);
+
+  useEffect(() => {
+    writePinnedArbitrages(pinned);
+  }, [pinned]);
+
+  // Fullscreen: lock scroll
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [fullscreen]);
+
+  // ----------------
+  // Helpers open tabs
+  // ----------------
+  const openInbox = useCallback(
+    (queue: string, title: string, icon: string, type: 'arbitrages' | 'bureaux') => {
+      openTab({
+        id: `inbox:${queue}`,
+        type: 'inbox',
+        title,
+        icon,
+        data: { queue, type },
+      });
+      if (mode === 'dashboard') setMode('workspace');
+    },
+    [openTab, mode]
+  );
+
+  const openArbitrage = useCallback(
+    (id: string, subject: string) => {
+      openTab({
+        id: `arbitrage:${id}`,
+        type: 'arbitrage',
+        title: subject,
+        icon: '⚖️',
+        data: { arbitrageId: id },
+      });
+      if (mode === 'dashboard') setMode('workspace');
+    },
+    [openTab, mode]
+  );
+
+  const openCreateWizard = useCallback(() => {
+    openTab({
+      id: `wizard:create:${Date.now()}`,
+      type: 'wizard',
+      title: 'Nouvel arbitrage',
+      icon: '➕',
+      data: { action: 'create' },
+    });
+    if (mode === 'dashboard') setMode('workspace');
+  }, [openTab, mode]);
+
+  // ----------------
+  // Pin/unpin arbitrages
+  // ----------------
+  const pinArbitrage = useCallback((item: { id: string; subject: string; riskLevel: string }) => {
+    setPinned((prev) => {
+      const exists = prev.some((p) => p.id === item.id);
+      if (exists) return prev;
+      const next = [{ ...item, pinnedAt: new Date().toISOString() }, ...prev];
+      return next.slice(0, 20);
+    });
+    toast.success('Épinglé', `${item.subject} ajouté à la watchlist`);
+  }, [toast]);
+
+  const unpinArbitrage = useCallback((id: string) => {
+    setPinned((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  // ----------------
+  // Load stats (robuste + abort)
+  // ----------------
+  const loadStats = useCallback(async (reason: 'init' | 'manual' | 'auto' = 'manual') => {
+    abortStatsRef.current?.abort();
+    const ac = new AbortController();
+    abortStatsRef.current = ac;
+
+    setStatsLoading(true);
+    setStatsError(null);
+
+    try {
+      const res = await fetch('/api/arbitrages/stats', { cache: 'no-store', signal: ac.signal });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = (await res.json()) as ArbitrageStats;
+      setStatsData(data);
+      setLastUpdated(new Date().toISOString());
+
+      if (reason === 'manual') {
+        toast.success('Données actualisées', `${data.total} arbitrages au total`);
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      setStatsError('Impossible de charger les statistiques');
+      if (reason === 'manual') {
+        toast.error('Erreur', 'Impossible de charger les statistiques');
+      }
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [toast]);
+
+  // Load escalade items
+  const loadEscalade = useCallback(async () => {
+    try {
+      const res = await fetch('/api/arbitrages/escalade', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setEscaladeItems(data.items || []);
+      }
+    } catch {
+      // Silent fail
+    }
+  }, []);
+
+  // Load at mount
+  useEffect(() => {
+    loadStats('init');
+    loadEscalade();
+    return () => {
+      abortStatsRef.current?.abort();
+      abortExportRef.current?.abort();
+    };
+  }, [loadStats, loadEscalade]);
+
+  // Auto refresh with visibility check
+  useInterval(
+    () => {
+      if (!autoRefresh) return;
+      if (document.visibilityState === 'hidden') return;
+      if (!showDashboard && !statsOpen) return;
+      loadStats('auto');
+      loadEscalade();
+    },
+    autoRefresh ? refreshMs : null
+  );
+
+  // Custom events (external triggers)
+  useEffect(() => {
+    const handleOpenStats = () => setStatsOpen(true);
+    const handleOpenExport = () => setExportOpen(true);
+    const handleOpenHelp = () => setHelpOpen(true);
+    const handleOpenTimeline = (e: CustomEvent) => {
+      setTimelineArbitrageId(e.detail?.arbitrageId);
+      setTimelineOpen(true);
+    };
+
+    window.addEventListener('arbitrages:open-stats', handleOpenStats);
+    window.addEventListener('arbitrages:open-export', handleOpenExport);
+    window.addEventListener('arbitrages:open-help', handleOpenHelp);
+    window.addEventListener('arbitrages:open-timeline', handleOpenTimeline as EventListener);
+
+    return () => {
+      window.removeEventListener('arbitrages:open-stats', handleOpenStats);
+      window.removeEventListener('arbitrages:open-export', handleOpenExport);
+      window.removeEventListener('arbitrages:open-help', handleOpenHelp);
+      window.removeEventListener('arbitrages:open-timeline', handleOpenTimeline as EventListener);
+    };
+  }, []);
+
+  // ----------------
+  // Keyboard shortcuts (Ctrl/⌘)
+  // ----------------
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (ignoreIfTyping(e)) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+
+      // Ctrl/⌘ + K : palette de commandes
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('arbitrages:open-command-palette'));
+        return;
+      }
+
+      // Ctrl/⌘ + N : create wizard
+      if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        openCreateWizard();
+        return;
+      }
+
+      // Ctrl/⌘ + S : stats
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setStatsOpen(true);
+        return;
+      }
+
+      // Ctrl/⌘ + E : export
+      if (mod && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setExportOpen(true);
+        return;
+      }
+
+      // Ctrl/⌘ + T : timeline
+      if (mod && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        setTimelineArbitrageId(undefined);
+        setTimelineOpen(true);
+        return;
+      }
+
+      // Ctrl/⌘ + B : toggle sidebar
+      if (mod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setShowSidebar((p) => !p);
+        return;
+      }
+
+      // Ctrl/⌘ + 1..4 : queues
+      if (mod && !e.shiftKey && ['1', '2', '3', '4'].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === '1') openInbox('ouverts', 'Ouverts', '⏳', 'arbitrages');
+        if (e.key === '2') openInbox('critiques', 'Critiques', '🚨', 'arbitrages');
+        if (e.key === '3') openInbox('urgents', 'Urgents', '⏰', 'arbitrages');
+        if (e.key === '4') openInbox('tranches', 'Tranchés', '✅', 'arbitrages');
+        return;
+      }
+
+      // F11 or Ctrl/⌘+Shift+F : fullscreen
+      if (e.key === 'F11' || (mod && e.shiftKey && e.key.toLowerCase() === 'f')) {
+        e.preventDefault();
+        setFullscreen((p) => !p);
+        return;
+      }
+
+      // ? : help
+      if (e.key === '?' && !mod) {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+
+      // Esc : close all
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setStatsOpen(false);
+        setExportOpen(false);
+        setHelpOpen(false);
+        setTimelineOpen(false);
+        if (fullscreen) setFullscreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openInbox, openCreateWizard, fullscreen]);
+
+  // ----------------
+  // Export handler
+  // ----------------
+  const handleExport = useCallback(async () => {
+    abortExportRef.current?.abort();
+    const ac = new AbortController();
+    abortExportRef.current = ac;
+
+    setExporting(true);
+    setExportError(null);
+    try {
+      const url = `/api/arbitrages/export?format=${exportFormat}&queue=${exportQueue}`;
+      const w = window.open(url, '_blank', 'noopener,noreferrer');
+      w?.focus();
+      setExportOpen(false);
+      toast.success('Export lancé', `Format: ${exportFormat.toUpperCase()}`);
+    } catch {
+      setExportError("Erreur lors de l'export");
+      toast.error('Export échoué', "Impossible d'exporter les données");
+    } finally {
+      setExporting(false);
+    }
+  }, [exportFormat, exportQueue, toast]);
+
+  // ----------------
+  // Badges & Actions
+  // ----------------
+  const riskBadge = useMemo(() => {
+    if (!statsData) return null;
+    const riskScore = (statsData.critiques || 0) * 3 + (statsData.simplesUrgent || 0) * 2 + (statsData.enRetard || 0);
+    
+    if (riskScore >= 15) return { label: 'Risque élevé', color: 'rose' as const };
+    if (riskScore >= 5) return { label: 'Risque modéré', color: 'amber' as const };
+    return { label: 'Risque maîtrisé', color: 'emerald' as const };
+  }, [statsData]);
+
+  const badges = useMemo<ShellBadge[]>(() => {
+    const b: ShellBadge[] = [{ label: 'v2.2', color: 'blue' }];
+
+    if (autoRefresh) b.push({ label: `Auto ${Math.round(refreshMs / 1000)}s`, color: 'slate' });
+
+    if (statsData) {
+      if (statsData.critiques > 0)
+        b.push({ label: `${statsData.critiques} critique${statsData.critiques > 1 ? 's' : ''}`, color: 'rose' });
+      if (statsData.simplesUrgent > 0)
+        b.push({ label: `${statsData.simplesUrgent} urgent${statsData.simplesUrgent > 1 ? 's' : ''}`, color: 'amber' });
+      if (statsData.bureauxSurcharge > 0)
+        b.push({
+          label: `${statsData.bureauxSurcharge} bureau${statsData.bureauxSurcharge > 1 ? 'x' : ''} surcharge`,
+          color: 'rose',
+        });
+    }
+
+    if (riskBadge) b.push(riskBadge);
+    if (lastUpdated) b.push({ label: `MAJ ${safeFRTime(lastUpdated)}`, color: 'slate' });
+
+    return b;
+  }, [statsData, autoRefresh, refreshMs, riskBadge, lastUpdated]);
+
+  const actions = useMemo<ShellAction[]>(() => {
+    const n = statsData ?? {
+      ouverts: 0,
+      critiques: 0,
+      simplesUrgent: 0,
+      tranches: 0,
+      bureauxSurcharge: 0,
+    };
+
+    return [
+      {
+        id: 'new',
+        label: <ActionLabel icon={<Plus className="w-4 h-4" />} text="Nouveau" />,
+        variant: 'primary',
+        title: 'Créer un nouvel arbitrage (Ctrl/⌘+N)',
+        onClick: openCreateWizard,
+      },
+      {
+        id: 'mode',
+        label: <ActionLabel icon={<LayoutGrid className="w-4 h-4" />} text={showDashboard ? 'Workspace' : 'Dashboard'} />,
+        variant: 'secondary',
+        title: 'Basculer Dashboard / Workspace',
+        onClick: () => setMode((p) => (p === 'dashboard' ? 'workspace' : 'dashboard')),
+      },
+      {
+        id: 'fullscreen',
+        label: fullscreen ? (
+          <ActionLabel icon={<Minimize className="w-4 h-4" />} text="Écran" />
         ) : (
-          <Button size="sm" variant={onlyOverloaded ? 'default' : 'secondary'} onClick={() => setOnlyOverloaded((v) => !v)}>
-            🔥 {onlyOverloaded ? 'Surcharges: ON' : 'Surcharges: OFF'}
-          </Button>
-        )}
-      </div>
+          <ActionLabel icon={<Maximize className="w-4 h-4" />} text="Écran" />
+        ),
+        variant: 'secondary',
+        title: 'Plein écran (F11)',
+        onClick: () => setFullscreen((p) => !p),
+      },
 
-      {/* Onglets principaux */}
-      <div className="flex gap-2 border-b border-slate-700/50 pb-2">
-        <Button
-          variant={mainTab === 'arbitrages' ? 'default' : 'ghost'}
-          onClick={() => {
-            setMainTab('arbitrages');
-            setSelectedBureau(null);
-            setShowHistory(false);
-          }}
-        >
-          ⚔️ Arbitrages
-        </Button>
-        <Button
-          variant={mainTab === 'bureaux' ? 'default' : 'ghost'}
-          onClick={() => {
-            setMainTab('bureaux');
-            setSelectedArbitrageId(null);
-            setSelectedType(null);
-          }}
-        >
-          🏢 Bureaux
-        </Button>
-      </div>
+      {
+        id: 'ouverts',
+        label: <ActionLabel icon={<Clock className="w-4 h-4 text-amber-500" />} text="Ouverts" right={<CountChip v={n.ouverts} />} />,
+        title: 'Arbitrages en cours (Ctrl/⌘+1)',
+        onClick: () => openInbox('ouverts', 'Ouverts', '⏳', 'arbitrages'),
+      },
+      {
+        id: 'critiques',
+        label: <ActionLabel icon={<AlertTriangle className="w-4 h-4 text-red-500" />} text="Critiques" right={<CountChip v={n.critiques} />} />,
+        variant: n.critiques > 0 ? 'destructive' : undefined,
+        title: 'Arbitrages critiques (Ctrl/⌘+2)',
+        onClick: () => openInbox('critiques', 'Critiques', '🚨', 'arbitrages'),
+      },
+      {
+        id: 'urgents',
+        label: <ActionLabel icon={<Clock className="w-4 h-4 text-orange-500" />} text="Urgents" right={<CountChip v={n.simplesUrgent} />} />,
+        variant: n.simplesUrgent > 0 ? 'warning' : undefined,
+        title: 'Arbitrages urgents (Ctrl/⌘+3)',
+        onClick: () => openInbox('urgents', 'Urgents', '⏰', 'arbitrages'),
+      },
+      {
+        id: 'tranches',
+        label: <ActionLabel icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} text="Tranchés" right={<CountChip v={n.tranches} />} />,
+        title: 'Arbitrages tranchés (Ctrl/⌘+4)',
+        onClick: () => openInbox('tranches', 'Tranchés', '✅', 'arbitrages'),
+      },
+      {
+        id: 'bureaux',
+        label: <ActionLabel icon={<Building2 className="w-4 h-4 text-blue-500" />} text="Bureaux" right={<CountChip v={n.bureauxSurcharge} />} />,
+        variant: n.bureauxSurcharge > 0 ? 'warning' : undefined,
+        title: 'Bureaux de gouvernance',
+        onClick: () => openInbox('all', 'Tous les bureaux', '🏢', 'bureaux'),
+      },
 
-      {mainTab === 'arbitrages' ? (
-        <>
-          {/* Principe clé */}
-          <Card className="bg-red-500/10 border-red-500/30">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🎯</span>
-                <div className="flex-1">
-                  <h3 className="font-bold text-red-400">Pas une file de tickets — une scène décisionnelle</h3>
-                  <p className="text-sm text-slate-400">
-                    Contexte complet, parties prenantes RACI, options suggérées par IA, chronomètre. Chaque décision → registre + hash.
-                  </p>
+      {
+        id: 'timeline',
+        label: <ActionLabel icon={<History className="w-4 h-4" />} text="Timeline" />,
+        title: 'Historique global (Ctrl/⌘+T)',
+        onClick: () => {
+          setTimelineArbitrageId(undefined);
+          setTimelineOpen(true);
+        },
+      },
+      {
+        id: 'stats',
+        label: <ActionLabel icon={<BarChart3 className="w-4 h-4" />} text="Stats" />,
+        title: 'Voir les statistiques (Ctrl/⌘+S)',
+        onClick: () => setStatsOpen(true),
+      },
+      {
+        id: 'export',
+        label: <ActionLabel icon={<Download className="w-4 h-4" />} text="Export" />,
+        title: 'Exporter les données (Ctrl/⌘+E)',
+        onClick: () => setExportOpen(true),
+      },
+      {
+        id: 'refresh',
+        label: <ActionLabel icon={<RefreshCw className={cn('w-4 h-4', statsLoading && 'animate-spin')} />} text="" />,
+        title: 'Rafraîchir les données',
+        onClick: () => {
+          loadStats('manual');
+          loadEscalade();
+        },
+        disabled: statsLoading,
+      },
+      {
+        id: 'help',
+        label: <ActionLabel icon={<HelpCircle className="w-4 h-4" />} text="" />,
+        title: 'Aide et raccourcis clavier (?)',
+        onClick: () => setHelpOpen(true),
+      },
+    ];
+  }, [statsData, openInbox, openCreateWizard, statsLoading, loadStats, loadEscalade, showDashboard, fullscreen]);
+
+  // ----------------
+  // Banner
+  // ----------------
+  const banner = useMemo(() => {
+    if (!statsData) return null;
+    if (statsData.critiques === 0 && statsData.simplesUrgent === 0 && statsData.bureauxSurcharge === 0) return null;
+    return <ArbitragesAlertsBanner />;
+  }, [statsData]);
+
+  // ----------------
+  // Dashboard tabs
+  // ----------------
+  const dashboardTabs = useMemo(
+    () => [
+      { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutGrid },
+      { id: 'bureaux' as DashboardTab, label: 'Bureaux', icon: Building2 },
+      { id: 'timeline' as DashboardTab, label: 'Historique', icon: History },
+      { id: 'favorites' as DashboardTab, label: 'Watchlist', icon: Star },
+    ],
+    []
+  );
+
+  // ----------------
+  // Dashboard (6 blocs + Rail escalade + Sidebar)
+  // ----------------
+  const dashboard = useMemo(() => {
+    const s = statsData;
+
+    return (
+      <div className="flex gap-4">
+        {/* Main content */}
+        <div className="flex-1 min-w-0 space-y-6">
+          {/* Dashboard tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
+            {dashboardTabs.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setDashboardTab(t.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all',
+                    dashboardTab === t.id
+                      ? 'bg-red-500 text-white shadow-lg'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  )}
+                  type="button"
+                >
+                  <Icon className="w-4 h-4" />
+                  {t.label}
+                </button>
+              );
+            })}
+            
+            <div className="flex-1" />
+
+            {/* Quick search */}
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('arbitrages:open-command-palette'))}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              title="Ctrl/⌘+K"
+            >
+              <Command className="w-4 h-4" />
+              <span className="text-slate-500">Rechercher…</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-xs font-mono">⌘K</kbd>
+            </button>
+          </div>
+
+          {/* ===== OVERVIEW TAB ===== */}
+          {dashboardTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Bloc 1 — Intro / posture */}
+              <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-red-500/5 to-orange-500/5 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2 flex items-center gap-3">
+                      <Scale className="w-7 h-7 text-red-500" />
+                      Console métier — Arbitrages & Gouvernance
+                    </h2>
+                    <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
+                      Vue synthèse (risques + goulots + charge) et accès instantané aux files "Ouverts / Critiques / Urgents /
+                      Tranchés". Chaque arbitrage est pensé comme une décision :{' '}
+                      <strong>priorité → responsable → délai → preuve</strong>.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <Chip tone="rose">
+                        <Zap className="w-3.5 h-3.5" />
+                        Cellule de crise
+                      </Chip>
+                      <Chip tone="amber">
+                        <Clock className="w-3.5 h-3.5" />
+                        SLA décisionnel
+                      </Chip>
+                      <Chip tone="emerald">
+                        <Shield className="w-3.5 h-3.5" />
+                        Audit & traçabilité
+                      </Chip>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <FluentButton variant="primary" onClick={openCreateWizard}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Nouvel arbitrage
+                    </FluentButton>
+                    <FluentButton variant="secondary" onClick={() => setMode('workspace')}>
+                      Aller au workspace
+                    </FluentButton>
+                  </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* Alertes critiques */}
-          {stats.critiques > 0 && (
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🚨</span>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-red-400">{stats.critiques} arbitrage(s) critique(s)</h3>
-                    <p className="text-sm text-slate-400">
-                      Exposition totale: {formatMoney(stats.expositionTotale)}
-                      {stats.enRetard > 0 && ` • ${stats.enRetard} en retard`}
+              {/* Bloc 2 — Compteurs live */}
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-blue-500" />
+                    Compteurs live
+                  </h3>
+                  <div className="text-xs text-slate-500">
+                    Raccourcis :{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono">⌘1..4</kbd> files,{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono">⌘N</kbd> nouveau,{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono">⌘K</kbd> palette.
+                  </div>
+                </div>
+                <ArbitragesLiveCounters />
+              </div>
+
+              {/* Bloc 3 — Synthèse risques (cards) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <StatCard
+                  icon={<Clock className="w-4 h-4 text-amber-600" />}
+                  label="Ouverts"
+                  value={s ? s.ouverts : '—'}
+                  tone="amber"
+                  hint="Décisions en cours (à piloter)"
+                  onClick={() => openInbox('ouverts', 'Ouverts', '⏳', 'arbitrages')}
+                />
+                <StatCard
+                  icon={<AlertTriangle className="w-4 h-4 text-rose-600" />}
+                  label="Critiques"
+                  value={s ? s.critiques : '—'}
+                  tone="rose"
+                  hint="Risque élevé / blocage majeur"
+                  onClick={() => openInbox('critiques', 'Critiques', '🚨', 'arbitrages')}
+                />
+                <StatCard
+                  icon={<Shield className="w-4 h-4 text-orange-600" />}
+                  label="Urgents"
+                  value={s ? s.simplesUrgent : '—'}
+                  tone="orange"
+                  hint="À traiter dans la fenêtre SLA"
+                  onClick={() => openInbox('urgents', 'Urgents', '⏰', 'arbitrages')}
+                />
+                <StatCard
+                  icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                  label="Tranchés"
+                  value={s ? s.tranches : '—'}
+                  tone="emerald"
+                  hint="Décisions clôturées (traçables)"
+                  onClick={() => openInbox('tranches', 'Tranchés', '✅', 'arbitrages')}
+                />
+              </div>
+
+              {/* Bloc 4 — Rail d'escalade */}
+              <EscaladeRail 
+                items={escaladeItems} 
+                onOpenArbitrage={openArbitrage} 
+                onPinArbitrage={pinArbitrage}
+                pinnedIds={pinned.map(p => p.id)}
+              />
+
+              {/* Bloc 5 — Direction / pilotage */}
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-indigo-500" />
+                    Pilotage & Direction
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <Activity className="w-4 h-4" />
+                    {lastUpdated ? `MAJ ${safeFRTime(lastUpdated)}` : 'MAJ —'}
+                  </div>
+                </div>
+                <ArbitragesDirectionPanel />
+              </div>
+
+              {/* Bloc 6 — Charge, goulots, exposition */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <StatCard
+                  icon={<Clock className="w-4 h-4 text-rose-600" />}
+                  label="En retard"
+                  value={s ? s.enRetard : '—'}
+                  tone="rose"
+                  hint="Dépassements de délais / risques d'escalade"
+                />
+                <StatCard
+                  icon={<Building2 className="w-4 h-4 text-blue-600" />}
+                  label="Bureaux en surcharge"
+                  value={s ? s.bureauxSurcharge : '—'}
+                  tone="blue"
+                  hint="Charge anormale / décisions concentrées"
+                  onClick={() => openInbox('surcharge', 'Bureaux surcharge', '🔥', 'bureaux')}
+                />
+                <StatCard
+                  icon={<TrendingUp className="w-4 h-4 text-purple-600" />}
+                  label="Exposition totale"
+                  value={s ? formatMoney(s.expositionTotale) : '—'}
+                  tone="purple"
+                  hint="Montant / impact cumulé"
+                />
+              </div>
+
+              {/* Bloc 7 — Discipline (gouvernance) */}
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 dark:bg-purple-500/10">
+                <div className="font-semibold text-purple-700 dark:text-purple-300">
+                  Discipline de gouvernance (anti-&quot;décision fantôme&quot;)
+                </div>
+                <div className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                  Chaque arbitrage doit déboucher sur une décision traçable : responsable identifié, délai respecté,
+                  et preuve documentée. Objectif : zéro blocage silencieux.
+                </div>
+              </div>
+
+              {/* Bloc 8 — Aide & gouvernance (auto-refresh) */}
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30 p-4">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <Keyboard className="w-5 h-5 text-slate-400" />
+                    <div className="text-sm text-slate-700 dark:text-slate-300">
+                      <strong>Astuce :</strong>{' '}
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">?</kbd> ouvre
+                      l'aide.
+                      <span className="text-slate-500 dark:text-slate-400"> Esc ferme modales et plein écran.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={autoRefresh}
+                        onChange={(e) => setAutoRefresh(e.target.checked)}
+                      />
+                      Auto-refresh
+                    </label>
+
+                    <select
+                      className="rounded-xl border border-slate-200/70 bg-white/90 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      value={refreshMs}
+                      onChange={(e) => setRefreshMs(Number(e.target.value))}
+                      disabled={!autoRefresh}
+                      aria-label="Intervalle d'auto-refresh"
+                    >
+                      <option value={30_000}>30s</option>
+                      <option value={60_000}>60s</option>
+                      <option value={120_000}>120s</option>
+                    </select>
+
+                    <FluentButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        loadStats('manual');
+                        loadEscalade();
+                      }}
+                      disabled={statsLoading}
+                    >
+                      <RefreshCw className={cn('w-3.5 h-3.5 mr-1', statsLoading && 'animate-spin')} />
+                      Rafraîchir
+                    </FluentButton>
+
+                    <FluentButton size="sm" variant="secondary" onClick={() => setHelpOpen(true)}>
+                      Aide
+                    </FluentButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== BUREAUX TAB ===== */}
+          {dashboardTab === 'bureaux' && (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-500" />
+                  Bureaux de gouvernance
+                </h3>
+                
+                {s?.byBureau && s.byBureau.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {s.byBureau.map((bureau) => (
+                      <button
+                        key={bureau.bureau}
+                        onClick={() => openInbox(`bureau:${bureau.bureau}`, bureau.bureau, '🏢', 'bureaux')}
+                        className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{bureau.bureau}</span>
+                          <span className="text-2xl font-bold">{bureau.count}</span>
+                        </div>
+                        {bureau.critiques > 0 && (
+                          <div className="mt-2 flex items-center gap-1 text-xs text-rose-600">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {bureau.critiques} critique{bureau.critiques > 1 ? 's' : ''}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-center py-8">Aucun bureau trouvé</p>
+                )}
+              </div>
+
+              {s?.byType && (
+                <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-purple-500" />
+                    Répartition par type
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {s.byType.map((item) => (
+                      <div
+                        key={item.type}
+                        className="px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20"
+                      >
+                        <span className="font-medium">{item.type}</span>
+                        <span className="ml-2 text-purple-700 dark:text-purple-300">{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== TIMELINE TAB ===== */}
+          {dashboardTab === 'timeline' && (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <History className="w-5 h-5 text-blue-500" />
+                    Historique global des arbitrages
+                  </h3>
+                  <FluentButton 
+                    size="sm" 
+                    variant="secondary"
+                    onClick={() => {
+                      setTimelineArbitrageId(undefined);
+                      setTimelineOpen(true);
+                    }}
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    Vue détaillée
+                  </FluentButton>
+                </div>
+                <p className="text-slate-500 text-sm mb-4">
+                  Suivez l'évolution de tous les arbitrages : créations, escalades, décisions, compléments...
+                </p>
+                <FluentButton 
+                  variant="primary"
+                  onClick={() => {
+                    setTimelineArbitrageId(undefined);
+                    setTimelineOpen(true);
+                  }}
+                >
+                  Ouvrir la timeline complète
+                </FluentButton>
+              </div>
+
+              {/* Tendances */}
+              {s?.trends && (
+                <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-emerald-500" />
+                    Tendances
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                        {s.trends.daily >= 0 ? '+' : ''}{s.trends.daily}
+                      </div>
+                      <div className="text-xs text-slate-500">Aujourd&apos;hui</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                        {s.trends.weekly >= 0 ? '+' : ''}{s.trends.weekly}
+                      </div>
+                      <div className="text-xs text-slate-500">Cette semaine</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                        {s.trends.monthly >= 0 ? '+' : ''}{s.trends.monthly}
+                      </div>
+                      <div className="text-xs text-slate-500">Ce mois</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== FAVORITES/WATCHLIST TAB ===== */}
+          {dashboardTab === 'favorites' && (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 dark:border-slate-800 dark:bg-[#1f1f1f]/70 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Star className="w-5 h-5 text-amber-500" />
+                    Watchlist — Arbitrages épinglés ({pinned.length})
+                  </h3>
+                </div>
+                
+                {pinned.length === 0 ? (
+                  <div className="text-center py-12">
+                    <StarOff className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                    <p className="text-slate-500">Aucun arbitrage épinglé</p>
+                    <p className="text-sm text-slate-400 mt-2">
+                      Épinglez des arbitrages depuis le rail d'escalade pour les suivre ici.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {pinned.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50"
+                      >
+                        <Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                        <button
+                          onClick={() => openArbitrage(item.id, item.subject)}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <div className="font-medium truncate hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                            {item.subject}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {item.riskLevel} • Épinglé {safeFRTime(item.pinnedAt)}
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => unpinArbitrage(item.id)}
+                          className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          title="Retirer de la watchlist"
+                        >
+                          <StarOff className="w-4 h-4 text-slate-400" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Guide watchlist */}
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/10 p-6">
+                <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-3">
+                  Guide de la Watchlist
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-2 font-medium mb-1">
+                      <Star className="w-4 h-4 text-amber-500" />
+                      Épingler
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">
+                      Marquez les arbitrages sensibles pour les retrouver rapidement.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-2 font-medium mb-1">
+                      <Eye className="w-4 h-4 text-blue-500" />
+                      Surveiller
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">
+                      Gardez un œil sur les décisions critiques ou bloquantes.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-2 font-medium mb-1">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      Clôturer
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">
+                      Retirez de la watchlist une fois l'arbitrage tranché.
                     </p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Alerte urgents (simples) */}
-          {stats.simplesUrgent > 0 && (
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">⏰</span>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-red-400">{stats.simplesUrgent} arbitrage(s) urgent(s)</h3>
-                    <p className="text-sm text-slate-400">Échéance dans moins de 3 jours</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <Card className="bg-blue-500/10 border-blue-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-blue-400">{stats.total + stats.simplesTotal}</p>
-                <p className="text-[10px] text-slate-400">Total</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-amber-500/10 border-amber-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-amber-400">{stats.ouverts + stats.simplesPending}</p>
-                <p className="text-[10px] text-slate-400">En cours</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-emerald-500/10 border-emerald-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-emerald-400">{stats.tranches + stats.simplesResolved}</p>
-                <p className="text-[10px] text-slate-400">Tranchés</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-red-500/10 border-red-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-red-400">{stats.critiques + stats.simplesUrgent}</p>
-                <p className="text-[10px] text-slate-400">Critiques/Urgents</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-purple-500/10 border-purple-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-lg font-bold text-purple-400">{formatMoney(stats.expositionTotale)}</p>
-                <p className="text-[10px] text-slate-400">Exposition</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Filtres */}
-          <div className="flex gap-2 flex-wrap">
-            {[
-              { id: 'all', label: 'Tous' },
-              { id: 'ouverts', label: '⏳ En cours (Vivants)' },
-              { id: 'pending', label: '⏳ En attente (Simples)' },
-              { id: 'tranche', label: '✅ Tranchés (Vivants)' },
-              { id: 'resolved', label: '✅ Résolus (Simples)' },
-            ].map((f) => (
-              <Button
-                key={f.id}
-                size="sm"
-                variant={filter === f.id ? 'default' : 'secondary'}
-                onClick={() => setFilter(f.id as Filter)}
-              >
-                {f.label}
-              </Button>
-            ))}
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-4">
-            {/* Liste arbitrages */}
-            <div className="lg:col-span-2 space-y-3">
-              {filteredArbitrages.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 text-center text-slate-400">
-                    Aucun arbitrage ne correspond aux filtres.
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredArbitrages.map((arb) => {
-                  const selectedNow = selectedArbitrageId === arb.id;
-                  const vivant = arb._type === 'vivant';
-
-                  const statusConfig = getStatusBadgeConfig((arb as any).status);
-                  const urgentSimple = !vivant && (arb as any).status === 'pending' && isUrgentDeadline((arb as any).deadline);
-
-                  const left = leftBorderForArb(arb);
-
-                  return (
-                    <Card
-                      key={arb.id}
-                      className={cn(
-                        'cursor-pointer transition-all border-l-4',
-                        left,
-                        selectedNow ? 'ring-2 ring-red-500' : 'hover:border-red-500/50',
-                        isResolved(arb) && 'opacity-80'
-                      )}
-                      onClick={() => {
-                        setSelectedArbitrageId(arb.id);
-                        setSelectedType(arb._type);
-                      }}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {vivant && <span className="text-lg">{getTypeIcon((arb as Vivant).type)}</span>}
-                              <span className="font-mono text-xs text-purple-400">{arb.id}</span>
-
-                              <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
-
-                              {vivant ? (
-                                <Badge
-                                  variant={
-                                    (arb as Vivant).context.riskLevel === 'critique'
-                                      ? 'urgent'
-                                      : (arb as Vivant).context.riskLevel === 'eleve'
-                                      ? 'warning'
-                                      : 'default'
-                                  }
-                                >
-                                  Risque: {(arb as Vivant).context.riskLevel}
-                                </Badge>
-                              ) : (
-                                <>
-                                  {'impact' in (arb as any) && (
-                                    <Badge
-                                      variant={
-                                        (arb as any).impact === 'critical'
-                                          ? 'urgent'
-                                          : (arb as any).impact === 'high'
-                                          ? 'warning'
-                                          : 'default'
-                                      }
-                                    >
-                                      Impact: {(arb as any).impact}
-                                    </Badge>
-                                  )}
-                                  {urgentSimple && <Badge variant="urgent" pulse>Urgent</Badge>}
-                                </>
-                              )}
-
-                              {onlyIssues && isArbIssue(arb) && <Badge variant="warning">Issue</Badge>}
-                            </div>
-
-                            <h3 className="font-bold mt-1">{(arb as any).subject}</h3>
-                          </div>
-
-                          {/* Chronomètre (vivants) ou Échéance (simples) */}
-                          {vivant && (arb as Vivant).status !== 'tranche' && (
-                            <div
-                              className={cn(
-                                'p-2 rounded text-center',
-                                (arb as Vivant).timing.isOverdue
-                                  ? 'bg-red-500/20'
-                                  : (arb as Vivant).timing.daysRemaining <= 1
-                                  ? 'bg-amber-500/20'
-                                  : 'bg-slate-700/30'
-                              )}
-                            >
-                              <p
-                                className={cn(
-                                  'text-2xl font-bold',
-                                  (arb as Vivant).timing.isOverdue
-                                    ? 'text-red-400'
-                                    : (arb as Vivant).timing.daysRemaining <= 1
-                                    ? 'text-amber-400'
-                                    : 'text-slate-300'
-                                )}
-                              >
-                                {(arb as Vivant).timing.isOverdue ? '⏰' : (arb as Vivant).timing.daysRemaining}
-                              </p>
-                              <p className="text-[10px] text-slate-400">
-                                {(arb as Vivant).timing.isOverdue ? 'En retard' : 'jour(s)'}
-                              </p>
-                            </div>
-                          )}
-
-                          {!vivant && (arb as any).deadline && (
-                            <div className="text-right">
-                              <p className="text-xs text-slate-400">Échéance</p>
-                              <p className={cn('font-mono text-sm', urgentSimple ? 'text-red-400' : 'text-slate-300')}>
-                                {(arb as any).deadline}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Contexte / Résolution preview */}
-                        {vivant ? (
-                          <>
-                            <div className="p-2 rounded bg-slate-700/30 mb-3">
-                              <p className="text-xs text-slate-400">
-                                🔗 {(arb as Vivant).context.linkedEntity.type}: {(arb as Vivant).context.linkedEntity.label}
-                              </p>
-                              {(arb as Vivant).context.financialExposure ? (
-                                <p className="text-sm font-bold text-amber-400 mt-1">
-                                  💰 Exposition: {formatMoney((arb as Vivant).context.financialExposure ?? 0)}
-                                </p>
-                              ) : null}
-                            </div>
-
-                            {/* Parties (preview) */}
-                            <div className="flex flex-wrap gap-2 mb-3">
-                              {(arb as Vivant).parties.slice(0, 3).map((p) => (
-                                <Badge
-                                  key={p.employeeId}
-                                  variant={
-                                    p.role === 'decideur'
-                                      ? 'info'
-                                      : p.role === 'demandeur'
-                                      ? 'warning'
-                                      : p.role === 'defendeur'
-                                      ? 'default'
-                                      : 'default'
-                                  }
-                                >
-                                  {p.role}: {p.name}
-                                </Badge>
-                              ))}
-                              {(arb as Vivant).parties.length > 3 && <Badge variant="default">+{(arb as Vivant).parties.length - 3}</Badge>}
-                            </div>
-
-                            {/* Options preview */}
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-xs text-slate-400">Options:</span>
-                              {(arb as Vivant).decisionOptions.slice(0, 2).map((opt) => (
-                                <Badge key={opt.id} variant="default">
-                                  {opt.suggestedBy === 'ia' && '🤖'} {opt.label.substring(0, 20)}…
-                                </Badge>
-                              ))}
-                              {(arb as Vivant).decisionOptions.length > 2 && <Badge variant="info">+{(arb as Vivant).decisionOptions.length - 2}</Badge>}
-                            </div>
-
-                            {/* Décision prise */}
-                            {(arb as Vivant).decision && (
-                              <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/30 mb-3">
-                                <p className="text-xs text-emerald-400 mb-1">
-                                  ✓ Décision du {new Date((arb as Vivant).decision!.decidedAt).toLocaleDateString('fr-FR')}
-                                </p>
-                                <p className="text-sm font-medium">{(arb as Vivant).decision!.motif}</p>
-                                <p className="text-xs text-slate-400 mt-1">
-                                  Par {(arb as Vivant).decision!.decidedBy} → {(arb as Vivant).decision!.decisionId}
-                                </p>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          (arb as any).resolution && (
-                            <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/30 mb-3">
-                              <p className="text-xs text-emerald-400">✓ Résolution</p>
-                              <p className="text-sm">{(arb as any).resolution}</p>
-                            </div>
-                          )
-                        )}
-
-                        {/* Actions inline */}
-                        {((vivant && (arb as Vivant).status !== 'tranche') || (!vivant && (arb as any).status === 'pending')) && (
-                          <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                            <Button size="sm" variant="success" onClick={(e) => { e.stopPropagation(); handleTrancher(arb); }}>
-                              ⚖️ Trancher
-                            </Button>
-                            <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); handleRequestComplement(arb); }}>
-                              📋 Complément
-                            </Button>
-                            <Button size="sm" variant="warning" onClick={(e) => { e.stopPropagation(); handlePostpone(arb); }}>
-                              📅 Reporter
-                            </Button>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Panel détail */}
-            <div className="lg:col-span-1">
-              {selected ? (
-                <Card className="sticky top-4">
-                  <CardContent className="p-4">
-                    {selected._type === 'vivant' ? (
-                      <>
-                        {/* Header immersif vivant (tailwind-safe) */}
-                        <div
-                          className={cn(
-                            'mb-4 p-4 rounded-lg',
-                            RISK_PANEL[selected.context.riskLevel] || RISK_PANEL.default
-                          )}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl">{getTypeIcon(selected.type)}</span>
-                              {(() => {
-                                const s = getStatusBadgeConfig(selected.status);
-                                return <Badge variant={s.variant}>{s.label}</Badge>;
-                              })()}
-                            </div>
-
-                            {selected.status !== 'tranche' && (
-                              <div
-                                className={cn(
-                                  'text-center px-3 py-1 rounded',
-                                  selected.timing.isOverdue ? 'bg-red-500/30' : 'bg-slate-700/50'
-                                )}
-                              >
-                                <p className={cn('text-xl font-bold', selected.timing.isOverdue ? 'text-red-400' : 'text-white')}>
-                                  {selected.timing.isOverdue ? '⏰ RETARD' : `${selected.timing.daysRemaining}j`}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-
-                          <span className="font-mono text-xs">{selected.id}</span>
-                          <h3 className="font-bold">{selected.subject}</h3>
-                        </div>
-
-                        {/* Onglets */}
-                        <div className="flex gap-1 mb-4 flex-wrap">
-                          <Button size="sm" variant={viewTab === 'contexte' ? 'default' : 'secondary'} onClick={() => setViewTab('contexte')}>
-                            📋 Contexte
-                          </Button>
-                          <Button size="sm" variant={viewTab === 'options' ? 'default' : 'secondary'} onClick={() => setViewTab('options')}>
-                            💡 Options ({selected.decisionOptions.length})
-                          </Button>
-                          <Button size="sm" variant={viewTab === 'parties' ? 'default' : 'secondary'} onClick={() => setViewTab('parties')}>
-                            👥 Parties ({selected.parties.length})
-                          </Button>
-                          <Button size="sm" variant={viewTab === 'documents' ? 'default' : 'secondary'} onClick={() => setViewTab('documents')}>
-                            📎 Docs ({selected.documents.length})
-                          </Button>
-                        </div>
-
-                        <div className="space-y-3 max-h-72 overflow-y-auto">
-                          {viewTab === 'contexte' && (
-                            <>
-                              <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                <p className="text-xs text-slate-400 mb-1">Contexte</p>
-                                <p className="text-sm">{selected.context.backgroundSummary}</p>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                  <p className="text-xs text-slate-400">Risque</p>
-                                  <Badge variant={selected.context.riskLevel === 'critique' ? 'urgent' : selected.context.riskLevel === 'eleve' ? 'warning' : 'default'}>
-                                    {selected.context.riskLevel}
-                                  </Badge>
-                                </div>
-
-                                {selected.context.financialExposure && (
-                                  <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                    <p className="text-xs text-slate-400">Exposition</p>
-                                    <p className="text-sm font-bold text-amber-400">{formatMoney(selected.context.financialExposure)}</p>
-                                  </div>
-                                )}
-                              </div>
-
-                              {selected.context.previousAttempts && selected.context.previousAttempts.length > 0 && (
-                                <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                  <p className="text-xs text-slate-400 mb-1">Tentatives précédentes</p>
-                                  {selected.context.previousAttempts.map((att, idx) => (
-                                    <p key={idx} className="text-xs text-red-400">✗ {att}</p>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {viewTab === 'options' &&
-                            selected.decisionOptions.map((opt) => (
-                              <div
-                                key={opt.id}
-                                className={cn(
-                                  'p-3 rounded border',
-                                  darkMode ? 'bg-slate-700/30' : 'bg-gray-100',
-                                  opt.suggestedBy === 'ia' && 'border-purple-500/30'
-                                )}
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    {opt.suggestedBy === 'ia' && <span title="Suggéré par IA">🤖</span>}
-                                    <span className="font-bold text-sm">{opt.label}</span>
-                                  </div>
-                                  <Badge variant="default">{opt.suggestedBy}</Badge>
-                                </div>
-
-                                <p className="text-xs mb-2">{opt.description}</p>
-
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                  <div>
-                                    <p className="text-emerald-400">✓ Pour:</p>
-                                    {opt.pros.slice(0, 2).map((p, idx) => (
-                                      <p key={idx} className="text-slate-300">• {p}</p>
-                                    ))}
-                                  </div>
-                                  <div>
-                                    <p className="text-red-400">✗ Contre:</p>
-                                    {opt.cons.slice(0, 2).map((c, idx) => (
-                                      <p key={idx} className="text-slate-300">• {c}</p>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {selected.status !== 'tranche' && (
-                                  <Button size="sm" variant="success" className="w-full mt-2" onClick={() => handleTrancher(selected, opt.id)}>
-                                    Choisir cette option
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-
-                          {viewTab === 'parties' &&
-                            selected.parties.map((p) => (
-                              <div key={p.employeeId} className={cn('p-2 rounded text-xs', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-medium">{p.name}</span>
-                                  <div className="flex gap-1">
-                                    <Badge variant={p.role === 'decideur' ? 'info' : p.role === 'demandeur' ? 'warning' : 'default'}>
-                                      {p.role}
-                                    </Badge>
-                                    {p.raciRole && <Badge variant="default">{p.raciRole}</Badge>}
-                                  </div>
-                                </div>
-                                <p className="text-slate-400">{p.bureau}</p>
-                                {p.position && <p className="text-slate-300 mt-1">"{p.position}"</p>}
-                              </div>
-                            ))}
-
-                          {viewTab === 'documents' &&
-                            selected.documents.map((doc) => (
-                              <div key={doc.id} className={cn('p-2 rounded text-xs flex items-center gap-2', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                                <span>📄</span>
-                                <div className="flex-1">
-                                  <p className="font-medium">{doc.title}</p>
-                                  <p className="text-slate-400">
-                                    {doc.type} • {doc.uploadedBy}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-
-                        {/* Décision finale */}
-                        {selected.decision && (
-                          <div className="mt-4 p-3 rounded bg-emerald-500/10 border border-emerald-500/30">
-                            <p className="text-xs text-emerald-400 font-bold mb-2">✓ DÉCISION FINALE</p>
-                            <p className="text-sm">{selected.decision.motif}</p>
-                            <div className="mt-2 text-xs text-slate-400">
-                              <p>Par: {selected.decision.decidedBy}</p>
-                              <p>Le: {new Date(selected.decision.decidedAt).toLocaleString('fr-FR')}</p>
-                              <p className="font-mono">→ {selected.decision.decisionId}</p>
-                            </div>
-                            <div className="mt-2 p-2 rounded bg-slate-700/30">
-                              <p className="text-[10px] text-purple-400">🔐 Hash SHA3-256</p>
-                              <p className="font-mono text-[10px] truncate">{selected.decision.hash}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Actions DG */}
-                        {selected.status !== 'tranche' && (
-                          <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                            <Button size="sm" variant="success" onClick={() => handleTrancher(selected)}>
-                              ⚖️ Trancher (décision libre)
-                            </Button>
-                            <Button size="sm" variant="info" onClick={() => handleScheduleHearing(selected)}>
-                              📹 Planifier audition
-                            </Button>
-                            <Button size="sm" variant="warning" onClick={() => handlePostpone(selected)}>
-                              📅 Reporter avec justification
-                            </Button>
-                            <Button size="sm" variant="default" onClick={() => handleRequestComplement(selected)}>
-                              📋 Demander complément
-                            </Button>
-                          </div>
-                        )}
-
-                        {/* Hash arbitrage */}
-                        <div className="mt-3 p-2 rounded bg-purple-500/10 border border-purple-500/30">
-                          <p className="text-[10px] text-purple-400">🔐 Hash arbitrage</p>
-                          <p className="font-mono text-[10px] truncate">{selected.hash}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {/* Header simple */}
-                        <div className="mb-4 pb-4 border-b border-slate-700/50">
-                          <div className="flex items-center gap-2 mb-2">
-                            {(() => {
-                              const s = getStatusBadgeConfig(selected.status);
-                              return <Badge variant={s.variant}>{s.label}</Badge>;
-                            })()}
-                            {!isVivant(selected) && (selected as Simple).impact && (
-                              <Badge
-                                variant={
-                                  (selected as Simple).impact === 'critical'
-                                    ? 'urgent'
-                                    : (selected as Simple).impact === 'high'
-                                    ? 'warning'
-                                    : 'default'
-                                }
-                              >
-                                Impact: {(selected as Simple).impact}
-                              </Badge>
-                            )}
-                            {!isVivant(selected) && (selected as Simple).deadline && isUrgentDeadline((selected as Simple).deadline) && selected.status === 'pending' && (
-                              <Badge variant="urgent" pulse>Urgent</Badge>
-                            )}
-                          </div>
-
-                          <span className="font-mono text-xs text-purple-400">{selected.id}</span>
-                          <h3 className="font-bold">{(selected as any).subject}</h3>
-                        </div>
-
-                        <div className="space-y-3 text-sm">
-                          {(selected as any).deadline && (
-                            <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                              <p className="text-xs text-slate-400 mb-1">Échéance</p>
-                              <p className="font-mono">{(selected as any).deadline}</p>
-                            </div>
-                          )}
-
-                          {(selected as any).description && (
-                            <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                              <p className="text-xs text-slate-400 mb-1">Description</p>
-                              <p className="text-sm">{(selected as any).description}</p>
-                            </div>
-                          )}
-
-                          {Array.isArray((selected as any).parties) && (
-                            <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                              <p className="text-xs text-slate-400 mb-1">Parties</p>
-                              <div className="flex flex-wrap gap-2">
-                                {(selected as any).parties.map((p: string, idx: number) => (
-                                  <Badge key={idx} variant="default">{p}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {(selected as any).requestedBy && (
-                            <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                              <p className="text-xs text-slate-400 mb-1">Demandé par</p>
-                              <p className="text-sm">{(selected as any).requestedBy}</p>
-                            </div>
-                          )}
-
-                          {(selected as any).resolution && (
-                            <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/30">
-                              <p className="text-xs text-emerald-400 mb-1">Résolution</p>
-                              <p className="text-sm">{(selected as any).resolution}</p>
-                            </div>
-                          )}
-
-                          {/* Workflow simple */}
-                          <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                            <p className="text-xs text-slate-400 mb-1">Workflow</p>
-                            <ol className="space-y-2 text-xs">
-                              <li className="flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs">✓</span>
-                                <span>Demande créée</span>
-                              </li>
-                              <li className="flex items-center gap-2">
-                                <span
-                                  className={cn(
-                                    'w-5 h-5 rounded-full flex items-center justify-center text-white text-xs',
-                                    selected.status === 'resolved' ? 'bg-emerald-500' : 'bg-amber-500'
-                                  )}
-                                >
-                                  {selected.status === 'resolved' ? '✓' : '2'}
-                                </span>
-                                <span>Analyse & délibération</span>
-                              </li>
-                              <li className="flex items-center gap-2">
-                                <span
-                                  className={cn(
-                                    'w-5 h-5 rounded-full flex items-center justify-center text-white text-xs',
-                                    selected.status === 'resolved' ? 'bg-emerald-500' : 'bg-slate-500'
-                                  )}
-                                >
-                                  {selected.status === 'resolved' ? '✓' : '3'}
-                                </span>
-                                <span>Décision hashée</span>
-                              </li>
-                            </ol>
-                          </div>
-                        </div>
-
-                        {/* Actions simples */}
-                        {selected.status === 'pending' && (
-                          <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                            <Button size="sm" variant="success" onClick={() => handleTrancher(selected)}>
-                              ⚖️ Trancher
-                            </Button>
-                            <Button size="sm" variant="info" onClick={() => handleRequestComplement(selected)}>
-                              📋 Demander complément
-                            </Button>
-                            <Button size="sm" variant="warning" onClick={() => handlePostpone(selected)}>
-                              📅 Reporter
-                            </Button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="sticky top-4">
-                  <CardContent className="p-8 text-center">
-                    <span className="text-4xl mb-4 block">⚔️</span>
-                    <p className="text-slate-400">Sélectionnez un arbitrage</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Section Bureaux */}
-          {bureauxStats.totalGoulots > 0 && (
-            <Card className="border-amber-500/50 bg-amber-500/10">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">⚠️</span>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-amber-400">{bureauxStats.totalGoulots} goulot(s) identifié(s)</h3>
-                    <p className="text-sm text-slate-400">Points de blocage nécessitant attention</p>
-                  </div>
-                  <Badge variant="warning">{bureauxStats.bureauxSurcharge} bureau(x) en surcharge</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <Card className="bg-blue-500/10 border-blue-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-blue-400">{bureauxStats.totalAgents}</p>
-                <p className="text-[10px] text-slate-400">Agents total</p>
-              </CardContent>
-            </Card>
-
-            <Card className={cn(bureauxStats.avgCharge > 80 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30')}>
-              <CardContent className="p-3 text-center">
-                <p className={cn('text-2xl font-bold', bureauxStats.avgCharge > 80 ? 'text-red-400' : 'text-emerald-400')}>
-                  {bureauxStats.avgCharge}%
-                </p>
-                <p className="text-[10px] text-slate-400">Charge moyenne</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-emerald-500/10 border-emerald-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-emerald-400">{bureauxStats.avgCompletion}%</p>
-                <p className="text-[10px] text-slate-400">Complétion moy.</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-amber-500/10 border-amber-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-amber-400">{bureauxStats.bureauxSurcharge}</p>
-                <p className="text-[10px] text-slate-400">En surcharge</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-purple-500/10 border-purple-500/30">
-              <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-purple-400">{bureauxStats.totalGoulots}</p>
-                <p className="text-[10px] text-slate-400">Goulots</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 space-y-3">
-              {filteredBureaux.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 text-center text-slate-400">
-                    Aucun bureau ne correspond aux filtres.
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredBureaux.map((bureau) => {
-                  const isSelected = selectedBureau === bureau.code;
-                  const isOverloaded = bureau.charge > 85;
-                  const hasGoulots = bureau.goulots.length > 0;
-
-                  return (
-                    <Card
-                      key={bureau.code}
-                      className={cn(
-                        'cursor-pointer transition-all',
-                        isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50',
-                        isOverloaded ? 'border-l-4 border-l-red-500' : hasGoulots ? 'border-l-4 border-l-amber-500' : ''
-                      )}
-                      onClick={() => {
-                        setSelectedBureau(bureau.code);
-                        setShowHistory(false);
-                      }}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="info">{bureau.code}</Badge>
-                              <span className="font-bold">{bureau.name}</span>
-                              {isOverloaded && <Badge variant="urgent">Surcharge</Badge>}
-                              {hasGoulots && <Badge variant="warning">{bureau.goulots.length} goulot(s)</Badge>}
-                            </div>
-                            <p className="text-sm text-slate-400 mt-1">
-                              Responsable: <span className="text-slate-300">{bureau.head}</span>
-                            </p>
-                          </div>
-                          <p className="text-sm text-slate-400">{bureau.agents} agents</p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 mb-3">
-                          <div>
-                            <div className="flex justify-between text-xs mb-1">
-                              <span className="text-slate-400">Charge</span>
-                              <span className={cn('font-mono', bureau.charge > 85 ? 'text-red-400' : bureau.charge > 70 ? 'text-amber-400' : 'text-emerald-400')}>
-                                {bureau.charge}%
-                              </span>
-                            </div>
-                            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                              <div
-                                className={cn('h-full transition-all', bureau.charge > 85 ? 'bg-red-500' : bureau.charge > 70 ? 'bg-amber-500' : 'bg-emerald-500')}
-                                style={{ width: `${bureau.charge}%` }}
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-xs mb-1">
-                              <span className="text-slate-400">Complétion</span>
-                              <span className="font-mono text-blue-400">{bureau.completion}%</span>
-                            </div>
-                            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-500 transition-all" style={{ width: `${bureau.completion}%` }} />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center text-sm p-2 rounded bg-slate-700/30">
-                          <span className="text-slate-400">Budget</span>
-                          <div className="text-right">
-                            <span className="font-mono text-emerald-400">{bureau.budgetUsed}</span>
-                            <span className="text-slate-500"> / </span>
-                            <span className="font-mono text-slate-300">{bureau.budget} FCFA</span>
-                          </div>
-                        </div>
-
-                        {hasGoulots && (
-                          <div className="mt-3 space-y-1">
-                            {bureau.goulots.map((goulot, idx) => (
-                              <div key={idx} className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                                <span className="text-xs text-amber-300">⚠️ {goulot}</span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleReportBottleneck(bureau, goulot);
-                                  }}
-                                >
-                                  Remonter
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-400">
-                          Modifié le {bureau.lastModified} par {bureau.modifiedBy}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="lg:col-span-1">
-              {selectedB ? (
-                <Card className="sticky top-4">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700/50">
-                      <div>
-                        <Badge variant="info" className="mb-2">
-                          {selectedB.code}
-                        </Badge>
-                        <h3 className="font-bold">{selectedB.name}</h3>
-                        <p className="text-sm text-slate-400">{selectedB.head}</p>
-                      </div>
-                      {selectedB.charge > 85 && <Badge variant="urgent">Surcharge</Badge>}
-                    </div>
-
-                    <div className="flex gap-2 mb-4">
-                      <Button size="sm" variant={!showHistory ? 'default' : 'secondary'} onClick={() => setShowHistory(false)}>
-                        Infos
-                      </Button>
-                      <Button size="sm" variant={showHistory ? 'default' : 'secondary'} onClick={() => setShowHistory(true)}>
-                        Historique ({selectedB.history.length})
-                      </Button>
-                    </div>
-
-                    {!showHistory ? (
-                      <div className="space-y-3 text-sm">
-                        <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <p className="text-xs text-slate-400">Agents</p>
-                              <p className="font-bold">{selectedB.agents}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Charge</p>
-                              <p className={cn('font-bold', selectedB.charge > 85 ? 'text-red-400' : 'text-emerald-400')}>
-                                {selectedB.charge}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Complétion</p>
-                              <p className="font-bold text-blue-400">{selectedB.completion}%</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Goulots</p>
-                              <p className={cn('font-bold', selectedB.goulots.length > 0 ? 'text-amber-400' : 'text-emerald-400')}>
-                                {selectedB.goulots.length}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <h4 className="font-bold text-xs mb-2">📐 Activités RACI (R/A)</h4>
-                          <div className="flex flex-wrap gap-1">
-                            {selectedB.raciActivities.map((act, idx) => (
-                              <Badge key={idx} variant="default">{act}</Badge>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <h4 className="font-bold text-xs mb-2">💰 Budget</h4>
-                          <div className="space-y-1">
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Alloué</span>
-                              <span className="font-mono">{selectedB.budget} FCFA</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Utilisé</span>
-                              <span className="font-mono text-emerald-400">{selectedB.budgetUsed} FCFA</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {selectedB.goulots.length > 0 && (
-                          <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                            <h4 className="font-bold text-xs mb-2">⚠️ Goulots</h4>
-                            <div className="space-y-2">
-                              {selectedB.goulots.map((g, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                                  <span className="text-xs text-amber-300">{g}</span>
-                                  <Button size="sm" variant="ghost" onClick={() => handleReportBottleneck(selectedB, g)}>
-                                    Remonter
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-2 max-h-80 overflow-y-auto">
-                        {selectedB.history.length > 0 ? (
-                          selectedB.history.map((entry) => (
-                            <div key={entry.id} className={cn('p-2 rounded text-xs', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge
-                                  variant={
-                                    entry.action === 'responsable_change'
-                                      ? 'warning'
-                                      : entry.action === 'budget_adjust'
-                                      ? 'info'
-                                      : entry.action === 'agent_add'
-                                      ? 'success'
-                                      : 'default'
-                                  }
-                                >
-                                  {entry.action.replace('_', ' ')}
-                                </Badge>
-                                <span className="text-slate-400">{entry.date}</span>
-                              </div>
-                              <p>{entry.description}</p>
-                              <p className="text-slate-400 mt-1">Par: {entry.author}</p>
-                              {entry.previousValue && <p className="text-slate-500">{entry.previousValue} → {entry.newValue}</p>}
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-slate-400 text-center py-4">Aucun historique</p>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                      <Button size="sm" variant="default" onClick={() => handleAdjustResponsibilities(selectedB)}>
-                        ⚙️ Ajuster responsabilités
-                      </Button>
-                      <Button size="sm" variant="info" onClick={() => addToast(`RACI: ${selectedB.raciActivities.length} activités liées`, 'info')}>
-                        📐 Voir RACI
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="sticky top-4">
-                  <CardContent className="p-8 text-center">
-                    <span className="text-4xl mb-4 block">🏢</span>
-                    <p className="text-slate-400">Sélectionnez un bureau</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Command palette */}
-      {cmdOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-xl">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-sm">⌘K — Commandes rapides</p>
-                  <p className="text-xs text-slate-400">Astuce : "/" pour focus la recherche</p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => setCmdOpen(false)}>
-                  Fermer
-                </Button>
               </div>
-
-              <div className="grid sm:grid-cols-2 gap-2">
-                <CmdItem
-                  label="⚔️ Aller aux Arbitrages"
-                  hint="Vue arbitrages + filtres"
-                  onClick={() => {
-                    setMainTab('arbitrages');
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🏢 Aller aux Bureaux"
-                  hint="Charge, goulots, budget"
-                  onClick={() => {
-                    setMainTab('bureaux');
-                    setCmdOpen(false);
-                  }}
-                />
-
-                <CmdItem
-                  label="🚨 Toggle issues (arbitrages)"
-                  hint="Filtrer uniquement les problèmes"
-                  onClick={() => {
-                    setMainTab('arbitrages');
-                    setOnlyIssues((v) => !v);
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🔥 Toggle surcharge (bureaux)"
-                  hint="Afficher uniquement charge > 85%"
-                  onClick={() => {
-                    setMainTab('bureaux');
-                    setOnlyOverloaded((v) => !v);
-                    setCmdOpen(false);
-                  }}
-                />
-
-                <CmdItem
-                  label="⏳ Filtrer: Vivants ouverts"
-                  hint="ouvert / en_deliberation / decision_requise"
-                  onClick={() => {
-                    setMainTab('arbitrages');
-                    setFilter('ouverts');
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="⏰ Filtrer: Simples pending"
-                  hint="Priorité aux échéances proches"
-                  onClick={() => {
-                    setMainTab('arbitrages');
-                    setFilter('pending');
-                    setCmdOpen(false);
-                  }}
-                />
-
-                <CmdItem
-                  label="🧼 Nettoyer filtres"
-                  hint="Réinitialiser recherche + toggles"
-                  onClick={() => {
-                    setQ('');
-                    setOnlyIssues(false);
-                    setOnlyOverloaded(false);
-                    setFilter('all');
-                    setCmdOpen(false);
-                  }}
-                />
-
-                <CmdItem
-                  label="📤 Export arbitrage sélectionné"
-                  hint="JSON (si sélection)"
-                  onClick={() => {
-                    if (selected) exportSelectedJson();
-                    else addToast('Sélectionnez un arbitrage avant export', 'warning');
-                    setCmdOpen(false);
-                  }}
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-700/40 flex items-center justify-between text-[10px] text-slate-400">
-                <span>ESC : fermer</span>
-                <span>Ctrl/⌘+K : ouvrir</span>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+
+        {/* Sidebar */}
+        {showSidebar && (
+          <aside className="hidden xl:flex flex-col w-[360px] shrink-0 gap-4">
+            {/* Notifications */}
+            <ArbitragesNotifications onOpenArbitrage={(id) => openArbitrage(id, `Arbitrage ${id}`)} />
+
+            {/* Quick actions */}
+            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-500" />
+                Actions rapides
+              </h3>
+              <div className="grid gap-2">
+                <button
+                  onClick={() => openInbox('ouverts', 'Ouverts', '⏳', 'arbitrages')}
+                  className="w-full p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-left hover:bg-amber-500/20 transition-colors"
+                  type="button"
+                >
+                  <span className="font-medium">⏳ Arbitrages ouverts</span>
+                  <div className="text-xs text-slate-500 mt-0.5">Décisions en attente</div>
+                </button>
+                <button
+                  onClick={() => openInbox('critiques', 'Critiques', '🚨', 'arbitrages')}
+                  className="w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-left hover:bg-rose-500/20 transition-colors"
+                  type="button"
+                >
+                  <span className="font-medium">🚨 Critiques</span>
+                  <div className="text-xs text-slate-500 mt-0.5">Risque élevé / urgent</div>
+                </button>
+                <button
+                  onClick={() => {
+                    setTimelineArbitrageId(undefined);
+                    setTimelineOpen(true);
+                  }}
+                  className="w-full p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-left hover:bg-blue-500/20 transition-colors"
+                  type="button"
+                >
+                  <span className="font-medium">📜 Timeline</span>
+                  <div className="text-xs text-slate-500 mt-0.5">Historique complet</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Mini watchlist */}
+            {pinned.length > 0 && (
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Star className="w-4 h-4 text-amber-500" />
+                  Watchlist ({pinned.length})
+                </h3>
+                <div className="space-y-2">
+                  {pinned.slice(0, 3).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => openArbitrage(item.id, item.subject)}
+                      className="w-full p-2 rounded-lg text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-sm truncate"
+                    >
+                      <Star className="w-3 h-3 inline mr-2 text-amber-500 fill-amber-500" />
+                      {item.subject}
+                    </button>
+                  ))}
+                  {pinned.length > 3 && (
+                    <button
+                      onClick={() => setDashboardTab('favorites')}
+                      className="w-full text-center text-xs text-blue-600 hover:underline py-1"
+                    >
+                      Voir tout ({pinned.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </aside>
+        )}
+      </div>
+    );
+  }, [
+    statsData,
+    escaladeItems,
+    lastUpdated,
+    autoRefresh,
+    refreshMs,
+    statsLoading,
+    loadStats,
+    loadEscalade,
+    openCreateWizard,
+    openInbox,
+    openArbitrage,
+    dashboardTab,
+    dashboardTabs,
+    pinned,
+    pinArbitrage,
+    unpinArbitrage,
+    showSidebar,
+  ]);
+
+  // ----------------
+  // Render
+  // ----------------
+  return (
+    <>
+      <div
+        className={cn(
+          'min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-[#0a0a0a] dark:via-[#141414] dark:to-[#0a0a0a]',
+          fullscreen && 'fixed inset-0 z-50'
+        )}
+      >
+        <WorkspaceShell
+          icon={<Scale className="w-6 h-6 text-red-500" />}
+          title="Console métier — Arbitrages & Gouvernance"
+          subtitle="Cellules de crise immersives • Options IA • Chronomètre décisionnel • Registre + hash"
+          badges={badges}
+          actions={actions}
+          actionSeparators={[2, 8, 11]}
+          Banner={banner}
+          Tabs={<ArbitragesWorkspaceTabs />}
+          showDashboard={showDashboard}
+          Dashboard={dashboard}
+          Content={<ArbitragesWorkspaceContent />}
+          FooterOverlays={<ArbitragesCommandPalette />}
+        />
+      </div>
+
+      {/* ============================= */}
+      {/* MODALES */}
+      {/* ============================= */}
+
+      {/* Stats Modal */}
+      <ArbitragesStatsModal 
+        open={statsOpen} 
+        onClose={() => setStatsOpen(false)} 
+      />
+
+      {/* Timeline Modal */}
+      <ArbitragesTimeline
+        open={timelineOpen}
+        onClose={() => setTimelineOpen(false)}
+        arbitrageId={timelineArbitrageId}
+      />
+
+      {/* Export */}
+      <FluentModal open={exportOpen} title="Exporter les arbitrages" onClose={() => setExportOpen(false)} maxWidth="xl">
+        {exportError && (
+          <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 text-sm mb-4">
+            {exportError}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm text-slate-500 font-medium">File</label>
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200/70 bg-white/90 p-2.5 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              value={exportQueue}
+              onChange={(e) => setExportQueue(e.target.value as ExportQueue)}
+            >
+              <option value="all">Tous les arbitrages</option>
+              <option value="ouverts">Ouverts</option>
+              <option value="critiques">Critiques</option>
+              <option value="urgents">Urgents</option>
+              <option value="tranches">Tranchés</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm text-slate-500 font-medium">Format</label>
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200/70 bg-white/90 p-2.5 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
+            >
+              <option value="csv">CSV (Excel)</option>
+              <option value="json">JSON (données structurées)</option>
+              <option value="pdf">PDF (imprimable)</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <FluentButton size="sm" variant="secondary" onClick={() => setExportOpen(false)} disabled={exporting}>
+            Annuler
+          </FluentButton>
+          <FluentButton size="sm" variant="primary" onClick={handleExport} disabled={exporting}>
+            <Download className="w-3.5 h-3.5 mr-1" />
+            {exporting ? 'Export…' : 'Télécharger'}
+          </FluentButton>
+        </div>
+      </FluentModal>
+
+      {/* Aide */}
+      <FluentModal open={helpOpen} title="Raccourcis clavier — Arbitrages" onClose={() => setHelpOpen(false)} maxWidth="2xl">
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Navigation</h3>
+            <div className="space-y-2">
+              <ShortcutRow shortcut="Ctrl/⌘+1" label="Ouverts" />
+              <ShortcutRow shortcut="Ctrl/⌘+2" label="Critiques" />
+              <ShortcutRow shortcut="Ctrl/⌘+3" label="Urgents" />
+              <ShortcutRow shortcut="Ctrl/⌘+4" label="Tranchés" />
+              <ShortcutRow shortcut="Ctrl/⌘+K" label="Palette de commandes" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Actions</h3>
+            <div className="space-y-2">
+              <ShortcutRow shortcut="Ctrl/⌘+N" label="Nouvel arbitrage" />
+              <ShortcutRow shortcut="Ctrl/⌘+S" label="Statistiques" />
+              <ShortcutRow shortcut="Ctrl/⌘+E" label="Export" />
+              <ShortcutRow shortcut="Ctrl/⌘+T" label="Timeline" />
+              <ShortcutRow shortcut="Ctrl/⌘+B" label="Sidebar" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Affichage</h3>
+            <div className="space-y-2">
+              <ShortcutRow shortcut="F11" label="Plein écran" />
+              <ShortcutRow shortcut="?" label="Aide" />
+              <ShortcutRow shortcut="Esc" label="Fermer modales / plein écran" />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <FluentButton size="sm" variant="primary" onClick={() => setHelpOpen(false)}>
+              Fermer
+            </FluentButton>
+          </div>
+        </div>
+      </FluentModal>
+    </>
+  );
+}
+
+// ================================
+// Main Component with Provider
+// ================================
+export default function ArbitragesVivantsPage() {
+  return (
+    <ArbitragestoastProvider>
+      <ArbitragesVivantsPageContent />
+    </ArbitragestoastProvider>
   );
 }

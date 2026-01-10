@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { litiges } from '@/lib/data';
 
+// Type pour les litiges
+type LitigeItem = typeof litiges[number];
+
 // WHY: Parsing robuste des montants (FCFA)
 const parseMontant = (value: string | number): number => {
   if (typeof value === 'number') return value;
@@ -18,8 +21,8 @@ const parseMontant = (value: string | number): number => {
 
 // WHY: Export CSV enrichi — inclut origine, RACI, hash, statut
 const exportLitigesAsCSV = (
-  litiges: typeof litiges,
-  addToast: (msg: string, variant: string) => void
+  litigesList: LitigeItem[],
+  addToast: (message: string, type?: 'success' | 'warning' | 'info' | 'error') => void
 ) => {
   const headers = [
     'ID',
@@ -39,7 +42,7 @@ const exportLitigesAsCSV = (
     'Statut BMO',
   ];
 
-  const rows = litiges.map(l => [
+  const rows = litigesList.map(l => [
     l.id,
     l.adversaire,
     `"${l.objet}"`,

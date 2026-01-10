@@ -12,7 +12,7 @@ import type { ActionLogType, ActionLog } from '@/lib/types/bmo.types';
 // WHY: Export CSV enrichi — traçabilité RACI incluse
 const exportLogsAsCSV = (
   logs: ActionLog[],
-  addToast: (msg: string, variant: string) => void
+  addToast: (msg: string, variant?: 'success' | 'warning' | 'info' | 'error') => void
 ) => {
   const headers = [
     'ID',
@@ -117,7 +117,7 @@ export default function LogsPage() {
   }, [actionLogs]);
 
   // Mapper les types d'action vers des icônes et couleurs
-  const actionConfig: Record<ActionLogType, { icon: string; color: string; label: string }> = {
+  const actionConfig: Partial<Record<ActionLogType, { icon: string; color: string; label: string }>> = {
     validation: { icon: '✅', color: 'text-emerald-400', label: 'Validation' },
     rejection: { icon: '❌', color: 'text-red-400', label: 'Rejet' },
     substitution: { icon: '🔄', color: 'text-orange-400', label: 'Substitution' },
@@ -131,7 +131,16 @@ export default function LogsPage() {
     import: { icon: '📥', color: 'text-indigo-400', label: 'Import' },
     budget_alert: { icon: '💰', color: 'text-amber-400', label: 'Alerte budget' },
     budget_approval: { icon: '💵', color: 'text-emerald-400', label: 'Approbation budget' },
+    audit: { icon: '🔍', color: 'text-blue-400', label: 'Audit' },
+    approve: { icon: '✅', color: 'text-emerald-400', label: 'Approbation' },
+    reject: { icon: '❌', color: 'text-red-400', label: 'Rejet' },
+    respond: { icon: '💬', color: 'text-cyan-400', label: 'Réponse' },
+    view: { icon: '👁️', color: 'text-slate-400', label: 'Consultation' },
+    view_profile: { icon: '👤', color: 'text-blue-400', label: 'Vue profil' },
   };
+
+  // Valeur par défaut pour les actions non définies
+  const defaultActionConfig = { icon: '📋', color: 'text-slate-400', label: 'Action' };
 
   // Formater la date
   const formatDate = (isoString: string) => {

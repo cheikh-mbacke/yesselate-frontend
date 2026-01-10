@@ -129,3 +129,19 @@ export {
   type AvenantStatut,
   avenants,
 } from './avenants';
+
+// Alertes & Risques (données enrichies)
+export {
+  type Alert,
+  type AlertSeverity,
+  type AlertType,
+  type AlertStatus,
+  type AlertAction,
+  type AlertTimelineEvent,
+  type AlertStats,
+  alerts,
+  filterAlertsByQueue,
+  calculateAlertStats,
+  getAlertById,
+  searchAlerts,
+} from './alerts';

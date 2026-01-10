@@ -7,6 +7,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Logger } from '@/lib/services/logger';
+import type { BlockedDossier } from '@/lib/types/bmo.types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -860,7 +861,7 @@ export default function DashboardPage() {
     (r: RiskItem) => {
       if (r.kind === 'blocked_dossier') {
         if (r.payload && typeof r.payload === 'object') {
-          openBlocageModal(r.payload);
+          openBlocageModal(r.payload as BlockedDossier);
         }
         return;
       }

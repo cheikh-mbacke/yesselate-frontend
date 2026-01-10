@@ -23,50 +23,49 @@ export interface PageCounts {
 }
 
 // Mapping automatique des routes
+// OPTIMISÉ le 10/01/2026 : Suppression pages redondantes, réorganisation
 export const routeMapping: Record<string, string> = {
-  // PILOTAGE
+  // PILOTAGE (5 pages)
   dashboard: '/maitre-ouvrage',
   governance: '/maitre-ouvrage/governance',
   calendrier: '/maitre-ouvrage/calendrier',
   analytics: '/maitre-ouvrage/analytics',
+  alerts: '/maitre-ouvrage/alerts',
   
-  // EXÉCUTION
+  // EXÉCUTION (7 pages) - inclut arbitrages-vivants déplacé
   demandes: '/maitre-ouvrage/demandes',
   'validation-bc': '/maitre-ouvrage/validation-bc',
   'validation-contrats': '/maitre-ouvrage/validation-contrats',
   'validation-paiements': '/maitre-ouvrage/validation-paiements',
   blocked: '/maitre-ouvrage/blocked',
   substitution: '/maitre-ouvrage/substitution',
+  'arbitrages-vivants': '/maitre-ouvrage/arbitrages-vivants',
   
-  // PROJETS & CLIENTS
+  // PROJETS & CLIENTS (3 pages)
   'projets-en-cours': '/maitre-ouvrage/projets-en-cours',
   clients: '/maitre-ouvrage/clients',
   'tickets-clients': '/maitre-ouvrage/tickets-clients',
   
-  // FINANCE & CONTENTIEUX
+  // FINANCE & CONTENTIEUX (3 pages)
   finances: '/maitre-ouvrage/finances',
   recouvrements: '/maitre-ouvrage/recouvrements',
   litiges: '/maitre-ouvrage/litiges',
   
-  // RH & RESSOURCES
+  // RH & RESSOURCES (6 pages) - depenses, deplacements, paie-avances fusionnés dans demandes-rh
   employes: '/maitre-ouvrage/employes',
   missions: '/maitre-ouvrage/missions',
   evaluations: '/maitre-ouvrage/evaluations',
   'demandes-rh': '/maitre-ouvrage/demandes-rh',
-  depenses: '/maitre-ouvrage/depenses',
-  deplacements: '/maitre-ouvrage/deplacements',
-  'paie-avances': '/maitre-ouvrage/paie-avances',
   delegations: '/maitre-ouvrage/delegations',
   organigramme: '/maitre-ouvrage/organigramme',
   
-  // COMMUNICATION
+  // COMMUNICATION (4 pages) - arbitrages-vivants déplacé vers Exécution
   'echanges-bureaux': '/maitre-ouvrage/echanges-bureaux',
   'echanges-structures': '/maitre-ouvrage/echanges-structures',
-  'arbitrages-vivants': '/maitre-ouvrage/arbitrages-vivants',
   conferences: '/maitre-ouvrage/conferences',
   'messages-externes': '/maitre-ouvrage/messages-externes',
   
-  // GOUVERNANCE
+  // SYSTÈME (7 pages) - renommé de Gouvernance pour clarté
   decisions: '/maitre-ouvrage/decisions',
   audit: '/maitre-ouvrage/audit',
   logs: '/maitre-ouvrage/logs',

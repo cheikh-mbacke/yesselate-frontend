@@ -1,231 +1,123 @@
 /**
- * Store Zustand pour le workspace Arbitrages
- * ============================================
- * 
- * Gère les onglets + l'état UI de chaque onglet (section, sous-section, explorer).
+ * ====================================================================
+ * STORE: Arbitrages & Goulots Workspace - Pattern Pilotage
+ * ====================================================================
  */
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-// ============================================
-// TYPES
-// ============================================
+export type ArbitragesTabType = 
+  | 'inbox'          // Liste des arbitrages
+  | 'detail'         // Détail d'un arbitrage
+  | 'goulots'        // Goulots d'étranglement
+  | 'conflits'       // Conflits inter-bureaux
+  | 'timeline'       // Timeline des décisions
+  | 'analytics';     // Dashboard analytique
 
-/** Types d'onglets supportés dans le workspace arbitrages */
-export type ArbitrageTabType = 'inbox' | 'arbitrage' | 'bureau' | 'report' | 'wizard';
-
-/** État UI d'un onglet arbitrage (arborescence interne) */
-export type ArbitrageUIState = {
-  section:
-    | 'contexte'
-    | 'options'
-    | 'parties'
-    | 'documents'
-    | 'deliberation'
-    | 'decision'
-    | 'audit'
-    | 'timeline';
-  sub?:
-    | 'background'
-    | 'risks'
-    | 'financial'
-    | 'linked'
-    | 'ai_options'
-    | 'pros_cons'
-    | 'impact'
-    | 'decideur'
-    | 'demandeur'
-    | 'defendeur'
-    | 'experts'
-    | 'raci'
-    | 'attachments'
-    | 'briefings'
-    | 'notes'
-    | 'votes'
-    | 'conference'
-    | 'resolution'
-    | 'motif'
-    | 'hashchain'
-    | 'notifications'
-    | 'exports';
-  explorerOpen?: boolean;
-  viewTab?: 'contexte' | 'options' | 'parties' | 'documents';
-};
-
-/** État UI d'un onglet bureau */
-export type BureauUIState = {
-  section: 'overview' | 'agents' | 'charge' | 'budget' | 'goulots' | 'raci' | 'history';
-  sub?: 'details' | 'comparison' | 'trends';
-  explorerOpen?: boolean;
-};
-
-export type ArbitrageTab = {
+export interface ArbitragesTab {
   id: string;
-  type: ArbitrageTabType;
+  type: ArbitragesTabType;
   title: string;
-  icon?: string;
-  data?: {
-    queue?: string;
-    arbitrageId?: string;
-    arbitrageType?: 'vivant' | 'simple';
-    bureauCode?: string;
-    action?: string;
-    [key: string]: unknown;
-  };
-  isDirty?: boolean;
-  createdAt: number;
-  /** État UI interne de l'onglet */
-  ui?: ArbitrageUIState | BureauUIState;
-};
-
-type OpenTabInput = Omit<ArbitrageTab, 'createdAt' | 'ui'>;
-
-interface ArbitragesWorkspaceState {
-  tabs: ArbitrageTab[];
-  activeTabId: string | null;
-  
-  // Actions
-  openTab: (tab: OpenTabInput) => void;
-  setActiveTab: (id: string) => void;
-  closeTab: (id: string) => void;
-  updateTab: (id: string, patch: Partial<ArbitrageTab>) => void;
-  closeOthers: (id: string) => void;
-  closeAll: () => void;
-  
-  // UI State par onglet
-  setTabUI: (tabId: string, uiPatch: Partial<ArbitrageUIState | BureauUIState>) => void;
-  getTabUI: (tabId: string) => ArbitrageUIState | BureauUIState | undefined;
+  icon: string;
+  data: Record<string, unknown>;
+  closable?: boolean;
 }
 
-// ============================================
-// DEFAULT UI STATES
-// ============================================
+export interface ArbitragesFilter {
+  status?: 'pending' | 'in_progress' | 'resolved' | 'escalated';
+  priority?: 'critical' | 'high' | 'medium' | 'low';
+  type?: 'goulot' | 'conflit' | 'arbitrage' | 'decision';
+  bureaux?: string[];
+  search?: string;
+}
 
-const DEFAULT_ARBITRAGE_UI_STATE: ArbitrageUIState = {
-  section: 'contexte',
-  sub: undefined,
-  explorerOpen: true,
-  viewTab: 'contexte',
-};
+interface ArbitragesWorkspaceState {
+  tabs: ArbitragesTab[];
+  activeTabId: string | null;
+  selectedIds: Set<string>;
+  currentFilter: ArbitragesFilter;
+  watchlist: string[];
+  commandPaletteOpen: boolean;
+  statsModalOpen: boolean;
+  exportModalOpen: boolean;
+  decisionModalOpen: boolean;
+  directionPanelOpen: boolean;
+  viewMode: 'dashboard' | 'workspace';
 
-const DEFAULT_BUREAU_UI_STATE: BureauUIState = {
-  section: 'overview',
-  sub: undefined,
-  explorerOpen: true,
-};
+  openTab: (tab: Omit<ArbitragesTab, 'id'> & { id?: string }) => void;
+  closeTab: (tabId: string) => void;
+  setActiveTab: (tabId: string) => void;
+  toggleSelected: (id: string) => void;
+  selectAll: (ids: string[]) => void;
+  clearSelection: () => void;
+  setFilter: (filter: Partial<ArbitragesFilter>) => void;
+  clearFilter: () => void;
+  addToWatchlist: (id: string) => void;
+  removeFromWatchlist: (id: string) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
+  setStatsModalOpen: (open: boolean) => void;
+  setExportModalOpen: (open: boolean) => void;
+  setDecisionModalOpen: (open: boolean) => void;
+  setDirectionPanelOpen: (open: boolean) => void;
+  setViewMode: (mode: 'dashboard' | 'workspace') => void;
+  reset: () => void;
+}
 
-// ============================================
-// STORE
-// ============================================
+const defaultTabs: ArbitragesTab[] = [
+  { id: 'inbox:all', type: 'inbox', title: 'Tous les arbitrages', icon: '⚖️', data: { queue: 'all' }, closable: false },
+];
 
-export const useArbitragesWorkspaceStore = create<ArbitragesWorkspaceState>((set, get) => ({
-  tabs: [],
-  activeTabId: null,
+export const useArbitragesWorkspaceStore = create<ArbitragesWorkspaceState>()(
+  persist(
+    (set, get) => ({
+      tabs: defaultTabs,
+      activeTabId: 'inbox:all',
+      selectedIds: new Set(),
+      currentFilter: {},
+      watchlist: [],
+      commandPaletteOpen: false,
+      statsModalOpen: false,
+      exportModalOpen: false,
+      decisionModalOpen: false,
+      directionPanelOpen: false,
+      viewMode: 'dashboard',
 
-  openTab: (input) => {
-    set((state) => {
-      const existing = state.tabs.find((t) => t.id === input.id);
-      if (existing) {
-        return { activeTabId: input.id };
-      }
-      
-      let defaultUI: ArbitrageUIState | BureauUIState | undefined;
-      
-      if (input.type === 'arbitrage') {
-        defaultUI = { ...DEFAULT_ARBITRAGE_UI_STATE };
-      } else if (input.type === 'bureau') {
-        defaultUI = { ...DEFAULT_BUREAU_UI_STATE };
-      }
-      
-      const newTab: ArbitrageTab = {
-        ...input,
-        createdAt: Date.now(),
-        ui: defaultUI,
-      };
-      
-      return {
-        tabs: [...state.tabs, newTab],
-        activeTabId: input.id,
-      };
-    });
-  },
+      openTab: (tab) => {
+        const id = tab.id || `${tab.type}:${Date.now()}`;
+        if (get().tabs.find(t => t.id === id)) { set({ activeTabId: id }); return; }
+        set((state) => ({ tabs: [...state.tabs, { ...tab, id, closable: tab.closable ?? true }], activeTabId: id }));
+      },
 
-  setActiveTab: (id) => {
-    set({ activeTabId: id });
-  },
-
-  closeTab: (id) => {
-    set((state) => {
-      const idx = state.tabs.findIndex((t) => t.id === id);
-      if (idx === -1) return state;
-
-      const newTabs = state.tabs.filter((t) => t.id !== id);
-      let newActive = state.activeTabId;
-
-      if (state.activeTabId === id) {
-        if (newTabs.length === 0) {
-          newActive = null;
-        } else if (idx >= newTabs.length) {
-          newActive = newTabs[newTabs.length - 1].id;
-        } else {
-          newActive = newTabs[idx].id;
+      closeTab: (tabId) => {
+        const { tabs, activeTabId } = get();
+        const tab = tabs.find(t => t.id === tabId);
+        if (!tab || tab.closable === false) return;
+        const newTabs = tabs.filter(t => t.id !== tabId);
+        let newActiveId = activeTabId;
+        if (activeTabId === tabId) {
+          const idx = tabs.findIndex(t => t.id === tabId);
+          newActiveId = newTabs[Math.min(idx, newTabs.length - 1)]?.id || null;
         }
-      }
+        set({ tabs: newTabs, activeTabId: newActiveId });
+      },
 
-      return { tabs: newTabs, activeTabId: newActive };
-    });
-  },
-
-  updateTab: (id, patch) => {
-    set((state) => ({
-      tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-    }));
-  },
-
-  closeOthers: (id) => {
-    set((state) => ({
-      tabs: state.tabs.filter((t) => t.id === id),
-      activeTabId: id,
-    }));
-  },
-
-  closeAll: () => {
-    set({ tabs: [], activeTabId: null });
-  },
-
-  // ================================
-  // UI State par onglet
-  // ================================
-  
-  setTabUI: (tabId, uiPatch) => {
-    set((state) => ({
-      tabs: state.tabs.map((t) => {
-        if (t.id !== tabId) return t;
-        
-        const tab = state.tabs.find((x) => x.id === tabId);
-        let defaultUI: ArbitrageUIState | BureauUIState;
-        
-        if (tab?.type === 'bureau') {
-          defaultUI = DEFAULT_BUREAU_UI_STATE;
-        } else {
-          defaultUI = DEFAULT_ARBITRAGE_UI_STATE;
-        }
-        
-        return {
-          ...t,
-          ui: {
-            ...(t.ui ?? defaultUI),
-            ...uiPatch,
-          },
-        };
-      }),
-    }));
-  },
-
-  getTabUI: (tabId) => {
-    const tab = get().tabs.find((t) => t.id === tabId);
-    return tab?.ui;
-  },
-}));
-
-
+      setActiveTab: (tabId) => { if (get().tabs.find(t => t.id === tabId)) set({ activeTabId: tabId }); },
+      toggleSelected: (id) => set((state) => { const s = new Set(state.selectedIds); s.has(id) ? s.delete(id) : s.add(id); return { selectedIds: s }; }),
+      selectAll: (ids) => set({ selectedIds: new Set(ids) }),
+      clearSelection: () => set({ selectedIds: new Set() }),
+      setFilter: (filter) => set((state) => ({ currentFilter: { ...state.currentFilter, ...filter } })),
+      clearFilter: () => set({ currentFilter: {} }),
+      addToWatchlist: (id) => set((state) => ({ watchlist: state.watchlist.includes(id) ? state.watchlist : [...state.watchlist, id] })),
+      removeFromWatchlist: (id) => set((state) => ({ watchlist: state.watchlist.filter(wid => wid !== id) })),
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+      setStatsModalOpen: (open) => set({ statsModalOpen: open }),
+      setExportModalOpen: (open) => set({ exportModalOpen: open }),
+      setDecisionModalOpen: (open) => set({ decisionModalOpen: open }),
+      setDirectionPanelOpen: (open) => set({ directionPanelOpen: open }),
+      setViewMode: (mode) => set({ viewMode: mode }),
+      reset: () => set({ tabs: defaultTabs, activeTabId: 'inbox:all', selectedIds: new Set(), currentFilter: {}, commandPaletteOpen: false }),
+    }),
+    { name: 'arbitrages:workspace', partialize: (state) => ({ watchlist: state.watchlist, viewMode: state.viewMode }) }
+  )
+);

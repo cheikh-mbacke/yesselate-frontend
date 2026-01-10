@@ -1,198 +1,74 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
 /**
  * GET /api/calendar/conflicts
- * ============================
- * 
- * Détecte et retourne tous les conflits dans le calendrier
- * 
- * Query params:
- * - bureau: Filtrer par bureau
- * - startDate: Date de début pour la recherche (ISO)
- * - endDate: Date de fin pour la recherche (ISO)
+ * Détecter les conflits de calendrier
  */
+
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const bureau = searchParams.get('bureau');
+    const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // TODO: Remplacer par vrai appel BDD/API
-    const { calendarEvents, detectConflicts } = await import('@/lib/data/calendar');
+    // Simuler détection de conflits
+    // En prod, analyser les événements avec participants et horaires qui se chevauchent
+    
+    const conflicts = [
+      {
+        id: 'CONFLICT-001',
+        date: new Date().toISOString(),
+        type: 'participant_overlap',
+        severity: 'warning',
+        events: [
+          { id: 'EVT-002', title: 'Deadline BC-2024-0847', participants: ['M. Dupont'] },
+          { id: 'EVT-003', title: 'Réunion fournisseurs', participants: ['M. Dupont'] },
+        ],
+        description: 'M. Dupont assigné sur 2 événements simultanés',
+        suggestion: 'Déléguer ou reporter l\'un des événements',
+      },
+      {
+        id: 'CONFLICT-002',
+        date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        type: 'resource_conflict',
+        severity: 'critical',
+        events: [
+          { id: 'EVT-004', title: 'Réunion Salle A', location: 'Salle A', time: '14:00-16:00' },
+          { id: 'EVT-005', title: 'Formation', location: 'Salle A', time: '14:30-17:00' },
+        ],
+        description: 'Salle A réservée 2 fois sur la même plage horaire',
+        suggestion: 'Changer de salle ou d\'horaire',
+      },
+    ];
 
-    // Filtrer par bureau si spécifié
-    let events = bureau 
-      ? calendarEvents.filter(e => e.bureau === bureau)
-      : calendarEvents;
-
-    // Filtrer par période si spécifié
-    if (startDate && endDate) {
-      const start = new Date(startDate).getTime();
-      const end = new Date(endDate).getTime();
-      events = events.filter(e => {
-        const eventStart = new Date(e.start).getTime();
-        return eventStart >= start && eventStart <= end;
-      });
+    // Filtrer par période
+    let filteredConflicts = conflicts;
+    if (startDate) {
+      const start = new Date(startDate);
+      filteredConflicts = filteredConflicts.filter((c) => new Date(c.date) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      filteredConflicts = filteredConflicts.filter((c) => new Date(c.date) <= end);
     }
 
-    // Détecter les conflits
-    const conflictIds = detectConflicts(events);
-
-    // Grouper les conflits par paires
-    const conflicts: Array<{
-      id: string;
-      events: any[];
-      reason: string;
-      severity: 'critical' | 'warning' | 'info';
-      affectedPeople: string[];
-    }> = [];
-
-    const processedPairs = new Set<string>();
-
-    events.forEach((event1, idx) => {
-      if (!conflictIds.has(event1.id)) return;
-
-      events.slice(idx + 1).forEach(event2 => {
-        if (!conflictIds.has(event2.id)) return;
-
-        const pairId = [event1.id, event2.id].sort().join('|');
-        if (processedPairs.has(pairId)) return;
-
-        // Vérifier si même personne
-        const sharedAssignees = event1.assignees?.filter(a1 =>
-          event2.assignees?.some(a2 => a2.id === a1.id)
-        );
-
-        if (!sharedAssignees || sharedAssignees.length === 0) return;
-
-        // Vérifier si chevauchement temporel
-        const start1 = new Date(event1.start).getTime();
-        const end1 = new Date(event1.end).getTime();
-        const start2 = new Date(event2.start).getTime();
-        const end2 = new Date(event2.end).getTime();
-
-        if (start1 < end2 && end1 > start2) {
-          processedPairs.add(pairId);
-
-          // Calculer la sévérité
-          let severity: 'critical' | 'warning' | 'info' = 'warning';
-          if (event1.priority === 'critical' || event2.priority === 'critical') {
-            severity = 'critical';
-          } else if (event1.priority === 'urgent' || event2.priority === 'urgent') {
-            severity = 'warning';
-          } else {
-            severity = 'info';
-          }
-
-          conflicts.push({
-            id: pairId,
-            events: [
-              {
-                id: event1.id,
-                title: event1.title,
-                start: event1.start,
-                end: event1.end,
-                priority: event1.priority,
-                location: (event1 as any).location,
-              },
-              {
-                id: event2.id,
-                title: event2.title,
-                start: event2.start,
-                end: event2.end,
-                priority: event2.priority,
-                location: (event2 as any).location,
-              },
-            ],
-            reason: `${sharedAssignees.length} participant(s) en conflit`,
-            severity,
-            affectedPeople: sharedAssignees.map(a => a.name),
-          });
-        }
-      });
-    });
+    const stats = {
+      total: filteredConflicts.length,
+      critical: filteredConflicts.filter((c) => c.severity === 'critical').length,
+      warning: filteredConflicts.filter((c) => c.severity === 'warning').length,
+      participantOverlap: filteredConflicts.filter((c) => c.type === 'participant_overlap').length,
+      resourceConflict: filteredConflicts.filter((c) => c.type === 'resource_conflict').length,
+    };
 
     return NextResponse.json({
-      success: true,
-      data: {
-        conflicts,
-        total: conflicts.length,
-        bySeverity: {
-          critical: conflicts.filter(c => c.severity === 'critical').length,
-          warning: conflicts.filter(c => c.severity === 'warning').length,
-          info: conflicts.filter(c => c.severity === 'info').length,
-        },
-      },
+      conflicts: filteredConflicts,
+      stats,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error detecting conflicts:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de la détection des conflits',
-      },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * POST /api/calendar/conflicts/resolve
- * =====================================
- * 
- * Résout un conflit en replanifiant un événement
- * 
- * Body:
- * - conflictId: ID du conflit
- * - eventId: ID de l'événement à replanifier
- * - newStart: Nouvelle date de début
- * - newEnd: Nouvelle date de fin
- * - reason: Motif de la replanification
- */
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-
-    const { conflictId, eventId, newStart, newEnd, reason } = body;
-
-    if (!conflictId || !eventId || !newStart || !newEnd) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Paramètres manquants',
-        },
-        { status: 400 }
-      );
-    }
-
-    // TODO: Mettre à jour l'événement en BDD
-    // Pour l'instant, on simule juste une réponse
-
-    return NextResponse.json({
-      success: true,
-      message: 'Conflit résolu avec succès',
-      data: {
-        conflictId,
-        eventId,
-        oldStart: 'xxx',
-        oldEnd: 'xxx',
-        newStart,
-        newEnd,
-        reason,
-        resolvedAt: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('Error resolving conflict:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de la résolution du conflit',
-      },
+      { error: 'Failed to detect conflicts' },
       { status: 500 }
     );
   }

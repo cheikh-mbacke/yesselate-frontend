@@ -1,6 +1,6 @@
 /**
- * API Route: POST /api/alerts/[id]/acknowledge
- * Acquitte une alerte
+ * POST /api/alerts/[id]/acknowledge
+ * Acquitter une alerte
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,51 +11,30 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json();
+    const { note, userId = 'user-001' } = body;
 
-    const { userId, userName, comment } = body;
+    // Simuler acquittement (en prod, update DB)
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Simulate acknowledgment
-    const result = {
+    const acknowledgedAlert = {
       id,
-      status: 'acknowledged',
       acknowledgedAt: new Date().toISOString(),
-      acknowledgedBy: userName || 'Utilisateur',
-      acknowledgedById: userId || 'USER-001',
-      comment: comment || null,
-      
-      // Next action hints
-      nextActions: ['resolve', 'escalate', 'dismiss'],
-      
-      // Timeline entry created
-      timelineEntry: {
-        id: `TL-${Date.now()}`,
-        type: 'acknowledge',
-        description: comment ? `Acquittée: ${comment}` : 'Alerte acquittée',
-        timestamp: new Date().toISOString(),
-        actor: userName || 'Utilisateur',
-        actorId: userId || 'USER-001'
-      }
+      acknowledgedBy: userId,
+      note: note || null,
+      status: 'acknowledged',
     };
 
     return NextResponse.json({
       success: true,
+      alert: acknowledgedAlert,
       message: 'Alerte acquittée avec succès',
-      data: result,
-      timestamp: new Date().toISOString()
     });
-
   } catch (error) {
-    const { id } = await params;
-    console.error(`Erreur API POST /api/alerts/${id}/acknowledge:`, error);
+    console.error('Error acknowledging alert:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de l\'acquittement',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
-      },
+      { error: 'Failed to acknowledge alert' },
       { status: 500 }
     );
   }
 }
-

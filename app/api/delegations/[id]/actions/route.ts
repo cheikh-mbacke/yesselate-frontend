@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         endDate: finalEndDate,
         status: 'active', // Réactiver si expiré
       };
-      eventAction = 'extended';
+      eventAction = 'extend';
       eventDetails = details || `Délégation prolongée jusqu'au ${finalEndDate.toLocaleDateString('fr-FR')}`;
       break;
     }
@@ -64,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         suspendedBy: actorName,
         suspendReason: reason,
       };
-      eventAction = 'suspended';
+      eventAction = 'suspend';
       eventDetails = `Délégation suspendue: ${reason}`;
       break;
     }
@@ -80,7 +80,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         suspendedBy: null,
         suspendReason: null,
       };
-      eventAction = 'reactivated';
+      eventAction = 'reactivate';
       eventDetails = details || 'Délégation réactivée';
       break;
     }
@@ -94,7 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         revokedBy: actorName,
         revokeReason: reason,
       };
-      eventAction = 'revoked';
+      eventAction = 'revoke';
       eventDetails = `Délégation révoquée: ${reason}`;
       break;
     }
@@ -116,7 +116,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         lastUsedAt: new Date(),
         lastUsedFor: targetDoc,
       };
-      eventAction = 'used';
+      eventAction = 'use';
       eventDetails = details || (targetDoc 
         ? `Utilisée pour ${targetDocType ?? 'document'}: ${targetDoc}`
         : 'Utilisation enregistrée');

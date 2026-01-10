@@ -1,225 +1,126 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
 /**
- * GET /api/calendar/events
- * ========================
- * 
- * Liste les événements du calendrier avec filtres et pagination
- * 
- * Query params:
- * - queue: 'today' | 'week' | 'month' | 'overdue' | 'conflicts' | 'completed' | 'all'
- * - bureau: Filtrer par bureau
- * - category: Filtrer par catégorie
- * - priority: Filtrer par priorité
- * - status: Filtrer par statut
- * - search: Recherche texte
- * - page: Numéro de page (défaut: 1)
- * - limit: Éléments par page (défaut: 20)
- * - sortBy: Champ de tri (défaut: 'start')
- * - sortDir: Direction du tri 'asc' | 'desc' (défaut: 'asc')
+ * GET/POST /api/calendar/events
+ * Gestion des événements du calendrier
  */
 
+import { NextRequest, NextResponse } from 'next/server';
+
+// Stockage temporaire en mémoire (en prod, utiliser DB)
+let events: any[] = [
+  {
+    id: 'EVT-001',
+    title: 'Comité de pilotage',
+    date: new Date().toISOString(),
+    startTime: '09:00',
+    endTime: '11:00',
+    type: 'meeting',
+    priority: 'high',
+    project: 'Projet Alpha',
+    participants: ['M. Dupont', 'Mme Martin', 'M. Koné'],
+    location: 'Salle A',
+    createdAt: new Date().toISOString(),
+    createdBy: 'user-001',
+  },
+];
+
+/**
+ * GET - Liste des événements
+ */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    
-    const queue = searchParams.get('queue') || 'all';
-    const bureau = searchParams.get('bureau');
-    const category = searchParams.get('category');
-    const priority = searchParams.get('priority');
-    const status = searchParams.get('status');
-    const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const sortBy = searchParams.get('sortBy') || 'start';
-    const sortDir = searchParams.get('sortDir') || 'asc';
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const type = searchParams.get('type'); // 'meeting' | 'deadline' | 'milestone' | 'task'
 
-    // TODO: Remplacer par vrai appel BDD/API
-    const { calendarEvents, filterEventsByQueue, detectConflicts } = await import('@/lib/data/calendar');
+    let filteredEvents = [...events];
 
-    // Filtrer par queue
-    let events = filterEventsByQueue(calendarEvents, queue);
-
-    // Appliquer filtres additionnels
-    if (bureau) {
-      events = events.filter(e => e.bureau === bureau);
+    // Filtrer par date
+    if (startDate) {
+      const start = new Date(startDate);
+      filteredEvents = filteredEvents.filter((e) => new Date(e.date) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      filteredEvents = filteredEvents.filter((e) => new Date(e.date) <= end);
     }
 
-    if (category && category !== 'all') {
-      const categoryMap: Record<string, string> = {
-        'meeting': 'meeting',
-        'site_visit': 'site-visit',
-        'validation': 'validation',
-        'payment': 'payment',
-        'deadline': 'deadline',
-        'absence': 'absence',
-      };
-      const targetKind = categoryMap[category] || category;
-      events = events.filter(e => e.kind === targetKind);
+    // Filtrer par type
+    if (type) {
+      filteredEvents = filteredEvents.filter((e) => e.type === type);
     }
 
-    if (priority && priority !== 'all') {
-      events = events.filter(e => e.priority === priority);
-    }
-
-    if (status && status !== 'all') {
-      const statusMap: Record<string, string> = {
-        'open': 'open',
-        'completed': 'done',
-        'cancelled': 'cancelled',
-      };
-      const targetStatus = statusMap[status] || status;
-      events = events.filter(e => e.status === targetStatus);
-    }
-
-    if (search) {
-      const q = search.toLowerCase();
-      events = events.filter(e => 
-        e.title.toLowerCase().includes(q) ||
-        e.description?.toLowerCase().includes(q) ||
-        (e as any).location?.toLowerCase().includes(q)
-      );
-    }
-
-    // Détection des conflits
-    const conflicts = detectConflicts(events);
-
-    // Enrichir avec infos supplémentaires
-    const now = Date.now();
-    const enrichedEvents = events.map(event => {
-      const hasConflict = conflicts.has(event.id);
-      const slaOverdue = event.slaDueAt && new Date(event.slaDueAt).getTime() < now && event.status === 'open';
-      
-      return {
-        ...event,
-        hasConflict,
-        isOverdue: slaOverdue,
-        slaStatus: slaOverdue ? 'overdue' : 'ok',
-      };
-    });
-
-    // Tri
-    enrichedEvents.sort((a, b) => {
-      let cmp = 0;
-      
-      switch (sortBy) {
-        case 'start':
-          cmp = new Date(a.start).getTime() - new Date(b.start).getTime();
-          break;
-        case 'priority': {
-          const priorityOrder: Record<string, number> = { critical: 0, urgent: 1, high: 2, normal: 3, low: 4 };
-          cmp = (priorityOrder[a.priority || 'normal'] || 3) - (priorityOrder[b.priority || 'normal'] || 3);
-          break;
-        }
-        case 'title':
-          cmp = a.title.localeCompare(b.title, 'fr');
-          break;
-        case 'status':
-          cmp = (a.status || '').localeCompare(b.status || '', 'fr');
-          break;
-        default:
-          cmp = new Date(a.start).getTime() - new Date(b.start).getTime();
-      }
-      
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-
-    // Pagination
-    const total = enrichedEvents.length;
-    const totalPages = Math.ceil(total / limit);
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    const paginatedEvents = enrichedEvents.slice(start, end);
+    // Trier par date
+    filteredEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return NextResponse.json({
-      success: true,
-      data: {
-        events: paginatedEvents,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-        filters: {
-          queue,
-          bureau,
-          category,
-          priority,
-          status,
-          search,
-        },
-      },
+      events: filteredEvents,
+      count: filteredEvents.length,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error fetching calendar events:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de la récupération des événements',
-      },
+      { error: 'Failed to fetch calendar events' },
       { status: 500 }
     );
   }
 }
 
 /**
- * POST /api/calendar/events
- * =========================
- * 
- * Crée un nouvel événement
+ * POST - Créer un événement
  */
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const {
+      title,
+      date,
+      startTime,
+      endTime,
+      type = 'task',
+      priority = 'medium',
+      project,
+      participants,
+      location,
+      userId = 'user-001',
+    } = body;
 
-    // Validation basique
-    if (!body.title || !body.start || !body.end) {
+    if (!title || !date) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Titre, date de début et date de fin sont requis',
-        },
+        { error: 'Title and date are required' },
         { status: 400 }
       );
     }
 
-    // TODO: Sauvegarder en BDD
+    // Créer événement
     const newEvent = {
       id: `EVT-${Date.now()}`,
-      title: body.title,
-      description: body.description || '',
-      kind: body.category || 'meeting',
-      bureau: body.bureau || '',
-      assignees: body.attendees || [],
-      start: body.start,
-      end: body.end,
-      priority: body.priority || 'normal',
-      severity: body.priority === 'critical' ? 'critical' : body.priority === 'urgent' ? 'warning' : 'info',
-      status: 'open',
-      location: body.location || '',
-      linkedTo: body.links?.[0] || null,
-      slaDueAt: body.slaDueAt || null,
+      title,
+      date: new Date(date).toISOString(),
+      startTime,
+      endTime,
+      type,
+      priority,
+      project,
+      participants: participants || [],
+      location,
       createdAt: new Date().toISOString(),
+      createdBy: userId,
       updatedAt: new Date().toISOString(),
     };
 
+    events.push(newEvent);
+
     return NextResponse.json({
       success: true,
-      data: newEvent,
+      event: newEvent,
       message: 'Événement créé avec succès',
     }, { status: 201 });
   } catch (error) {
     console.error('Error creating calendar event:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Erreur lors de la création de l'événement",
-      },
+      { error: 'Failed to create calendar event' },
       { status: 500 }
     );
   }

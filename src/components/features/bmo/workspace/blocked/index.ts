@@ -21,4 +21,5 @@ export { BlockedMatrixView } from './views/BlockedMatrixView';
 export { BlockedAuditView } from './views/BlockedAuditView';
 export { BlockedTimelineView } from './views/BlockedTimelineView';
 export { BlockedResolutionWizard } from './views/BlockedResolutionWizard';
+export { BlockedBureauView } from './views/BlockedBureauView';
 

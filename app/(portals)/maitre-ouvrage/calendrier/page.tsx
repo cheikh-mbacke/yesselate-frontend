@@ -11,9 +11,9 @@ import { CalendarAlertsBanner } from '@/components/features/calendar/workspace/C
 import { CalendarToastProvider, useCalendarToast } from '@/components/features/calendar/workspace/CalendarToast';
 import { CalendarStatsModal } from '@/components/features/calendar/workspace/CalendarStatsModal';
 
-import { WorkspaceShell, ShellAction, ShellBadge } from '@/components/features/workspace/WorkspaceShell';
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { FluentButton } from '@/components/ui/fluent-button';
+import { Button } from '@/components/ui/button';
 
 import { useHotkeys } from '@/hooks/useHotkeys';
 import {
@@ -27,15 +27,24 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle2,
-  ToggleLeft,
-  ToggleRight,
-  ListChecks,
   Star,
   StarOff,
   Search,
   LayoutGrid,
+  ChevronLeft,
+  ChevronUp,
+  ChevronDown,
+  PanelRight,
+  PanelRightClose,
+  Maximize,
+  Minimize,
+  MoreHorizontal,
+  Keyboard,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { CalendarGrid } from '@/components/features/calendar/CalendarGrid';
+import { calendarAPI } from '@/lib/api/pilotage/calendarClient';
+import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
 
 // ================================
 // Types
@@ -55,30 +64,8 @@ type ExportQueue = 'today' | 'week' | 'month' | 'all';
 type LoadReason = 'init' | 'manual' | 'auto';
 
 // ================================
-// Helpers UI (anti-bugs affichage actions)
+// Helpers
 // ================================
-const ActionLabel = ({
-  icon,
-  text,
-  right,
-}: {
-  icon?: React.ReactNode;
-  text: React.ReactNode;
-  right?: React.ReactNode;
-}) => (
-  <span className="inline-flex items-center gap-2 whitespace-nowrap leading-none">
-    {icon}
-    <span className="leading-none">{text}</span>
-    {right}
-  </span>
-);
-
-const CountChip = ({ v }: { v: number }) => (
-  <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-white/10 dark:bg-black/20 border border-slate-200/20 dark:border-slate-700/40">
-    {v}
-  </span>
-);
-
 function safeFRTime(isoOrDate?: string): string {
   if (!isoOrDate) return '—';
   const d = new Date(isoOrDate);
@@ -110,7 +97,7 @@ function useInterval(fn: () => void, delay: number | null): void {
 }
 
 // ================================
-// Watchlist (pinned) : vues/queues
+// Watchlist (pinned views)
 // ================================
 const LS_PINNED_VIEWS = 'bmo.calendar.pinnedViews.v1';
 type PinnedView = { key: string; title: string; icon: string; queue: string };
@@ -123,7 +110,7 @@ const readPinnedViews = (): PinnedView[] => {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((x) => x && typeof x === 'object')
-      .map((x: any) => ({
+      .map((x: Record<string, unknown>) => ({
         key: String(x.key ?? ''),
         title: String(x.title ?? ''),
         icon: String(x.icon ?? ''),
@@ -154,6 +141,52 @@ function CalendrierPageContent() {
 
   const showDashboard = tabs.length === 0;
 
+  // Calendar (API-backed) for dashboard view
+  const now = new Date();
+  const monthStartISO = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const monthEndISO = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+
+  const {
+    data: eventsData,
+    isLoading: eventsLoading,
+    error: eventsError,
+    refetch: refetchEvents,
+  } = useApiQuery(async (_signal: AbortSignal) => calendarAPI.listEvents({ startDate: monthStartISO, endDate: monthEndISO }), [
+    monthStartISO,
+    monthEndISO,
+  ]);
+
+  const {
+    data: conflictsData,
+    isLoading: conflictsLoading,
+    error: conflictsError,
+    refetch: refetchConflicts,
+  } = useApiQuery(async (_signal: AbortSignal) => calendarAPI.detectConflicts({ startDate: monthStartISO, endDate: monthEndISO }), [
+    monthStartISO,
+    monthEndISO,
+  ]);
+
+  const gridEvents = useMemo(() => {
+    const list = eventsData?.events ?? [];
+    return list.map((e) => ({
+      id: e.id,
+      title: e.title,
+      date: new Date(e.date),
+      startTime: e.startTime,
+      endTime: e.endTime,
+      type: (e.type as any) || 'task',
+      priority: (e.priority as any) || 'medium',
+      project: e.project,
+      participants: e.participants,
+      location: e.location,
+    }));
+  }, [eventsData]);
+
+  // UI State
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [kpiCollapsed, setKpiCollapsed] = useState(false);
+
   // Stats
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsData, setStatsData] = useState<CalendarStats | null>(null);
@@ -164,6 +197,7 @@ function CalendrierPageContent() {
   // UX
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   // Export
   const [exportOpen, setExportOpen] = useState(false);
@@ -190,6 +224,16 @@ function CalendrierPageContent() {
   useEffect(() => {
     writePinnedViews(pinnedViews);
   }, [pinnedViews]);
+
+  // Fullscreen
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [fullscreen]);
 
   const pinView = useCallback((view: PinnedView) => {
     setPinnedViews((prev) => {
@@ -226,8 +270,12 @@ function CalendrierPageContent() {
     });
   }, [openTab]);
 
+  const openCommandPalette = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('calendar:open-command-palette'));
+  }, []);
+
   // ================================
-  // Stats loader (robuste)
+  // Stats loader
   // ================================
   const loadStats = useCallback(async (reason: LoadReason = 'manual') => {
     abortStatsRef.current?.abort();
@@ -238,14 +286,7 @@ function CalendrierPageContent() {
     setStatsError(null);
 
     try {
-      // ✅ aujourd'hui tu calcules depuis data; demain tu peux décommenter l'API.
-      // const res = await fetch('/api/calendar/stats', { cache: 'no-store', signal: ac.signal, headers: { 'x-bmo-reason': reason } });
-      // if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // const data = (await res.json()) as CalendarStats;
-
       const { calculateStats, calendarEvents } = await import('@/lib/data/calendar');
-
-      // petit délai optionnel pour lisser UX (évite flash)
       await new Promise((r) => setTimeout(r, reason === 'init' ? 250 : 150));
 
       if (ac.signal.aborted) return;
@@ -267,8 +308,9 @@ function CalendrierPageContent() {
       if (reason === 'manual') {
         toast.success('Statistiques actualisées', `${data.total} événements au total`);
       }
-    } catch (e: any) {
-      if (e?.name === 'AbortError') return;
+    } catch (e: unknown) {
+      const error = e as { name?: string };
+      if (error?.name === 'AbortError') return;
       setStatsData(null);
       const errorMsg = 'Impossible de charger les statistiques (réseau ou calcul).';
       setStatsError(errorMsg);
@@ -289,7 +331,7 @@ function CalendrierPageContent() {
     };
   }, [loadStats]);
 
-  // Auto-refresh intelligent : seulement si utile (dashboard ou modales ouvertes)
+  // Auto-refresh
   useInterval(
     () => {
       if (!autoRefresh) return;
@@ -323,7 +365,7 @@ function CalendrierPageContent() {
   }, [loadStats]);
 
   // ================================
-  // Hotkeys (cohérence globale)
+  // Hotkeys
   // ================================
   useHotkeys('ctrl+1', () => openInbox('today', "Aujourd'hui", '📅'));
   useHotkeys('ctrl+2', () => openInbox('week', 'Cette semaine', '📆'));
@@ -345,19 +387,16 @@ function CalendrierPageContent() {
     setExportOpen(true);
   });
 
-  // ✅ Ctrl+K doit réellement ouvrir la palette
   useHotkeys('ctrl+k', (e?: KeyboardEvent) => {
     e?.preventDefault?.();
-    window.dispatchEvent(new CustomEvent('calendar:open-command-palette'));
+    openCommandPalette();
   });
 
-  // Centre de décision "Direction"
   useHotkeys('ctrl+d', (e?: KeyboardEvent) => {
     e?.preventDefault?.();
     setDecisionOpen(true);
   });
 
-  // Vue calendrier mensuelle
   useHotkeys('ctrl+m', (e?: KeyboardEvent) => {
     e?.preventDefault?.();
     openTab({
@@ -379,7 +418,7 @@ function CalendrierPageContent() {
   });
 
   // ================================
-  // Export (robuste, prêt pour API)
+  // Export
   // ================================
   const handleExport = useCallback(async () => {
     abortExportRef.current?.abort();
@@ -392,7 +431,6 @@ function CalendrierPageContent() {
     try {
       const q = `queue=${encodeURIComponent(exportQueue)}`;
 
-      // PDF: ouvrir une vue imprimable (HTML) si tu veux; sinon endpoint pdf direct
       if (exportFormat === 'pdf') {
         const url = `/api/calendar/export?format=html&${q}&print=true`;
         const w = window.open(url, '_blank', 'noopener,noreferrer');
@@ -402,7 +440,6 @@ function CalendrierPageContent() {
         return;
       }
 
-      // Pour ical/csv/json → fetch blob + download
       const url = `/api/calendar/export?format=${encodeURIComponent(exportFormat)}&${q}`;
       const res = await fetch(url, { cache: 'no-store', signal: ac.signal });
 
@@ -420,8 +457,9 @@ function CalendrierPageContent() {
       downloadBlob(blob, filename);
       setExportOpen(false);
       toast.success('Export réussi', `Fichier ${filename} téléchargé`);
-    } catch (e: any) {
-      if (e?.name === 'AbortError') return;
+    } catch (e: unknown) {
+      const error = e as { name?: string };
+      if (error?.name === 'AbortError') return;
       const errorMsg = "Erreur lors de l'export (réseau ou API).";
       setExportError(errorMsg);
       toast.error('Export échoué', errorMsg);
@@ -431,164 +469,18 @@ function CalendrierPageContent() {
   }, [exportFormat, exportQueue, toast]);
 
   // ================================
-  // Badges & Risk (préventif)
+  // Refresh label
   // ================================
-  const riskBadge = useMemo(() => {
-    if (!statsData) return null;
-    const riskScore = (statsData.overdueSLA || 0) * 3 + (statsData.conflicts || 0) * 2;
-
-    if (riskScore >= 10) return { label: 'Risque élevé', color: 'rose' as const };
-    if (riskScore >= 4) return { label: 'Risque modéré', color: 'amber' as const };
-    return { label: 'Risque maîtrisé', color: 'emerald' as const };
-  }, [statsData]);
-
-  const badges = useMemo<ShellBadge[]>(() => {
-    const b: ShellBadge[] = [];
-
-    if (!statsData) {
-      b.push({
-        label: statsLoading ? 'Chargement…' : statsError ?? 'Stats indisponibles',
-        color: statsError ? 'rose' : 'slate',
-      });
-      b.push({ label: autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF', color: autoRefresh ? 'emerald' : 'slate' });
-      return b;
-    }
-
-    b.push({ label: `${statsData.today} aujourd'hui`, color: 'blue' });
-    b.push({ label: `${statsData.thisWeek} semaine`, color: 'emerald' });
-
-    if (statsData.overdueSLA > 0) b.push({ label: `${statsData.overdueSLA} retard SLA`, color: 'amber' });
-    if (statsData.conflicts > 0) b.push({ label: `${statsData.conflicts} conflit${statsData.conflicts > 1 ? 's' : ''}`, color: 'rose' });
-
-    if (riskBadge) b.push(riskBadge);
-
-    b.push({ label: autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF', color: autoRefresh ? 'emerald' : 'slate' });
-    if (lastUpdatedISO) b.push({ label: `MAJ ${safeFRTime(lastUpdatedISO)}`, color: 'slate' });
-
-    return b;
-  }, [statsData, statsLoading, statsError, autoRefresh, lastUpdatedISO, riskBadge]);
+  const refreshLabel = useMemo(() => {
+    if (!lastUpdatedISO) return 'Jamais';
+    const s = Math.floor((Date.now() - new Date(lastUpdatedISO).getTime()) / 1000);
+    if (s < 60) return `il y a ${s}s`;
+    const m = Math.floor(s / 60);
+    return `il y a ${m} min`;
+  }, [lastUpdatedISO]);
 
   // ================================
-  // Actions (anti-bugs affichage + métier)
-  // ================================
-  const actions = useMemo<ShellAction[]>(() => {
-    const n = statsData ?? { today: 0, thisWeek: 0, overdueSLA: 0, conflicts: 0, completed: 0 };
-
-    return [
-      {
-        id: 'new',
-        label: <ActionLabel icon={<Plus className="w-4 h-4" />} text="Nouveau" />,
-        variant: 'primary',
-        title: 'Créer un nouvel événement (Ctrl+N)',
-        onClick: openCreateWizard,
-      },
-
-      {
-        id: 'today',
-        label: <ActionLabel icon={<CalendarIcon className="w-4 h-4 text-blue-500" />} text="Aujourd'hui" right={<CountChip v={n.today} />} />,
-        title: "Événements d'aujourd'hui (Ctrl+1)",
-        onClick: () => openInbox('today', "Aujourd'hui", '📅'),
-        variant: 'secondary',
-      },
-      {
-        id: 'week',
-        label: <ActionLabel icon={<CalendarIcon className="w-4 h-4 text-emerald-500" />} text="Semaine" right={<CountChip v={n.thisWeek} />} />,
-        title: 'Événements de la semaine (Ctrl+2)',
-        onClick: () => openInbox('week', 'Cette semaine', '📆'),
-        variant: 'secondary',
-      },
-      {
-        id: 'overdue',
-        label: <ActionLabel icon={<Clock className="w-4 h-4 text-amber-500" />} text="Retard SLA" right={<CountChip v={n.overdueSLA} />} />,
-        title: 'Événements en retard SLA (Ctrl+3)',
-        onClick: () => openInbox('overdue', 'En retard SLA', '⏰'),
-        variant: n.overdueSLA > 0 ? 'warning' : 'secondary',
-      },
-      {
-        id: 'conflicts',
-        label: <ActionLabel icon={<AlertTriangle className="w-4 h-4 text-rose-500" />} text="Conflits" right={<CountChip v={n.conflicts} />} />,
-        title: 'Conflits de planification (Ctrl+4)',
-        onClick: () => openInbox('conflicts', 'Conflits', '⚠️'),
-        variant: n.conflicts > 0 ? 'destructive' : 'secondary',
-      },
-      {
-        id: 'completed',
-        label: <ActionLabel icon={<CheckCircle2 className="w-4 h-4 text-slate-500" />} text="Terminés" right={<CountChip v={n.completed} />} />,
-        title: 'Événements terminés',
-        onClick: () => openInbox('completed', 'Terminés', '✅'),
-        variant: 'secondary',
-      },
-
-      // 📅 Vue calendrier mensuelle
-      {
-        id: 'month-view',
-        label: <ActionLabel icon={<LayoutGrid className="w-4 h-4 text-indigo-500" />} text="Mensuel" />,
-        title: 'Vue calendrier mensuelle (Ctrl+M)',
-        onClick: () => openTab({
-          id: 'calendar:month',
-          type: 'calendar',
-          title: 'Vue Mensuelle',
-          icon: '📅',
-          data: { view: 'month' },
-        }),
-        variant: 'secondary',
-      },
-
-      // 🔥 Centre de décision : direction (préventif)
-      {
-        id: 'decision',
-        label: <ActionLabel icon={<ListChecks className="w-4 h-4" />} text="Décider" />,
-        title: 'Centre de décision (Ctrl+D)',
-        onClick: () => setDecisionOpen(true),
-        variant: (n.overdueSLA + n.conflicts) > 0 ? 'warning' : 'secondary',
-      },
-
-      {
-        id: 'stats',
-        label: <ActionLabel icon={<BarChart2 className="w-4 h-4" />} text="Stats" />,
-        title: 'Voir les statistiques (Ctrl+S)',
-        onClick: () => setStatsOpen(true),
-        variant: 'secondary',
-      },
-      {
-        id: 'export',
-        label: <ActionLabel icon={<Download className="w-4 h-4" />} text="Exporter" />,
-        title: 'Exporter le calendrier (Ctrl+E)',
-        onClick: () => setExportOpen(true),
-        variant: 'secondary',
-      },
-      {
-        id: 'auto',
-        label: (
-          <ActionLabel
-            icon={autoRefresh ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-            text="Auto"
-          />
-        ),
-        title: 'Auto-refresh (60s)',
-        onClick: () => setAutoRefresh((v) => !v),
-        variant: autoRefresh ? 'success' : 'secondary',
-      },
-      {
-        id: 'refresh',
-        label: <ActionLabel icon={<RefreshCw className={cn('w-4 h-4', statsLoading && 'animate-spin')} />} text="Rafraîchir" />,
-        title: 'Rafraîchir les données',
-        onClick: () => loadStats('manual'),
-        disabled: statsLoading,
-        variant: 'secondary',
-      },
-      {
-        id: 'help',
-        label: <ActionLabel icon={<HelpCircle className="w-4 h-4" />} text="Aide" />,
-        title: 'Aide et raccourcis clavier (Shift+?)',
-        onClick: () => setHelpOpen(true),
-        variant: 'secondary',
-      },
-    ];
-  }, [statsData, statsLoading, autoRefresh, openInbox, openCreateWizard, loadStats]);
-
-  // ================================
-  // Banner (alertes temps réel)
+  // Banner
   // ================================
   const banner = useMemo(() => {
     if (!statsData) return null;
@@ -606,230 +498,593 @@ function CalendrierPageContent() {
   }, [statsData]);
 
   // ================================
-  // Dashboard (6 blocs lisibles)
-  // ================================
-  const dashboard = useMemo(() => {
-    const overdue = statsData?.overdueSLA ?? 0;
-    const conflicts = statsData?.conflicts ?? 0;
-    const today = statsData?.today ?? 0;
-    const week = statsData?.thisWeek ?? 0;
-
-    return (
-      <div className="space-y-4">
-        {/* Bloc 1 — Alertes direction */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-indigo-500" />
-              <h3 className="font-semibold">Poste de contrôle</h3>
-            </div>
-            <FluentButton
-              size="sm"
-              variant="secondary"
-              onClick={() => window.dispatchEvent(new CustomEvent('calendar:open-command-palette'))}
-              title="Ctrl+K"
-            >
-              <Search className="w-4 h-4 mr-2" />
-              Rechercher
-            </FluentButton>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="p-3 rounded-xl bg-blue-500/10">
-              <div className="text-xs text-slate-500">Aujourd&apos;hui</div>
-              <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{today}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-emerald-500/10">
-              <div className="text-xs text-slate-500">Semaine</div>
-              <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{week}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-amber-500/10">
-              <div className="text-xs text-slate-500">Retard SLA</div>
-              <div className="text-2xl font-bold text-amber-800">{overdue}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-rose-500/10">
-              <div className="text-xs text-slate-500">Conflits</div>
-              <div className="text-2xl font-bold text-rose-700">{conflicts}</div>
-            </div>
-          </div>
-
-          {(overdue + conflicts) > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2 justify-end">
-              <FluentButton size="sm" variant="ghost" onClick={() => openInbox('overdue', 'En retard SLA', '⏰')}>
-                <Clock className="w-4 h-4 mr-2" />
-                Traiter SLA
-              </FluentButton>
-              <FluentButton size="sm" variant="ghost" onClick={() => openInbox('conflicts', 'Conflits', '⚠️')}>
-                Résoudre conflits
-              </FluentButton>
-              <FluentButton size="sm" variant="ghost" onClick={() => setDecisionOpen(true)} title="Ctrl+D">
-                <ListChecks className="w-4 h-4 mr-2" />
-                Centre de décision
-              </FluentButton>
-            </div>
-          ) : (
-            <div className="mt-3 text-sm text-slate-500">
-              Aucun point bloquant détecté. Tu peux rester en mode &quot;pilotage&quot;.
-            </div>
-          )}
-        </div>
-
-        {/* Bloc 2 — Watchlist (vues épinglées) */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Star className="w-4 h-4 text-amber-500" />
-              <h3 className="font-semibold">Watchlist (vues épinglées)</h3>
-              <span className="text-xs text-slate-500">({pinnedViews.length})</span>
-            </div>
-
-            <div className="flex gap-2 flex-wrap">
-              <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:overdue', title: 'Retard SLA', icon: '⏰', queue: 'overdue' })}>
-                Épingler SLA
-              </FluentButton>
-              <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:conflicts', title: 'Conflits', icon: '⚠️', queue: 'conflicts' })}>
-                Épingler Conflits
-              </FluentButton>
-            </div>
-          </div>
-
-          {pinnedViews.length === 0 ? (
-            <p className="text-sm text-slate-500 mt-2">Aucune vue épinglée. Épingle SLA / Conflits / Aujourd&apos;hui / Semaine.</p>
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {pinnedViews.map((v) => (
-                <button
-                  key={v.key}
-                  type="button"
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-[#141414]/50 hover:bg-white dark:hover:bg-[#141414]/80 transition-colors"
-                  onClick={() => openInbox(v.queue, v.title, v.icon)}
-                  title="Ouvrir"
-                >
-                  <span className="text-sm">{v.icon}</span>
-                  <span className="text-sm">{v.title}</span>
-                  <span
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-amber-500/10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      unpinView(v.key);
-                    }}
-                    title="Retirer"
-                  >
-                    <StarOff className="w-4 h-4 text-slate-500" />
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bloc 3 — Direction Panel (ton composant existant) */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
-          <CalendarDirectionPanel onOpenStats={() => setStatsOpen(true)} onOpenExport={() => setExportOpen(true)} />
-        </div>
-
-        {/* Bloc 4 — Prévention (message gouvernance) */}
-        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4 dark:border-purple-500/30 dark:bg-purple-500/10">
-          <div className="font-semibold text-purple-700 dark:text-purple-300">Prévention — discipline de planification</div>
-          <div className="text-sm text-slate-600 dark:text-slate-300 mt-1">
-            Chaque conflit ou retard SLA doit déboucher sur une action : replanifier, escalader, ou documenter une dérogation.
-            Objectif : zéro surprise, zéro &quot;agenda fantôme&quot;.
-          </div>
-        </div>
-
-        {/* Bloc 5 — Erreur stats (si calcul/API down) */}
-        {!statsData && statsError && (
-          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 flex items-center justify-between gap-3">
-            <div className="text-sm text-rose-800 dark:text-rose-300">{statsError}</div>
-            <FluentButton size="sm" variant="secondary" onClick={() => loadStats('manual')}>
-              Réessayer
-            </FluentButton>
-          </div>
-        )}
-
-        {/* Bloc 6 — Bandeau technique (MAJ / auto) */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-3 dark:border-slate-800 dark:bg-[#141414]/40 flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-xs text-slate-500">
-            Dernière MAJ : <span className="font-mono">{lastUpdatedISO ? safeFRTime(lastUpdatedISO) : '—'}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <FluentButton size="sm" variant="secondary" onClick={() => setAutoRefresh((v) => !v)}>
-              {autoRefresh ? <ToggleRight className="w-4 h-4 mr-2" /> : <ToggleLeft className="w-4 h-4 mr-2" />}
-              Auto-refresh
-            </FluentButton>
-            <FluentButton size="sm" variant="secondary" onClick={() => loadStats('manual')} disabled={statsLoading}>
-              <RefreshCw className={cn('w-4 h-4 mr-2', statsLoading && 'animate-spin')} />
-              Rafraîchir
-            </FluentButton>
-          </div>
-        </div>
-      </div>
-    );
-  }, [statsData, statsError, lastUpdatedISO, autoRefresh, statsLoading, pinnedViews, openInbox, loadStats, pinView, unpinView]);
-
-  // ================================
   // Render
   // ================================
   return (
-    <>
-      <WorkspaceShell
-        icon={<CalendarIcon className="w-6 h-6 text-blue-500" />}
-        title="Console métier — Calendrier"
-        subtitle="Planification, conflits, SLA : une vue direction pour organiser sans surprises."
-        badges={badges}
-        actions={actions}
-        actionSeparators={[0, 5, 8]} // après Nouveau, après Terminés, après Export
-        Banner={banner}
-        Tabs={<CalendarWorkspaceTabs />}
-        showDashboard={showDashboard}
-        Dashboard={dashboard}
-        Content={<CalendarWorkspaceContent />}
-        FooterOverlays={<CalendarCommandPalette />}
-      />
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          'flex flex-col border-r border-slate-700/50 bg-slate-900/80 backdrop-blur-xl transition-all duration-300',
+          showSidebar ? 'w-64' : 'w-16'
+        )}
+      >
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between p-3 border-b border-slate-700/50">
+          {showSidebar && (
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-blue-400" />
+              <span className="font-semibold text-slate-200 text-sm">Calendrier</span>
+            </div>
+          )}
+          {!showSidebar && (
+            <CalendarIcon className="h-5 w-5 text-blue-400 mx-auto" />
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSidebar(!showSidebar)}
+            className="h-7 w-7 p-0 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+          >
+            {showSidebar ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+          </Button>
+        </div>
 
-      {/* ============================= */}
-      {/* MODALES */}
-      {/* ============================= */}
+        {/* Search */}
+        {showSidebar && (
+          <div className="p-3">
+            <button
+              onClick={openCommandPalette}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              <span className="flex-1 text-left">Rechercher...</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-[10px] font-mono text-slate-400">⌘K</kbd>
+            </button>
+          </div>
+        )}
 
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-2">
+          <div className="space-y-1 px-2">
+            {[
+              { id: 'today', icon: CalendarIcon, label: "Aujourd'hui", color: 'text-blue-400', count: statsData?.today },
+              { id: 'week', icon: CalendarIcon, label: 'Semaine', color: 'text-emerald-400', count: statsData?.thisWeek },
+              { id: 'overdue', icon: Clock, label: 'Retard SLA', color: 'text-amber-400', count: statsData?.overdueSLA },
+              { id: 'conflicts', icon: AlertTriangle, label: 'Conflits', color: 'text-rose-400', count: statsData?.conflicts },
+              { id: 'completed', icon: CheckCircle2, label: 'Terminés', color: 'text-slate-400', count: statsData?.completed },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => openInbox(item.id, item.label, '📅')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
+                  'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                )}
+              >
+                <item.icon className={cn('h-5 w-5', item.color)} />
+                {showSidebar && (
+                  <>
+                    <span className="text-sm flex-1 text-left">{item.label}</span>
+                    {item.count !== undefined && item.count > 0 && (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-400">
+                        {item.count}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="mt-4 px-2 pt-4 border-t border-slate-800/50">
+            <button
+              onClick={openCreateWizard}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800/50 text-slate-200 hover:bg-slate-800/70 border border-slate-700/50 transition-colors"
+            >
+              <Plus className="h-5 w-5 text-blue-400" />
+              {showSidebar && <span className="text-sm">Nouvel événement</span>}
+            </button>
+            <button
+              onClick={() => openTab({
+                id: 'calendar:month',
+                type: 'calendar',
+                title: 'Vue Mensuelle',
+                icon: '📅',
+                data: { view: 'month' },
+              })}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors mt-1"
+            >
+              <LayoutGrid className="h-5 w-5 text-indigo-400" />
+              {showSidebar && <span className="text-sm">Vue mensuelle</span>}
+            </button>
+          </div>
+        </nav>
+
+        {/* Footer */}
+        <div className="border-t border-slate-700/50 p-3">
+          {showSidebar && (
+            <div className="text-xs text-slate-500 text-center">
+              Calendrier v2.0
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => window.history.back()}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <h1 className="text-base font-semibold text-slate-200">Calendrier & Planification</h1>
+            <span className="px-2 py-0.5 text-xs rounded bg-slate-800/50 text-slate-300 border border-slate-700/50">
+              v2.0
+            </span>
+            <span className="text-xs text-slate-500">{refreshLabel}</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setFullscreen((p) => !p)}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
+              title="Plein écran"
+            >
+              {fullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setActionsOpen((p) => !p)}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
+                title="Actions"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+
+              {actionsOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-56 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+                    <button
+                      onClick={() => {
+                        openCommandPalette();
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <Search className="w-4 h-4" />
+                      Rechercher
+                      <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">⌘K</kbd>
+                    </button>
+
+                    <div className="border-t border-slate-700/50 my-1" />
+
+                    <button
+                      onClick={() => {
+                        loadStats('manual');
+                        refetchEvents();
+                        refetchConflicts();
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <RefreshCw className={cn('w-4 h-4', statsLoading && 'animate-spin')} />
+                      Rafraîchir
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setExportOpen(true);
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <Download className="w-4 h-4" />
+                      Exporter
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setStatsOpen(true);
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <BarChart2 className="w-4 h-4" />
+                      Statistiques
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setDecisionOpen(true);
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <Activity className="w-4 h-4" />
+                      Centre de décision
+                    </button>
+
+                    <div className="border-t border-slate-700/50 my-1" />
+
+                    <button
+                      onClick={() => {
+                        setHelpOpen(true);
+                        setActionsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <Keyboard className="w-4 h-4" />
+                      Raccourcis & aide
+                      <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">?</kbd>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* KPI Bar */}
+        <div className="bg-slate-900/40 border-b border-slate-700/40">
+          <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                Indicateurs temps réel
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={cn('h-6 px-2 text-xs', autoRefresh ? 'text-emerald-400' : 'text-slate-500')}
+              >
+                {autoRefresh ? 'Auto ON' : 'Auto OFF'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setKpiCollapsed(!kpiCollapsed)}
+                className="h-6 w-6 p-0 text-slate-500 hover:text-slate-300"
+              >
+                {kpiCollapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+              </Button>
+            </div>
+          </div>
+
+          {!kpiCollapsed && statsData && (
+            <div className="grid grid-cols-4 lg:grid-cols-6 gap-px bg-slate-800/30 p-px">
+              <button onClick={() => openInbox('today', "Aujourd'hui", '📅')} className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Aujourd&apos;hui</p>
+                <span className="text-lg font-bold text-blue-400">{statsData.today}</span>
+              </button>
+              <button onClick={() => openInbox('week', 'Semaine', '📆')} className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Semaine</p>
+                <span className="text-lg font-bold text-emerald-400">{statsData.thisWeek}</span>
+              </button>
+              <button onClick={() => openInbox('overdue', 'Retard SLA', '⏰')} className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Retard SLA</p>
+                <span className="text-lg font-bold text-amber-400">{statsData.overdueSLA}</span>
+              </button>
+              <button onClick={() => openInbox('conflicts', 'Conflits', '⚠️')} className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Conflits</p>
+                <span className="text-lg font-bold text-rose-400">{statsData.conflicts}</span>
+              </button>
+              <button onClick={() => openInbox('completed', 'Terminés', '✅')} className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Terminés</p>
+                <span className="text-lg font-bold text-slate-300">{statsData.completed}</span>
+              </button>
+              <div className="bg-slate-900/60 px-3 py-2 text-left">
+                <p className="text-xs text-slate-500 mb-0.5">Total</p>
+                <span className="text-lg font-bold text-slate-300">{statsData.total}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Banner */}
+        {banner && <div className="px-4 py-2">{banner}</div>}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1920px] p-4 sm:p-6 lg:p-8">
+            {showDashboard ? (
+              <div className="space-y-6">
+                {/* Poste de contrôle */}
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-200 mb-2">
+                        Poste de contrôle Calendrier
+                      </h2>
+                      <p className="text-slate-400 max-w-2xl">
+                        Planification, conflits, SLA : une vue direction pour organiser sans surprises.
+                        Chaque conflit ou retard doit déboucher sur une action.
+                      </p>
+                    </div>
+                    <FluentButton variant="primary" onClick={openCreateWizard}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Nouvel événement
+                    </FluentButton>
+                  </div>
+
+                  {/* Stats cards */}
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-slate-500">Aujourd&apos;hui</div>
+                        <CalendarIcon className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-slate-200">{statsData?.today ?? 0}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-slate-500">Semaine</div>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-slate-200">{statsData?.thisWeek ?? 0}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-slate-500">Retard SLA</div>
+                        <Clock className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-slate-200">{statsData?.overdueSLA ?? 0}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-slate-500">Conflits</div>
+                        <AlertTriangle className="w-4 h-4 text-rose-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-slate-200">{statsData?.conflicts ?? 0}</div>
+                    </div>
+                  </div>
+
+                  {((statsData?.overdueSLA ?? 0) + (statsData?.conflicts ?? 0)) > 0 ? (
+                    <div className="mt-4 flex flex-wrap gap-2 justify-end">
+                      <FluentButton size="sm" variant="ghost" onClick={() => openInbox('overdue', 'En retard SLA', '⏰')}>
+                        <Clock className="w-4 h-4 mr-2" />
+                        Traiter SLA
+                      </FluentButton>
+                      <FluentButton size="sm" variant="ghost" onClick={() => openInbox('conflicts', 'Conflits', '⚠️')}>
+                        Résoudre conflits
+                      </FluentButton>
+                      <FluentButton size="sm" variant="ghost" onClick={() => setDecisionOpen(true)}>
+                        Centre de décision
+                      </FluentButton>
+                    </div>
+                  ) : (
+                    <div className="mt-4 text-sm text-slate-500">
+                      Aucun point bloquant détecté. Tu peux rester en mode &quot;pilotage&quot;.
+                    </div>
+                  )}
+                </div>
+
+                {/* Vue calendrier (API) */}
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                  <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4 text-indigo-400" />
+                      <h3 className="font-semibold text-slate-200">Vue mensuelle (pilotage)</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          refetchEvents();
+                          refetchConflicts();
+                        }}
+                        className="text-slate-400 hover:text-slate-200"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Actualiser
+                      </Button>
+                    </div>
+                  </div>
+
+                  {(eventsLoading || conflictsLoading) && (
+                    <div className="text-sm text-slate-500">Chargement…</div>
+                  )}
+                  {(eventsError || conflictsError) && (
+                    <div className="text-sm text-slate-400">
+                      {eventsError ? `Événements: ${eventsError.message}` : null}
+                      {eventsError && conflictsError ? ' • ' : null}
+                      {conflictsError ? `Conflits: ${conflictsError.message}` : null}
+                    </div>
+                  )}
+
+                  {!eventsLoading && !eventsError && (
+                    <div className="mt-4">
+                      <CalendarGrid
+                        events={gridEvents as any}
+                        onEventClick={(ev: any) => {
+                          // ouvrir détail via workspace (si besoin) ou toast
+                          toast.info('Événement', String(ev.title ?? ''));
+                        }}
+                        onCreateEvent={() => openCreateWizard()}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Watchlist */}
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Star className="w-4 h-4 text-amber-400" />
+                      <h3 className="font-semibold text-slate-200">Watchlist (vues épinglées)</h3>
+                      <span className="text-xs text-slate-500">({pinnedViews.length})</span>
+                    </div>
+
+                    <div className="flex gap-2 flex-wrap">
+                      <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:overdue', title: 'Retard SLA', icon: '⏰', queue: 'overdue' })}>
+                        Épingler SLA
+                      </FluentButton>
+                      <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:conflicts', title: 'Conflits', icon: '⚠️', queue: 'conflicts' })}>
+                        Épingler Conflits
+                      </FluentButton>
+                    </div>
+                  </div>
+
+                  {pinnedViews.length === 0 ? (
+                    <p className="text-sm text-slate-500 mt-2">Aucune vue épinglée. Épingle SLA / Conflits / Aujourd&apos;hui / Semaine.</p>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {pinnedViews.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/50 transition-colors"
+                          onClick={() => openInbox(v.queue, v.title, v.icon)}
+                          title="Ouvrir"
+                        >
+                          <span className="text-sm">{v.icon}</span>
+                          <span className="text-sm text-slate-300">{v.title}</span>
+                          <span
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-slate-700/40"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              unpinView(v.key);
+                            }}
+                            title="Retirer"
+                          >
+                            <StarOff className="w-4 h-4 text-slate-500" />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Direction Panel */}
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                  <CalendarDirectionPanel onOpenStats={() => setStatsOpen(true)} onOpenExport={() => setExportOpen(true)} />
+                </div>
+
+                {/* Prévention (discipline) */}
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-4">
+                  <div className="font-semibold text-slate-200 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-purple-400" />
+                    Prévention — discipline de planification
+                  </div>
+                  <div className="text-sm text-slate-400 mt-1">
+                    Chaque conflit ou retard SLA doit déboucher sur une action : replanifier, escalader, ou documenter une dérogation.
+                    Objectif : zéro surprise, zéro &quot;agenda fantôme&quot;.
+                  </div>
+                </div>
+
+                {/* Erreur stats */}
+                {!statsData && statsError && (
+                  <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-4 flex items-center justify-between gap-3">
+                    <div className="text-sm text-slate-300">{statsError}</div>
+                    <FluentButton size="sm" variant="secondary" onClick={() => loadStats('manual')}>
+                      Réessayer
+                    </FluentButton>
+                  </div>
+                )}
+
+                {/* Astuce raccourcis */}
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
+                  <div className="flex items-center gap-3">
+                    <Keyboard className="w-5 h-5 text-slate-400" />
+                    <p className="text-sm text-slate-400">
+                      <strong className="text-slate-300">Astuce :</strong> utilise{' '}
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘1-4</kbd>{' '}
+                      pour les vues,{' '}
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘N</kbd>{' '}
+                      pour créer, et{' '}
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘K</kbd>{' '}
+                      pour la palette.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {tabs.length > 0 && <CalendarWorkspaceTabs />}
+                <CalendarWorkspaceContent />
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">Màj: {refreshLabel}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">{statsData?.total ?? 0} événements • {statsData?.today ?? 0} aujourd&apos;hui</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className={cn('w-2 h-2 rounded-full', statsLoading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500')} />
+              <span className="text-slate-500">{statsLoading ? 'Synchronisation...' : 'Connecté'}</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      <CalendarCommandPalette />
+
+      {/* Modals */}
+      
       {/* Centre de décision */}
       <FluentModal open={decisionOpen} title="Centre de décision — Arbitrages" onClose={() => setDecisionOpen(false)}>
         <div className="space-y-4">
-          <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/10">
-            <div className="font-semibold text-amber-900 dark:text-amber-200">
+          <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
+            <div className="font-semibold text-slate-200 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
               Objectif : trancher vite (SLA / Conflits) et garder une traçabilité propre.
             </div>
-            <div className="text-sm text-amber-800/90 dark:text-amber-200/90 mt-1">
-              Raccourci : Ctrl+3 (SLA) • Ctrl+4 (Conflits)
+            <div className="text-sm text-slate-400 mt-1">
+              Raccourci : ⌘3 (SLA) • ⌘4 (Conflits)
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <button
               type="button"
-              className="p-4 rounded-2xl border border-amber-500/20 bg-white/70 dark:bg-[#141414]/40 hover:bg-white dark:hover:bg-[#141414]/70 transition-colors text-left"
+              className="p-4 rounded-2xl border border-slate-700/50 bg-slate-800/30 hover:bg-slate-700/50 transition-colors text-left"
               onClick={() => {
                 openInbox('overdue', 'En retard SLA', '⏰');
                 setDecisionOpen(false);
               }}
             >
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-600" />
-                <div className="font-semibold">Retards SLA</div>
+                <Clock className="w-5 h-5 text-amber-400" />
+                <div className="font-semibold text-slate-200">Retards SLA</div>
               </div>
               <div className="text-sm text-slate-500 mt-1">Priorité : replanifier / escalader / documenter.</div>
             </button>
 
             <button
               type="button"
-              className="p-4 rounded-2xl border border-rose-500/20 bg-white/70 dark:bg-[#141414]/40 hover:bg-white dark:hover:bg-[#141414]/70 transition-colors text-left"
+              className="p-4 rounded-2xl border border-slate-700/50 bg-slate-800/30 hover:bg-slate-700/50 transition-colors text-left"
               onClick={() => {
                 openInbox('conflicts', 'Conflits', '⚠️');
                 setDecisionOpen(false);
               }}
             >
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-rose-600" />
-                <div className="font-semibold">Conflits</div>
+                <AlertTriangle className="w-5 h-5 text-rose-400" />
+                <div className="font-semibold text-slate-200">Conflits</div>
               </div>
               <div className="text-sm text-slate-500 mt-1">Priorité : arbitrer ressources, créneaux, salles, acteurs.</div>
             </button>
@@ -847,7 +1102,7 @@ function CalendrierPageContent() {
         </div>
       </FluentModal>
 
-      {/* Stats Modal - Composant professionnel complet */}
+      {/* Stats Modal */}
       <CalendarStatsModal
         open={statsOpen}
         onClose={() => setStatsOpen(false)}
@@ -863,16 +1118,16 @@ function CalendrierPageContent() {
         }}
       >
         {exportError && (
-          <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 text-sm mb-4">
+          <div className="p-4 rounded-xl bg-slate-800/30 text-slate-300 text-sm mb-4 border border-slate-700/50">
             {exportError}
           </div>
         )}
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm text-slate-500 font-medium">Période</label>
+            <label className="text-sm text-slate-400 font-medium">Période</label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200/70 bg-white/90 p-2.5 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 p-2.5 outline-none text-slate-200"
               value={exportQueue}
               onChange={(e) => setExportQueue(e.target.value as ExportQueue)}
             >
@@ -884,9 +1139,9 @@ function CalendrierPageContent() {
           </div>
 
           <div>
-            <label className="text-sm text-slate-500 font-medium">Format</label>
+            <label className="text-sm text-slate-400 font-medium">Format</label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200/70 bg-white/90 p-2.5 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 p-2.5 outline-none text-slate-200"
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
             >
@@ -914,48 +1169,48 @@ function CalendrierPageContent() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="flex justify-between">
-              <span>Palette de commandes</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+K</kbd>
+              <span className="text-slate-400">Palette de commandes</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘K</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Centre de décision</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+D</kbd>
+              <span className="text-slate-400">Centre de décision</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘D</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Nouvel événement</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+N</kbd>
+              <span className="text-slate-400">Nouvel événement</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘N</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Aujourd&apos;hui</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+1</kbd>
+              <span className="text-slate-400">Aujourd&apos;hui</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘1</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Cette semaine</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+2</kbd>
+              <span className="text-slate-400">Cette semaine</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘2</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Retard SLA</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+3</kbd>
+              <span className="text-slate-400">Retard SLA</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘3</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Conflits</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+4</kbd>
+              <span className="text-slate-400">Conflits</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘4</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Statistiques</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+S</kbd>
+              <span className="text-slate-400">Statistiques</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘S</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Exporter</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+E</kbd>
+              <span className="text-slate-400">Exporter</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘E</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Vue mensuelle</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Ctrl+M</kbd>
+              <span className="text-slate-400">Vue mensuelle</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘M</kbd>
             </div>
             <div className="flex justify-between">
-              <span>Fermer modales</span>
-              <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs">Esc</kbd>
+              <span className="text-slate-400">Fermer modales</span>
+              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">Esc</kbd>
             </div>
           </div>
         </div>
@@ -966,7 +1221,7 @@ function CalendrierPageContent() {
           </FluentButton>
         </div>
       </FluentModal>
-    </>
+    </div>
   );
 }
 

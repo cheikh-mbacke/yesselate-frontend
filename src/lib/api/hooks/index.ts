@@ -3,3 +3,4 @@ export * from './useDevis';
 export * from './useAuth';
 export * from './useChantiers';
 export * from './usePayments';
+export * from './useApiQuery';

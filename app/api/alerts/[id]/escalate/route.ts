@@ -1,6 +1,6 @@
 /**
- * API Route: POST /api/alerts/[id]/escalate
- * Escalade une alerte
+ * POST /api/alerts/[id]/escalate
+ * Escalader une alerte vers N+1
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,82 +12,58 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-
-    const { 
-      userId, 
-      userName, 
-      escalateTo,
-      escalateToId,
+    const {
+      escalateTo, // 'n1_manager' | 'direction' | 'comite' | 'dsi'
       reason,
-      urgency = 'normale',
-      requestedAction
+      priority = 'high', // 'critical' | 'high' | 'medium'
+      userId = 'user-001',
     } = body;
 
-    // Validation
     if (!escalateTo || !reason) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Paramètres manquants',
-          details: 'escalateTo et reason sont obligatoires'
-        },
+        { error: 'Escalation target and reason are required' },
         { status: 400 }
       );
     }
 
-    // Simulate escalation
-    const result = {
+    // Simuler escalade (en prod, update DB + envoyer notification)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const escalatedAlert = {
       id,
       status: 'escalated',
       escalatedAt: new Date().toISOString(),
-      escalatedBy: userName || 'Utilisateur',
-      escalatedById: userId || 'USER-001',
-      
+      escalatedBy: userId,
       escalation: {
         to: escalateTo,
-        toId: escalateToId || 'TEAM-DIRECTION',
         reason,
-        urgency,
-        requestedAction: requestedAction || 'Décision',
-        
-        // Notification sent
+        priority,
         notificationSent: true,
-        notificationChannel: 'email',
-        notificationTime: new Date().toISOString()
       },
-      
-      // New SLA (stricter after escalation)
-      newSlaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // +24h
-      
-      // Timeline entry
-      timelineEntry: {
-        id: `TL-${Date.now()}`,
-        type: 'escalate',
-        description: `Escaladée vers ${escalateTo}: ${reason}`,
-        timestamp: new Date().toISOString(),
-        actor: userName || 'Utilisateur',
-        actorId: userId || 'USER-001'
-      }
     };
+
+    // En prod, envoyer email/notification au destinataire
+    const notificationTarget = {
+      n1_manager: 'manager@company.com',
+      direction: 'direction@company.com',
+      comite: 'comite@company.com',
+      dsi: 'dsi@company.com',
+    }[escalateTo];
 
     return NextResponse.json({
       success: true,
-      message: `Alerte escaladée vers ${escalateTo}`,
-      data: result,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    const { id } = await params;
-    console.error(`Erreur API POST /api/alerts/${id}/escalate:`, error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de l\'escalade',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
+      alert: escalatedAlert,
+      notification: {
+        sent: true,
+        recipient: notificationTarget,
       },
+      message: `Alerte escaladée vers ${escalateTo}`,
+    });
+  } catch (error) {
+    console.error('Error escalating alert:', error);
+    return NextResponse.json(
+      { error: 'Failed to escalate alert' },
       { status: 500 }
     );
   }
 }
-

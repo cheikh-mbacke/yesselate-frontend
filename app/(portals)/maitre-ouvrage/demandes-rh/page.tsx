@@ -178,6 +178,35 @@ function DemandesRHPageContent() {
     }
   }, []);
 
+  // Handle URL tab parameter (from redirects like /depenses, /deplacements, /paie-avances)
+  useEffect(() => {
+    if (initialTabHandled) return;
+    
+    const tabParam = searchParams.get('tab');
+    if (tabParam) {
+      const tabMapping: Record<string, { queue: string; title: string }> = {
+        'depenses': { queue: 'Dépense', title: 'Dépenses' },
+        'deplacements': { queue: 'Déplacement', title: 'Déplacements' },
+        'paie-avances': { queue: 'Avance', title: 'Avances & Paie' },
+        'conges': { queue: 'Congé', title: 'Congés' },
+        'maladies': { queue: 'Maladie', title: 'Maladies' },
+      };
+
+      const mapping = tabMapping[tabParam];
+      if (mapping) {
+        openTab({
+          id: `inbox:${mapping.queue}`,
+          type: 'inbox',
+          title: mapping.title,
+          icon: '📋',
+          data: { queue: mapping.queue },
+        });
+        setViewMode('workspace');
+      }
+      setInitialTabHandled(true);
+    }
+  }, [searchParams, openTab, initialTabHandled]);
+
   useEffect(() => {
     writeUIState({ viewMode, dashboardTab, autoRefresh });
   }, [viewMode, dashboardTab, autoRefresh]);

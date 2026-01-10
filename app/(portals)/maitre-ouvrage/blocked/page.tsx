@@ -116,6 +116,7 @@ import {
   ToggleRight,
   MoreVertical,
   X,
+  Bell,
 } from 'lucide-react';
 
 // ================================
@@ -317,6 +318,65 @@ function BlockedPageContent() {
     return () => window.removeEventListener('blocked:open-decision-center', handleOpenDecision);
   }, []);
 
+  // WebSocket & Notifications initialization
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Import dynamically to avoid SSR issues
+    const initRealtime = async () => {
+      const { blockedWebSocket } = await import('@/lib/services/blockedWebSocket');
+      const { blockedNotifications } = await import('@/lib/services/blockedNotifications');
+
+      // Connect WebSocket
+      blockedWebSocket.connect();
+
+      // Listen to events
+      const unsubscribers = [
+        blockedWebSocket.onSLABreach((alert) => {
+          toast.error(`Alerte SLA - ${alert.dossierId}`, `Retard de ${alert.daysOverdue} jours`);
+          if (blockedNotifications.isEnabled()) {
+            blockedNotifications.notifySLABreach(alert);
+          }
+          // Refresh stats
+          loadStats('auto');
+        }),
+
+        blockedWebSocket.onNewBlocking((event) => {
+          toast.info('Nouveau blocage', event.dossier.subject);
+          if (blockedNotifications.isEnabled()) {
+            blockedNotifications.notifyNewBlocking(event);
+          }
+          // Refresh stats
+          loadStats('auto');
+        }),
+
+        blockedWebSocket.onResolution((event) => {
+          toast.success('Résolution', event.dossierSubject);
+          // Refresh stats
+          loadStats('auto');
+        }),
+
+        blockedWebSocket.onEscalation((event) => {
+          toast.warning('Escalade', `${event.dossierSubject} → ${event.escalatedTo}`);
+          // Refresh stats
+          loadStats('auto');
+        }),
+      ];
+
+      // Cleanup
+      return () => {
+        unsubscribers.forEach(unsub => unsub());
+        blockedWebSocket.disconnect();
+      };
+    };
+
+    const cleanup = initRealtime();
+    
+    return () => {
+      cleanup.then(fn => fn?.());
+    };
+  }, [loadStats, toast]);
+
   // Open queue
   const openQueue = useCallback((queue: string, title: string, icon: string) => {
     openTab({
@@ -403,6 +463,25 @@ function BlockedPageContent() {
                   {displayStats.critical}
                 </span>
               )}
+            </button>
+
+            {/* Notifications button */}
+            <button
+              onClick={async () => {
+                const { blockedNotifications } = await import('@/lib/services/blockedNotifications');
+                if (!blockedNotifications.isEnabled()) {
+                  const granted = await blockedNotifications.requestPermission();
+                  if (granted) {
+                    toast.success('Notifications activées', 'Vous recevrez des alertes pour les SLA critiques');
+                  }
+                } else {
+                  await blockedNotifications.sendTestNotification();
+                }
+              }}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              title="Activer les notifications"
+            >
+              <Bell className="w-4 h-4 text-slate-500" />
             </button>
 
             {/* Menu déroulant pour les autres actions */}

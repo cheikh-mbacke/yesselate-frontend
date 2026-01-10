@@ -10,3 +10,9 @@ export * from './demands-api';
 // export * from './employees-api';
 // etc.
 
+// Pilotage (BMO)
+export * from './pilotage/dashboardClient';
+export * from './pilotage/alertsClient';
+export * from './pilotage/calendarClient';
+export * from './pilotage/analyticsClient';
+

@@ -7,6 +7,7 @@ import { BlockedMatrixView } from './views/BlockedMatrixView';
 import { BlockedAuditView } from './views/BlockedAuditView';
 import { BlockedTimelineView } from './views/BlockedTimelineView';
 import { BlockedResolutionWizard } from './views/BlockedResolutionWizard';
+import { BlockedBureauView } from './views/BlockedBureauView';
 import { cn } from '@/lib/utils';
 import { AlertCircle, LayoutGrid, Clock, Building2, FileText, Zap, Shield, Eye, BarChart3 } from 'lucide-react';
 
@@ -42,13 +43,7 @@ export function BlockedWorkspaceContent() {
       return <BlockedTimelineView tabId={activeTab.id} data={activeTab.data} />;
     
     case 'bureau':
-      return (
-        <PlaceholderView 
-          icon={<Building2 className="w-12 h-12" />}
-          title="Vue par bureau"
-          description="Blocages groupés par bureau responsable"
-        />
-      );
+      return <BlockedBureauView tabId={activeTab.id} data={activeTab.data} />;
     
     case 'resolution':
     case 'wizard':

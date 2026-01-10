@@ -147,7 +147,7 @@ export default function GovernancePage() {
               </h1>
               <Badge
                 variant="default"
-                className="text-xs bg-blue-500/10 text-blue-400 border-blue-500/30"
+                  className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
               >
                 v3.0
               </Badge>
@@ -180,7 +180,7 @@ export default function GovernancePage() {
               className={cn(
                 'h-8 w-8 p-0 relative',
                 notificationsPanelOpen
-                  ? 'text-blue-400 bg-blue-500/10'
+                      ? 'text-slate-200 bg-slate-800/50'
                   : 'text-slate-500 hover:text-slate-300'
               )}
               title="Notifications"

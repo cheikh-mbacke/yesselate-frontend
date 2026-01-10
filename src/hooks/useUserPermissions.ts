@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 export interface UserPermissions {
   canView: boolean;
@@ -118,7 +118,7 @@ export function withPermission<P extends object>(
       return fallback || null;
     }
 
-    return <Component {...props} />;
+    return React.createElement(Component, props);
   };
 }
 

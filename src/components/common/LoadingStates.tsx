@@ -1,86 +1,71 @@
-/**
- * Loading States Components
- * ==========================
- * 
- * Composants réutilisables pour les états de chargement
- */
-
 'use client';
-
-import React from 'react';
-import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Loader2 } from 'lucide-react';
 
 // ============================================
-// SPINNER
+// LOADING SPINNER
 // ============================================
 
-interface SpinnerProps {
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+interface LoadingSpinnerProps {
+  size?: 'sm' | 'md' | 'lg';
   className?: string;
+  text?: string;
 }
 
-export function Spinner({ size = 'md', className }: SpinnerProps) {
-  const sizes = {
+export function LoadingSpinner({ size = 'md', className, text }: LoadingSpinnerProps) {
+  const sizeClasses = {
     sm: 'w-4 h-4',
     md: 'w-6 h-6',
     lg: 'w-8 h-8',
-    xl: 'w-12 h-12',
   };
 
   return (
-    <Loader2 className={cn('animate-spin text-blue-500', sizes[size], className)} />
-  );
-}
-
-// ============================================
-// LOADING OVERLAY
-// ============================================
-
-interface LoadingOverlayProps {
-  message?: string;
-  fullscreen?: boolean;
-}
-
-export function LoadingOverlay({ message = 'Chargement...', fullscreen = false }: LoadingOverlayProps) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm',
-        fullscreen ? 'fixed inset-0 z-50' : 'absolute inset-0'
-      )}
-    >
-      <Spinner size="xl" />
-      {message && (
-        <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">
-          {message}
-        </p>
-      )}
+    <div className={cn('flex flex-col items-center justify-center gap-2', className)}>
+      <Loader2 className={cn('animate-spin text-blue-500', sizeClasses[size])} />
+      {text && <p className="text-sm text-slate-400">{text}</p>}
     </div>
   );
 }
 
 // ============================================
-// SKELETON
+// PAGE LOADER
+// ============================================
+
+interface PageLoaderProps {
+  text?: string;
+}
+
+export function PageLoader({ text = 'Chargement...' }: PageLoaderProps) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      <div className="text-center">
+        <LoadingSpinner size="lg" text={text} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SKELETON LOADER
 // ============================================
 
 interface SkeletonProps {
   className?: string;
-  variant?: 'text' | 'rect' | 'circle';
+  variant?: 'text' | 'circular' | 'rectangular';
 }
 
-export function Skeleton({ className, variant = 'text' }: SkeletonProps) {
-  const variants = {
-    text: 'h-4',
-    rect: 'h-32',
-    circle: 'rounded-full aspect-square',
+export function Skeleton({ className, variant = 'rectangular' }: SkeletonProps) {
+  const variantClasses = {
+    text: 'rounded h-4',
+    circular: 'rounded-full',
+    rectangular: 'rounded',
   };
 
   return (
     <div
       className={cn(
-        'animate-pulse bg-slate-200 dark:bg-slate-800 rounded',
-        variants[variant],
+        'animate-pulse bg-slate-700/50',
+        variantClasses[variant],
         className
       )}
     />
@@ -88,48 +73,37 @@ export function Skeleton({ className, variant = 'text' }: SkeletonProps) {
 }
 
 // ============================================
-// SKELETON CARD
+// SKELETON COMPONENTS
 // ============================================
 
 export function SkeletonCard() {
   return (
-    <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-      <div className="flex items-start gap-4">
-        <Skeleton variant="circle" className="w-12 h-12 flex-shrink-0" />
-        <div className="flex-1 space-y-3">
-          <Skeleton className="w-3/4" />
-          <Skeleton className="w-full" />
-          <Skeleton className="w-5/6" />
-        </div>
+    <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/50 space-y-3">
+      <Skeleton className="h-6 w-3/4" variant="text" />
+      <Skeleton className="h-4 w-full" variant="text" />
+      <Skeleton className="h-4 w-5/6" variant="text" />
+      <div className="flex gap-2 pt-2">
+        <Skeleton className="h-8 w-20" variant="rectangular" />
+        <Skeleton className="h-8 w-20" variant="rectangular" />
       </div>
     </div>
   );
 }
 
-// ============================================
-// SKELETON TABLE
-// ============================================
-
-interface SkeletonTableProps {
-  rows?: number;
-  columns?: number;
-}
-
-export function SkeletonTable({ rows = 5, columns = 4 }: SkeletonTableProps) {
+export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Header */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
-        {Array.from({ length: columns }).map((_, i) => (
-          <Skeleton key={`header-${i}`} className="h-8" />
+      <div className="flex gap-4 pb-2 border-b border-slate-700/50">
+        {Array.from({ length: cols }).map((_, i) => (
+          <Skeleton key={`header-${i}`} className="h-4 flex-1" variant="text" />
         ))}
       </div>
-
       {/* Rows */}
       {Array.from({ length: rows }).map((_, rowIndex) => (
-        <div key={`row-${rowIndex}`} className="grid gap-4" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
-          {Array.from({ length: columns }).map((_, colIndex) => (
-            <Skeleton key={`cell-${rowIndex}-${colIndex}`} />
+        <div key={`row-${rowIndex}`} className="flex gap-4 py-3">
+          {Array.from({ length: cols }).map((_, colIndex) => (
+            <Skeleton key={`cell-${rowIndex}-${colIndex}`} className="h-4 flex-1" variant="text" />
           ))}
         </div>
       ))}
@@ -137,47 +111,42 @@ export function SkeletonTable({ rows = 5, columns = 4 }: SkeletonTableProps) {
   );
 }
 
-// ============================================
-// SKELETON LIST
-// ============================================
-
-interface SkeletonListProps {
-  items?: number;
-}
-
-export function SkeletonList({ items = 5 }: SkeletonListProps) {
+export function SkeletonList({ items = 5 }: { items?: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: items }).map((_, i) => (
-        <SkeletonCard key={i} />
+        <div key={i} className="flex gap-4 p-3 rounded-xl bg-slate-800/30 border border-slate-700/50">
+          <Skeleton className="w-12 h-12" variant="circular" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-3/4" variant="text" />
+            <Skeleton className="h-3 w-1/2" variant="text" />
+          </div>
+        </div>
       ))}
     </div>
   );
 }
 
 // ============================================
-// LOADING BUTTON
+// BUTTON LOADING STATE
 // ============================================
 
-interface LoadingButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  loading?: boolean;
+interface ButtonLoadingProps {
+  isLoading: boolean;
   children: React.ReactNode;
+  className?: string;
 }
 
-export function LoadingButton({ loading, children, disabled, className, ...props }: LoadingButtonProps) {
+export function ButtonLoading({ isLoading, children, className }: ButtonLoadingProps) {
   return (
-    <button
-      disabled={disabled || loading}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
-        className
+    <div className={cn('relative', className)}>
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="w-4 h-4 animate-spin text-current" />
+        </div>
       )}
-      {...props}
-    >
-      {loading && <Spinner size="sm" />}
-      {children}
-    </button>
+      <div className={cn(isLoading && 'opacity-0')}>{children}</div>
+    </div>
   );
 }
 
@@ -185,92 +154,32 @@ export function LoadingButton({ loading, children, disabled, className, ...props
 // INLINE LOADER
 // ============================================
 
-interface InlineLoaderProps {
-  message?: string;
-  size?: 'sm' | 'md' | 'lg';
-}
-
-export function InlineLoader({ message, size = 'md' }: InlineLoaderProps) {
+export function InlineLoader({ text }: { text?: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-8">
-      <Spinner size={size} />
-      {message && (
-        <span className="text-sm text-slate-600 dark:text-slate-400">
-          {message}
-        </span>
-      )}
+    <div className="flex items-center gap-2 text-sm text-slate-400">
+      <Loader2 className="w-4 h-4 animate-spin" />
+      {text && <span>{text}</span>}
     </div>
   );
 }
 
 // ============================================
-// PROGRESS BAR
+// FULL SCREEN LOADER (Overlay)
 // ============================================
 
-interface ProgressBarProps {
-  value: number; // 0-100
-  label?: string;
-  showPercentage?: boolean;
-  className?: string;
+interface FullScreenLoaderProps {
+  isLoading: boolean;
+  text?: string;
 }
 
-export function ProgressBar({ value, label, showPercentage = true, className }: ProgressBarProps) {
-  const percentage = Math.min(100, Math.max(0, value));
+export function FullScreenLoader({ isLoading, text = 'Chargement...' }: FullScreenLoaderProps) {
+  if (!isLoading) return null;
 
   return (
-    <div className={cn('space-y-2', className)}>
-      {(label || showPercentage) && (
-        <div className="flex items-center justify-between text-sm">
-          {label && <span className="text-slate-700 dark:text-slate-300">{label}</span>}
-          {showPercentage && (
-            <span className="font-semibold text-slate-900 dark:text-slate-100">
-              {percentage.toFixed(0)}%
-            </span>
-          )}
-        </div>
-      )}
-      <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out"
-          style={{ width: `${percentage}%` }}
-        />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-slate-800/90 rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
+        <LoadingSpinner size="lg" text={text} />
       </div>
-    </div>
-  );
-}
-
-// ============================================
-// LOADING DOTS
-// ============================================
-
-export function LoadingDots() {
-  return (
-    <div className="flex items-center gap-1">
-      <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-      <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-      <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-    </div>
-  );
-}
-
-// ============================================
-// PULSE LOADING
-// ============================================
-
-interface PulseLoadingProps {
-  message?: string;
-}
-
-export function PulseLoading({ message = 'Chargement...' }: PulseLoadingProps) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12">
-      <div className="relative">
-        <div className="w-16 h-16 rounded-full border-4 border-blue-200 dark:border-blue-900" />
-        <div className="absolute inset-0 w-16 h-16 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
-      </div>
-      <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">
-        {message}
-      </p>
     </div>
   );
 }

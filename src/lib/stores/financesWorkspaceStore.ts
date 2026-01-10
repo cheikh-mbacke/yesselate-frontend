@@ -38,6 +38,17 @@ interface FinancesWorkspaceState {
   commandPaletteOpen: boolean;
   statsModalOpen: boolean;
 
+  // Command Center navigation
+  activeCategory: string;
+  activeSubCategory: string;
+  activeFilter: string | null;
+  navigationHistory: string[];
+  sidebarCollapsed: boolean;
+  kpiBarCollapsed: boolean;
+  filtersPanelOpen: boolean;
+  notificationsPanelOpen: boolean;
+  isFullScreen: boolean;
+
   openTab: (tab: Omit<FinancesTab, 'id'> & { id?: string }) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
@@ -46,6 +57,17 @@ interface FinancesWorkspaceState {
   setCommandPaletteOpen: (open: boolean) => void;
   setStatsModalOpen: (open: boolean) => void;
   reset: () => void;
+
+  // Command Center actions
+  setActiveCategory: (category: string) => void;
+  setActiveSubCategory: (subCategory: string) => void;
+  setActiveFilter: (filter: string | null) => void;
+  toggleSidebar: () => void;
+  toggleKpiBar: () => void;
+  setFiltersPanelOpen: (open: boolean) => void;
+  setNotificationsPanelOpen: (open: boolean) => void;
+  toggleFullScreen: () => void;
+  goBack: () => void;
 }
 
 const defaultTabs: FinancesTab[] = [
@@ -60,6 +82,17 @@ export const useFinancesWorkspaceStore = create<FinancesWorkspaceState>()(
       currentFilter: { period: 'mois' },
       commandPaletteOpen: false,
       statsModalOpen: false,
+
+      // Command Center navigation
+      activeCategory: 'overview',
+      activeSubCategory: 'all',
+      activeFilter: null,
+      navigationHistory: [],
+      sidebarCollapsed: false,
+      kpiBarCollapsed: false,
+      filtersPanelOpen: false,
+      notificationsPanelOpen: false,
+      isFullScreen: false,
 
       openTab: (tab) => {
         const id = tab.id || `${tab.type}:${Date.now()}`;
@@ -86,6 +119,38 @@ export const useFinancesWorkspaceStore = create<FinancesWorkspaceState>()(
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
       setStatsModalOpen: (open) => set({ statsModalOpen: open }),
       reset: () => set({ tabs: defaultTabs, activeTabId: 'dashboard:main', currentFilter: { period: 'mois' }, commandPaletteOpen: false, statsModalOpen: false }),
+
+      // Command Center actions
+      setActiveCategory: (category) => {
+        const { activeCategory, navigationHistory } = get();
+        if (category !== activeCategory) {
+          set({
+            activeCategory: category,
+            navigationHistory: [...navigationHistory, activeCategory].slice(-20),
+          });
+        } else {
+          set({ activeCategory: category });
+        }
+      },
+      setActiveSubCategory: (subCategory) => set({ activeSubCategory: subCategory }),
+      setActiveFilter: (filter) => set({ activeFilter: filter }),
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      toggleKpiBar: () => set((state) => ({ kpiBarCollapsed: !state.kpiBarCollapsed })),
+      setFiltersPanelOpen: (open) => set({ filtersPanelOpen: open }),
+      setNotificationsPanelOpen: (open) => set({ notificationsPanelOpen: open }),
+      toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
+      goBack: () => {
+        const { navigationHistory } = get();
+        if (navigationHistory.length > 0) {
+          const previousCategory = navigationHistory[navigationHistory.length - 1];
+          set({
+            navigationHistory: navigationHistory.slice(0, -1),
+            activeCategory: previousCategory,
+            activeSubCategory: 'all',
+            activeFilter: null,
+          });
+        }
+      },
     }),
     { name: 'finances:workspace' }
   )

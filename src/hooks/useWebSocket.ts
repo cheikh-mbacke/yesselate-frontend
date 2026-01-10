@@ -59,10 +59,18 @@ export function useWebSocket({
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      ws.onerror = (event) => {
+        // WebSocket error events don't provide detailed error info
+        // Log the event type and WebSocket state for debugging
+        const errorInfo = {
+          type: event.type,
+          readyState: ws.readyState,
+          url: ws.url,
+          timestamp: new Date().toISOString(),
+        };
+        console.error('WebSocket error:', errorInfo);
         setIsConnected(false);
-        onError?.(error);
+        onError?.(event);
       };
 
       ws.onclose = () => {

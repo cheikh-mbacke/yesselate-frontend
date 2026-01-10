@@ -55,7 +55,8 @@ import type { BlockedDossier } from '@/lib/types/bmo.types';
 interface BlockedResolutionModalProps {
   open: boolean;
   onClose: () => void;
-  dossier: BlockedDossier;
+  dossier?: BlockedDossier;
+  preselectedType?: ResolutionType;
   onSuccess?: () => void;
 }
 
@@ -100,10 +101,11 @@ export function BlockedResolutionModal({
   open,
   onClose,
   dossier,
+  preselectedType,
   onSuccess,
 }: BlockedResolutionModalProps) {
-  const [resolutionType, setResolutionType] = useState<ResolutionType | null>(null);
-  const [currentStep, setCurrentStep] = useState(1);
+  const [resolutionType, setResolutionType] = useState<ResolutionType | null>(preselectedType || null);
+  const [currentStep, setCurrentStep] = useState(preselectedType ? 1 : 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Data states
@@ -139,14 +141,19 @@ export function BlockedResolutionModal({
     execution: '',
   });
 
-  // Reset on open
+  // Reset on open (sauf si preselectedType)
   useEffect(() => {
     if (open) {
-      setResolutionType(null);
-      setCurrentStep(1);
+      if (preselectedType) {
+        setResolutionType(preselectedType);
+        setCurrentStep(1);
+      } else {
+        setResolutionType(null);
+        setCurrentStep(0);
+      }
       setSubmitting(false);
     }
-  }, [open]);
+  }, [open, preselectedType]);
 
   const handleSelectType = (type: ResolutionType) => {
     setResolutionType(type);
@@ -260,7 +267,7 @@ export function BlockedResolutionModal({
                 Résoudre Dossier Bloqué
               </DialogTitle>
               <DialogDescription className="text-slate-400 mt-1">
-                {dossier.reference} - {dossier.bureau}
+                {dossier ? `${dossier.reference} - ${dossier.bureau}` : 'Sélectionner un dossier'}
               </DialogDescription>
             </div>
             {resolutionType && (

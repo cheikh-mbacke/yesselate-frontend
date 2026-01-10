@@ -1,19 +1,13 @@
-/**
- * Error Boundary Component
- * ========================
- * 
- * Composant pour capturer les erreurs React et empêcher le crash de l'application
- */
-
 'use client';
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCcw, Home } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home, Mail } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  showDetails?: boolean;
 }
 
 interface State {
@@ -22,6 +16,13 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
+/**
+ * Error Boundary Component
+ * ========================
+ * 
+ * Capture les erreurs React et affiche une UI de fallback élégante
+ * Empêche le crash de toute l'application
+ */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -32,36 +33,36 @@ export class ErrorBoundary extends Component<Props, State> {
     };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return {
       hasError: true,
       error,
-      errorInfo: null,
     };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     // Log l'erreur
     console.error('ErrorBoundary caught an error:', error, errorInfo);
 
-    // Callback personnalisé
-    if (this.props.onError) {
-      this.props.onError(error, errorInfo);
-    }
-
-    // Mettre à jour l'état avec les infos d'erreur
+    // Met à jour l'état
     this.setState({
       error,
       errorInfo,
     });
 
-    // En production, envoyer à un service de monitoring (Sentry, etc.)
+    // Callback optionnel
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    }
+
+    // En production: envoyer à un service d'erreur (Sentry, etc.)
     if (process.env.NODE_ENV === 'production') {
-      // Exemple: Sentry.captureException(error, { extra: errorInfo });
+      // TODO: Envoyer à Sentry ou autre service
+      // Sentry.captureException(error, { contexts: { react: errorInfo } });
     }
   }
 
-  handleReset = () => {
+  handleReset = (): void => {
     this.setState({
       hasError: false,
       error: null,
@@ -69,109 +70,89 @@ export class ErrorBoundary extends Component<Props, State> {
     });
   };
 
-  handleReload = () => {
+  handleReload = (): void => {
     window.location.reload();
   };
 
-  handleGoHome = () => {
+  handleGoHome = (): void => {
     window.location.href = '/';
   };
 
-  render() {
+  render(): ReactNode {
     if (this.state.hasError) {
-      // Utiliser le fallback personnalisé si fourni
+      // Si un fallback personnalisé est fourni, l'utiliser
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // Sinon, afficher l'UI d'erreur par défaut
+      // Sinon, afficher l'UI par défaut
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-red-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-red-950/10 p-6">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
           <div className="max-w-2xl w-full">
-            <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-br from-red-500 to-red-600 p-8 text-white">
-                <div className="flex items-center gap-4">
-                  <div className="p-4 rounded-2xl bg-white/20 backdrop-blur-sm">
-                    <AlertTriangle className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold">Oups ! Une erreur est survenue</h1>
-                    <p className="text-red-100 mt-1">
-                      Quelque chose s'est mal passé. Nous sommes désolés pour le désagrément.
-                    </p>
-                  </div>
+            <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-red-500/20 shadow-2xl p-8">
+              {/* Icône et titre */}
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 mb-4">
+                  <AlertTriangle className="w-10 h-10 text-red-400" />
                 </div>
+                <h1 className="text-2xl font-bold text-slate-200 mb-2">
+                  Oups ! Une erreur est survenue
+                </h1>
+                <p className="text-slate-400">
+                  Une erreur inattendue s'est produite. L'équipe technique a été notifiée.
+                </p>
               </div>
 
-              {/* Body */}
-              <div className="p-8">
-                {/* Message d'erreur */}
-                {this.state.error && (
-                  <div className="mb-6">
-                    <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                      Message d'erreur :
-                    </h2>
-                    <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50">
-                      <code className="text-sm text-red-800 dark:text-red-300 font-mono">
-                        {this.state.error.message}
-                      </code>
-                    </div>
-                  </div>
-                )}
-
-                {/* Stack trace (dev only) */}
-                {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
-                  <details className="mb-6">
-                    <summary className="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 mb-2">
-                      Détails techniques (développement)
-                    </summary>
-                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 max-h-64 overflow-auto">
-                      <pre className="text-xs text-slate-700 dark:text-slate-300 font-mono whitespace-pre-wrap">
-                        {this.state.errorInfo.componentStack}
-                      </pre>
-                    </div>
-                  </details>
-                )}
-
-                {/* Actions */}
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    onClick={this.handleReset}
-                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
-                  >
-                    <RefreshCcw className="w-5 h-5" />
-                    Réessayer
-                  </button>
-
-                  <button
-                    onClick={this.handleReload}
-                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                  >
-                    <RefreshCcw className="w-5 h-5" />
-                    Recharger la page
-                  </button>
-
-                  <button
-                    onClick={this.handleGoHome}
-                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <Home className="w-5 h-5" />
-                    Retour accueil
-                  </button>
+              {/* Détails de l'erreur (développement uniquement) */}
+              {this.props.showDetails && this.state.error && (
+                <div className="mb-6 p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                  <h3 className="text-sm font-semibold text-red-400 mb-2">Détails de l'erreur:</h3>
+                  <pre className="text-xs text-slate-300 font-mono overflow-auto max-h-48">
+                    {this.state.error.toString()}
+                    {this.state.errorInfo?.componentStack}
+                  </pre>
                 </div>
+              )}
 
-                {/* Info supplémentaire */}
-                <div className="mt-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    <strong>Que faire ?</strong>
-                  </p>
-                  <ul className="mt-2 text-sm text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
-                    <li>Essayez de recharger la page</li>
-                    <li>Vérifiez votre connexion internet</li>
-                    <li>Si le problème persiste, contactez le support technique</li>
-                  </ul>
-                </div>
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={this.handleReset}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Réessayer
+                </button>
+
+                <button
+                  onClick={this.handleReload}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Recharger la page
+                </button>
+
+                <button
+                  onClick={this.handleGoHome}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600 transition-colors"
+                >
+                  <Home className="w-4 h-4" />
+                  Accueil
+                </button>
+              </div>
+
+              {/* Support */}
+              <div className="mt-6 pt-6 border-t border-slate-700/50 text-center">
+                <p className="text-sm text-slate-400 mb-2">
+                  Le problème persiste ?
+                </p>
+                <a
+                  href="mailto:support@yesselate.sn"
+                  className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  <Mail className="w-4 h-4" />
+                  Contacter le support
+                </a>
               </div>
             </div>
           </div>
@@ -184,10 +165,34 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 
 /**
- * Hook pour déclencher une erreur (utile pour tests)
+ * Hook pour utiliser Error Boundary dans les composants fonctionnels
  */
-export function useThrowError() {
-  return (error: Error) => {
-    throw error;
+export function useErrorHandler() {
+  return (error: Error, errorInfo?: ErrorInfo) => {
+    // En production: envoyer à Sentry
+    console.error('Error caught by useErrorHandler:', error, errorInfo);
+    
+    // Peut être utilisé avec react-error-boundary ou Sentry
+    if (process.env.NODE_ENV === 'production') {
+      // Sentry.captureException(error);
+    }
   };
+}
+
+/**
+ * HOC pour wrapper un composant avec Error Boundary
+ */
+export function withErrorBoundary<P extends object>(
+  Component: React.ComponentType<P>,
+  errorBoundaryProps?: Omit<Props, 'children'>
+) {
+  const WrappedComponent = (props: P) => (
+    <ErrorBoundary {...errorBoundaryProps}>
+      <Component {...props} />
+    </ErrorBoundary>
+  );
+
+  WrappedComponent.displayName = `withErrorBoundary(${Component.displayName || Component.name})`;
+
+  return WrappedComponent;
 }

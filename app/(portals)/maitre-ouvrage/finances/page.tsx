@@ -469,7 +469,7 @@ export default function FinancesPage() {
         <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             {/* Back Button */}
-            {navigationHistory.length > 0 && (
+            {navigationHistory?.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"

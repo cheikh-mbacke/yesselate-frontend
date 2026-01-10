@@ -27,7 +27,7 @@ export type BlockedSubCategoryMap = {
   overview: 'summary' | 'kpis' | 'trends' | 'alerts';
   queue: 'all' | 'critical' | 'high' | 'medium' | 'low';
   critical: 'urgent' | 'sla' | 'escalated';
-  matrix: 'impact' | 'delay' | 'amount' | 'combined';
+  matrix: 'impact' | 'delay' | 'amount' | 'combined' | 'kanban';
   bureaux: 'all' | 'most' | 'comparison';
   timeline: 'recent' | 'week' | 'month' | 'history';
   decisions: 'pending' | 'resolved' | 'escalated' | 'substituted';

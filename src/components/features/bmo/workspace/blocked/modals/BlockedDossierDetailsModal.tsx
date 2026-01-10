@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   FileText,
@@ -143,6 +151,12 @@ export function BlockedDossierDetailsModal({
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
+  const [documentCategory, setDocumentCategory] = useState<'bc' | 'facture' | 'contrat' | 'justificatif' | 'rib' | 'autre'>('autre');
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState<{ url: string; type: string } | null>(null);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState<string | null>(null);
+  const [documentCategory, setDocumentCategory] = useState<'bc' | 'facture' | 'contrat' | 'justificatif' | 'rib' | 'autre'>('autre');
 
   // Charger dossier enrichi
   useEffect(() => {
@@ -366,6 +380,52 @@ export function BlockedDossierDetailsModal({
       // Recharger dossier
     } finally {
       setSendingComment(false);
+    }
+  };
+
+  const handleUploadDocument = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !dossier) return;
+
+    setUploadingDocument(true);
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => {
+        formData.append('files', file);
+      });
+      formData.append('category', documentCategory);
+      
+      // TODO: API POST /api/bmo/blocked/[id]/documents/upload
+      // await blockedApi.uploadDocuments(dossier.id, formData);
+      
+      // Mock: Simuler upload
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      
+      // Recharger documents
+      // await refreshDossier();
+    } catch (error) {
+      console.error('Upload error:', error);
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  const handlePreviewDocument = (doc: { url: string; type: string; name: string }) => {
+    setPreviewDocument({ url: doc.url, type: doc.type });
+  };
+
+  const handleDownloadDocument = async (docUrl: string, docName: string) => {
+    try {
+      // TODO: API GET /api/bmo/blocked/documents/[id]/download
+      const response = await fetch(docUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = docName;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
     }
   };
 
@@ -874,16 +934,76 @@ export function BlockedDossierDetailsModal({
 
             {/* ONGLET 4: DOCUMENTS */}
             <TabsContent value="documents" className="space-y-4 m-0">
+              {/* Upload Zone */}
+              <div className="bg-slate-800/50 border-2 border-dashed border-slate-700 rounded-lg p-6 hover:border-slate-600 transition-colors">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-400 mb-1">Ajouter un document</h3>
+                    <p className="text-xs text-slate-500">Glissez-déposez ou cliquez pour parcourir</p>
+                  </div>
+                  <Select
+                    value={documentCategory}
+                    onValueChange={(value: typeof documentCategory) => setDocumentCategory(value)}
+                  >
+                    <SelectTrigger className="w-[150px] bg-slate-900 border-slate-700">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bc">BC (Bon de Commande)</SelectItem>
+                      <SelectItem value="facture">Facture</SelectItem>
+                      <SelectItem value="contrat">Contrat</SelectItem>
+                      <SelectItem value="justificatif">Justificatif</SelectItem>
+                      <SelectItem value="rib">RIB</SelectItem>
+                      <SelectItem value="autre">Autre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <input
+                  type="file"
+                  id="document-upload"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                  onChange={(e) => handleUploadDocument(e.target.files)}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="document-upload"
+                  className="flex flex-col items-center justify-center p-4 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors"
+                >
+                  {uploadingDocument ? (
+                    <>
+                      <Loader2 className="h-8 w-8 text-blue-400 animate-spin mb-2" />
+                      <span className="text-sm text-slate-400">Téléchargement...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-8 w-8 text-slate-400 mb-2" />
+                      <span className="text-sm text-slate-400">
+                        Cliquez pour sélectionner ou glissez-déposez
+                      </span>
+                      <span className="text-xs text-slate-500 mt-1">
+                        PDF, DOC, XLS, JPG, PNG (max 10MB)
+                      </span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              {/* Liste Documents */}
               {dossier.documents && dossier.documents.length > 0 ? (
                 <>
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-medium text-slate-400">
                       {dossier.documents.length} document(s)
                     </h3>
-                    <Button variant="outline" size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        BC: {dossier.documents.filter(d => d.type.includes('bc')).length}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        Factures: {dossier.documents.filter(d => d.type.includes('facture')).length}
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -908,10 +1028,23 @@ export function BlockedDossierDetailsModal({
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePreviewDocument({ url: doc.url, type: doc.type, name: doc.name });
+                            }}
+                            title="Aperçu"
+                          >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="sm">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDownloadDocument(doc.url, doc.name)}
+                            title="Télécharger"
+                          >
                             <Download className="h-4 w-4" />
                           </Button>
                         </div>
@@ -1144,7 +1277,20 @@ export function BlockedDossierDetailsModal({
                           </div>
                         </div>
 
-                        <Button size="sm">
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                            setTimeout(() => {
+                              const { openModal } = useBlockedCommandCenterStore.getState();
+                              openModal('resolution-advanced', {
+                                dossier,
+                                preselectedType: action.type,
+                              });
+                            }, 300);
+                          }}
+                        >
                           Appliquer
                           <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
                         </Button>
@@ -1168,21 +1314,86 @@ export function BlockedDossierDetailsModal({
             Fermer
           </Button>
           <div className="flex items-center gap-2">
-            <Button variant="outline">
+            <Button variant="outline" onClick={async () => {
+              // TODO: Toggle watchlist
+              try {
+                // await blockedApi.toggleWatchlist(dossier.id);
+                // showToast('success', 'Ajouté à la liste de suivi');
+              } catch (error) {
+                console.error('Watchlist error:', error);
+              }
+            }}>
               <Eye className="h-4 w-4 mr-2" />
               Suivre
             </Button>
-            <Button variant="outline">
+            <Button variant="outline" onClick={async () => {
+              // TODO: Export PDF/Excel
+              try {
+                // const pdf = await blockedApi.exportDossierPDF(dossier.id);
+                // downloadFile(pdf, `dossier-${dossier.reference}.pdf`);
+                // showToast('success', 'Export généré');
+              } catch (error) {
+                console.error('Export error:', error);
+              }
+            }}>
               <Download className="h-4 w-4 mr-2" />
               Exporter
             </Button>
-            <Button>
+            <Button
+              onClick={() => {
+                onClose();
+                // Ouvrir modal résolution après fermeture
+                setTimeout(() => {
+                  const { openModal } = useBlockedCommandCenterStore.getState();
+                  openModal('resolution-advanced', { dossier });
+                }, 300);
+              }}
+            >
               <Zap className="h-4 w-4 mr-2" />
               Résoudre
             </Button>
           </div>
         </div>
       </DialogContent>
+
+      {/* Modal Preview Document */}
+      {previewDocument && (
+        <Dialog open={!!previewDocument} onOpenChange={() => setPreviewDocument(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] bg-slate-900 border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="text-white">Aperçu Document</DialogTitle>
+            </DialogHeader>
+            <div className="mt-4">
+              {previewDocument.type.startsWith('image/') ? (
+                <img
+                  src={previewDocument.url}
+                  alt="Preview"
+                  className="max-w-full max-h-[70vh] mx-auto rounded-lg"
+                />
+              ) : previewDocument.type === 'application/pdf' ? (
+                <iframe
+                  src={previewDocument.url}
+                  className="w-full h-[70vh] rounded-lg border border-slate-700"
+                  title="PDF Preview"
+                />
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>Aperçu non disponible pour ce type de fichier</p>
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => window.open(previewDocument.url, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Ouvrir dans un nouvel onglet
+                  </Button>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

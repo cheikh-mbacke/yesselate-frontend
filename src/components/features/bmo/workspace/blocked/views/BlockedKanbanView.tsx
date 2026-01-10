@@ -1,133 +1,159 @@
 /**
  * ====================================================================
- * VUE KANBAN : Dossiers Bloqués
- * Drag & Drop entre colonnes de statut
+ * VUE KANBAN : Dossiers Bloqués - Drag & Drop
+ * 6 colonnes statut avec cartes riches interactives
  * ====================================================================
  */
 
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
-import { 
-  DndContext, 
-  DragEndEvent, 
-  DragOverlay, 
-  DragStartEvent,
-  closestCorners,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Filter,
-  LayoutGrid,
-  List,
-  Download,
-  RefreshCw,
-  Users,
-  Building2,
-  AlertTriangle,
   Clock,
+  AlertTriangle,
+  User,
+  Building2,
   DollarSign,
+  TrendingUp,
+  Filter,
+  Grid3x3,
+  List,
+  RefreshCw,
+  Download,
+  MoreVertical,
   Eye,
-  Zap,
-  Scale,
-  ChevronDown,
+  Move,
 } from 'lucide-react';
-import type { BlockedDossier } from '@/lib/types/bmo.types';
+import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
+import { blockedApi, type BlockedFilter } from '@/lib/services/blockedApiService';
 import { blockedMockData } from '@/lib/mocks/blockedMockData';
-
-type KanbanStatus = 'nouveau' | 'analyse' | 'en-cours' | 'escalade' | 'resolu' | 'ferme';
-
-interface KanbanColumn {
-  id: KanbanStatus;
-  title: string;
-  color: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const KANBAN_COLUMNS: KanbanColumn[] = [
-  { id: 'nouveau', title: 'Nouveau', color: 'bg-slate-500', icon: AlertTriangle },
-  { id: 'analyse', title: 'Analysé', color: 'bg-blue-500', icon: Eye },
-  { id: 'en-cours', title: 'En cours', color: 'bg-yellow-500', icon: Zap },
-  { id: 'escalade', title: 'Escaladé', color: 'bg-orange-500', icon: TrendingUp },
-  { id: 'resolu', title: 'Résolu', color: 'bg-green-500', icon: CheckCircle },
-  { id: 'ferme', title: 'Fermé', color: 'bg-emerald-500', icon: Lock },
-];
+import type { BlockedDossier } from '@/lib/types/bmo.types';
 
 interface BlockedKanbanViewProps {
   className?: string;
 }
 
+type KanbanColumn = 'new' | 'analysed' | 'in-progress' | 'escalated' | 'resolved' | 'closed';
+
+interface KanbanDossier extends BlockedDossier {
+  status: KanbanColumn;
+}
+
+const COLUMN_CONFIG: Record<
+  KanbanColumn,
+  { label: string; color: string; icon: React.ReactNode; description: string }
+> = {
+  new: {
+    label: 'Nouveau',
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    icon: <Clock className="h-4 w-4" />,
+    description: 'Dossiers nouvellement détectés',
+  },
+  analysed: {
+    label: 'Analysé',
+    color: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    icon: <Eye className="h-4 w-4" />,
+    description: 'Cause identifiée, solution en cours',
+  },
+  'in-progress': {
+    label: 'En cours',
+    color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+    icon: <TrendingUp className="h-4 w-4" />,
+    description: 'Résolution active',
+  },
+  escalated: {
+    label: 'Escaladé',
+    color: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    icon: <AlertTriangle className="h-4 w-4" />,
+    description: 'Remontée hiérarchique',
+  },
+  resolved: {
+    label: 'Résolu',
+    color: 'bg-green-500/20 text-green-400 border-green-500/30',
+    icon: <Clock className="h-4 w-4" />,
+    description: 'Déblocage effectué',
+  },
+  closed: {
+    label: 'Fermé',
+    color: 'bg-slate-700/20 text-slate-500 border-slate-700/30',
+    icon: <Clock className="h-4 w-4" />,
+    description: 'Dossier archivé',
+  },
+};
+
 export function BlockedKanbanView({ className }: BlockedKanbanViewProps) {
-  // Zustand store
-  const { openModal } = useBlockedCommandCenterStore();
-  
-  // État
-  const [dossiers, setDossiers] = useState<BlockedDossier[]>(blockedMockData.dossiers);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
-  const [filters, setFilters] = useState({
-    impact: [] as string[],
-    bureau: [] as string[],
-    type: [] as string[],
-  });
-  const [groupBy, setGroupBy] = useState<'status' | 'bureau' | 'impact'>('status');
+  const { openModal, filters: storeFilters } = useBlockedCommandCenterStore();
+  const [dossiers, setDossiers] = useState<KanbanDossier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [draggedDossier, setDraggedDossier] = useState<string | null>(null);
+  const [draggedOverColumn, setDraggedOverColumn] = useState<KanbanColumn | null>(null);
+  const [viewMode, setViewMode] = useState<'compact' | 'extended'>('extended');
+  const [filters, setFilters] = useState<{
+    impact: ('critical' | 'high' | 'medium' | 'low')[];
+    bureaux: string[];
+  }>({ impact: [], bureaux: [] });
 
-  // Drag & Drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  );
+  // Charger dossiers depuis API
+  useEffect(() => {
+    const loadDossiers = async () => {
+      setLoading(true);
+      try {
+        // TODO: Utiliser API réelle
+        // const apiFilter: BlockedFilter = {
+        //   ...convertFiltersToApi(storeFilters),
+        // };
+        // const result = await blockedApi.getAll(apiFilter);
+        
+        // Mock data pour l'instant
+        const mockDossiers: KanbanDossier[] = blockedMockData.dossiers.map((d, idx) => ({
+          ...d,
+          status: (['new', 'analysed', 'in-progress', 'escalated', 'resolved', 'closed'][idx % 6] ||
+            'new') as KanbanColumn,
+        }));
+        
+        setDossiers(mockDossiers);
+      } catch (error) {
+        console.error('Failed to load dossiers:', error);
+        // Fallback sur mock data
+        const mockDossiers: KanbanDossier[] = blockedMockData.dossiers.map((d, idx) => ({
+          ...d,
+          status: (['new', 'analysed', 'in-progress', 'escalated', 'resolved', 'closed'][idx % 6] ||
+            'new') as KanbanColumn,
+        }));
+        setDossiers(mockDossiers);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // Map dossier status to kanban status
-  const mapStatusToKanban = (status: string): KanbanStatus => {
-    switch (status) {
-      case 'pending': return 'nouveau';
-      case 'escalated': return 'escalade';
-      case 'resolved': return 'resolu';
-      case 'substituted': return 'resolu';
-      default: return 'nouveau';
-    }
-  };
+    loadDossiers();
+  }, [storeFilters]);
 
   // Filtrer dossiers
   const filteredDossiers = useMemo(() => {
-    return dossiers.filter(d => {
-      if (filters.impact.length > 0 && !filters.impact.includes(d.impactLevel)) return false;
-      if (filters.bureau.length > 0 && !filters.bureau.includes(d.bureau)) return false;
-      if (filters.type.length > 0 && !filters.type.includes(d.type)) return false;
+    return dossiers.filter((d) => {
+      if (filters.impact.length > 0 && !filters.impact.includes(d.impactLevel as any)) return false;
+      if (filters.bureaux.length > 0 && !filters.bureaux.includes(d.bureau)) return false;
       return true;
     });
   }, [dossiers, filters]);
 
-  // Grouper dossiers par colonne
+  // Grouper par colonne
   const dossiersByColumn = useMemo(() => {
-    const grouped: Record<KanbanStatus, BlockedDossier[]> = {
-      'nouveau': [],
-      'analyse': [],
-      'en-cours': [],
-      'escalade': [],
-      'resolu': [],
-      'ferme': [],
+    const grouped: Record<KanbanColumn, KanbanDossier[]> = {
+      new: [],
+      analysed: [],
+      'in-progress': [],
+      escalated: [],
+      resolved: [],
+      closed: [],
     };
 
-    filteredDossiers.forEach(d => {
-      const kanbanStatus = mapStatusToKanban(d.status);
-      grouped[kanbanStatus].push(d);
+    filteredDossiers.forEach((d) => {
+      grouped[d.status].push(d);
     });
 
     return grouped;
@@ -135,115 +161,177 @@ export function BlockedKanbanView({ className }: BlockedKanbanViewProps) {
 
   // Stats par colonne
   const columnStats = useMemo(() => {
-    const stats: Record<KanbanStatus, { count: number; totalAmount: number }> = {} as any;
-    
-    KANBAN_COLUMNS.forEach(col => {
-      const colDossiers = dossiersByColumn[col.id];
-      stats[col.id] = {
-        count: colDossiers.length,
-        totalAmount: colDossiers.reduce((sum, d) => sum + (d.relatedDocument?.amount || 0), 0),
-      };
-    });
-
-    return stats;
+    return Object.entries(dossiersByColumn).reduce(
+      (acc, [column, items]) => {
+        acc[column as KanbanColumn] = {
+          count: items.length,
+          totalAmount: items.reduce(
+            (sum, d) => sum + (d.relatedDocument?.amount || 0),
+            0
+          ),
+        };
+        return acc;
+      },
+      {} as Record<KanbanColumn, { count: number; totalAmount: number }>
+    );
   }, [dossiersByColumn]);
 
-  // Handle drag start
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
+  // Drag handlers
+  const handleDragStart = useCallback((dossierId: string) => {
+    setDraggedDossier(dossierId);
+  }, []);
 
-  // Handle drag end
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    if (!over) {
-      setActiveId(null);
-      return;
-    }
+  const handleDragOver = useCallback((e: React.DragEvent, column: KanbanColumn) => {
+    e.preventDefault();
+    setDraggedOverColumn(column);
+  }, []);
 
-    const dossierId = active.id as string;
-    const newColumnId = over.id as KanbanStatus;
+  const handleDragLeave = useCallback(() => {
+    setDraggedOverColumn(null);
+  }, []);
 
-    // Mettre à jour statut dossier
-    setDossiers(prev => prev.map(d => {
-      if (d.id === dossierId) {
-        // Map kanban status back to dossier status
-        let newStatus: BlockedDossier['status'];
-        switch (newColumnId) {
-          case 'nouveau': newStatus = 'pending'; break;
-          case 'escalade': newStatus = 'escalated'; break;
-          case 'resolu': newStatus = 'resolved'; break;
-          default: newStatus = 'pending';
-        }
+  const handleDrop = useCallback(
+    async (e: React.DragEvent, targetColumn: KanbanColumn) => {
+      e.preventDefault();
+      if (!draggedDossier) return;
+
+      const originalDossier = dossiers.find((d) => d.id === draggedDossier);
+      if (!originalDossier) return;
+
+      // Mise à jour locale immédiate (optimistic update)
+      setDossiers((prev) =>
+        prev.map((d) => (d.id === draggedDossier ? { ...d, status: targetColumn } : d))
+      );
+
+      setDraggedDossier(null);
+      setDraggedOverColumn(null);
+
+      try {
+        // TODO: API PATCH /api/bmo/blocked/[id]/update avec nouveau status
+        // const statusMap: Record<KanbanColumn, string> = {
+        //   new: 'pending',
+        //   analysed: 'pending',
+        //   'in-progress': 'pending',
+        //   escalated: 'escalated',
+        //   resolved: 'resolved',
+        //   closed: 'resolved',
+        // };
+        // await blockedApi.update(draggedDossier, { status: statusMap[targetColumn] });
         
-        return { ...d, status: newStatus };
+        // Toast notification
+        // showToast('success', `Dossier déplacé vers "${COLUMN_CONFIG[targetColumn].label}"`);
+      } catch (error) {
+        console.error('Failed to update dossier status:', error);
+        // Rollback en cas d'erreur
+        setDossiers((prev) =>
+          prev.map((d) => (d.id === draggedDossier ? originalDossier : d))
+        );
+        // showToast('error', 'Échec de la mise à jour du statut');
       }
-      return d;
-    }));
+    },
+    [draggedDossier, dossiers]
+  );
 
-    // TODO: API call pour mettre à jour en DB
-    // await blockedApi.updateStatus(dossierId, newStatus);
+  const handleDragEnd = useCallback(() => {
+    setDraggedDossier(null);
+    setDraggedOverColumn(null);
+  }, []);
 
-    setActiveId(null);
+  // Ouvrir modal détails enrichi
+  const handleOpenDetails = useCallback(
+    (dossier: KanbanDossier) => {
+      openModal('dossier-detail', { dossierId: dossier.id });
+    },
+    [openModal]
+  );
+
+  // Get impact color
+  const getImpactColor = (impact: string) => {
+    switch (impact) {
+      case 'critical':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      case 'high':
+        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+      case 'medium':
+        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'low':
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+      default:
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+    }
   };
 
-  const activeDossier = activeId ? dossiers.find(d => d.id === activeId) : null;
+  // Format montant
+  const formatAmount = (amount: number) => {
+    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+    if (amount >= 1000) return `${(amount / 1000).toFixed(0)}K`;
+    return `${amount}`;
+  };
 
   return (
     <div className={cn('space-y-4', className)}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-white">Vue Kanban</h2>
-          <Badge variant="outline" className="text-slate-400">
-            {filteredDossiers.length} dossiers
-          </Badge>
+      {/* Header avec stats et toolbar */}
+      <div className="flex items-center justify-between gap-4 bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-white">Vue Kanban</h2>
+            <p className="text-sm text-slate-400">
+              {filteredDossiers.length} dossiers bloqués
+            </p>
+          </div>
+
+          {/* Stats globales */}
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-slate-400">Critiques:</span>
+              <span className="text-white font-medium">
+                {filteredDossiers.filter((d) => d.impactLevel === 'critical').length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-orange-500" />
+              <span className="text-slate-400">Urgents:</span>
+              <span className="text-white font-medium">
+                {filteredDossiers.filter((d) => d.delayDays >= 7).length}
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           {/* View mode toggle */}
           <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-1">
             <Button
-              variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+              variant={viewMode === 'compact' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setViewMode('kanban')}
+              onClick={() => setViewMode('compact')}
               className="h-7 px-3"
             >
-              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-              Kanban
+              <Grid3x3 className="h-3.5 w-3.5 mr-1.5" />
+              Compact
             </Button>
             <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              variant={viewMode === 'extended' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setViewMode('list')}
+              onClick={() => setViewMode('extended')}
               className="h-7 px-3"
             >
               <List className="h-3.5 w-3.5 mr-1.5" />
-              Liste
+              Étendu
             </Button>
           </div>
 
-          {/* Group by */}
-          <Button variant="outline" size="sm">
-            <Users className="h-4 w-4 mr-2" />
-            Grouper: {groupBy}
-            <ChevronDown className="h-3 w-3 ml-1" />
-          </Button>
-
-          {/* Filters */}
           <Button variant="outline" size="sm">
             <Filter className="h-4 w-4 mr-2" />
             Filtres
           </Button>
 
-          {/* Export */}
           <Button variant="outline" size="sm">
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
 
-          {/* Refresh */}
           <Button variant="outline" size="sm">
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -251,292 +339,153 @@ export function BlockedKanbanView({ className }: BlockedKanbanViewProps) {
       </div>
 
       {/* Kanban Board */}
-      {viewMode === 'kanban' && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="grid grid-cols-6 gap-4">
-          {KANBAN_COLUMNS.map(column => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              dossiers={dossiersByColumn[column.id]}
-              stats={columnStats[column.id]}
-              onOpenDetails={(dossierId) => openModal('dossier-detail-enriched', { dossierId })}
-              onOpenResolution={(dossier) => openModal('resolution-advanced', { dossier })}
-            />
-          ))}
-          </div>
+      <div className="grid grid-cols-6 gap-4 overflow-x-auto pb-4">
+        {Object.entries(COLUMN_CONFIG).map(([columnKey, config]) => {
+          const column = columnKey as KanbanColumn;
+          const columnDossiers = dossiersByColumn[column];
+          const stats = columnStats[column];
+          const isDraggedOver = draggedOverColumn === column;
 
-          {/* Drag Overlay */}
-          <DragOverlay>
-            {activeDossier && (
-              <DossierCard dossier={activeDossier} isDragging />
-            )}
-          </DragOverlay>
-        </DndContext>
-      )}
+          return (
+            <div
+              key={column}
+              className={cn(
+                'flex-shrink-0 w-full min-w-[280px] bg-slate-900/50 border rounded-lg p-3 transition-all',
+                isDraggedOver
+                  ? 'border-blue-500 border-2 bg-blue-500/10'
+                  : 'border-slate-800'
+              )}
+              onDragOver={(e) => handleDragOver(e, column)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, column)}
+            >
+              {/* Column Header */}
+              <div className={cn('flex items-center justify-between mb-3 p-2 rounded-lg', config.color)}>
+                <div className="flex items-center gap-2">
+                  {config.icon}
+                  <div>
+                    <div className="font-semibold text-sm">{config.label}</div>
+                    <div className="text-xs opacity-80">{config.description}</div>
+                  </div>
+                </div>
+                <Badge variant="outline" className="bg-slate-900/50 border-slate-700 text-white">
+                  {stats.count}
+                </Badge>
+              </div>
 
-      {/* List View */}
-      {viewMode === 'list' && (
-        <div className="bg-slate-900/50 border border-slate-800 rounded-lg overflow-hidden">
-          <div className="divide-y divide-slate-800">
-            {filteredDossiers.map(dossier => (
-              <DossierListItem key={dossier.id} dossier={dossier} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+              {/* Column Stats */}
+              {stats.totalAmount > 0 && (
+                <div className="mb-3 text-xs text-slate-400 flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" />
+                  <span>{formatAmount(stats.totalAmount)} FCFA</span>
+                </div>
+              )}
 
-// ================================
-// Colonne Kanban
-// ================================
-function KanbanColumn({ 
-  column, 
-  dossiers, 
-  stats,
-  onOpenDetails,
-  onOpenResolution,
-}: { 
-  column: KanbanColumn; 
-  dossiers: BlockedDossier[];
-  stats: { count: number; totalAmount: number };
-  onOpenDetails: (dossierId: string) => void;
-  onOpenResolution: (dossier: BlockedDossier) => void;
-}) {
-  const { setNodeRef } = useSortable({
-    id: column.id,
-    data: { type: 'column' },
-  });
+              {/* Cards */}
+              <div className="space-y-2 min-h-[200px]">
+                {columnDossiers.map((dossier) => {
+                  const isDragged = draggedDossier === dossier.id;
 
-  const Icon = column.icon;
+                  return (
+                    <div
+                      key={dossier.id}
+                      draggable
+                      onDragStart={() => handleDragStart(dossier.id)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleOpenDetails(dossier)}
+                      className={cn(
+                        'bg-slate-800/50 border rounded-lg p-3 cursor-pointer hover:bg-slate-800 hover:border-slate-700 transition-all group',
+                        isDragged && 'opacity-50 scale-95',
+                        viewMode === 'compact' ? 'p-2' : 'p-3'
+                      )}
+                    >
+                      {/* Drag handle */}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-white text-sm truncate">
+                              {dossier.reference}
+                            </span>
+                            <Badge
+                              className={cn('text-xs h-4', getImpactColor(dossier.impactLevel || 'medium'))}
+                            >
+                              {dossier.impactLevel || 'medium'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-400 line-clamp-2 mb-2">
+                            {dossier.description}
+                          </p>
+                        </div>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Move className="h-4 w-4 text-slate-500" />
+                        </div>
+                      </div>
 
-  return (
-    <div
-      ref={setNodeRef}
-      className="flex flex-col h-[calc(100vh-280px)]"
-    >
-      {/* Header */}
-      <div className={cn(
-        'p-3 rounded-t-lg border-t-4 bg-slate-900/50',
-        `border-${column.color.split('-')[1]}-500`
-      )}>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 text-slate-400" />
-            <h3 className="font-medium text-white">{column.title}</h3>
-          </div>
-          <Badge variant="secondary" className="text-xs">
-            {stats.count}
-          </Badge>
-        </div>
-        {stats.totalAmount > 0 && (
-          <div className="text-xs text-slate-500">
-            {(stats.totalAmount / 1000000).toFixed(1)}M FCFA
-          </div>
-        )}
-      </div>
+                      {/* Metadata */}
+                      {viewMode === 'extended' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1 text-slate-400">
+                              <Building2 className="h-3 w-3" />
+                              <span>{dossier.bureau}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-orange-400">
+                              <Clock className="h-3 w-3" />
+                              <span>{dossier.delayDays}j</span>
+                            </div>
+                          </div>
 
-      {/* Dossiers */}
-      <div className="flex-1 overflow-y-auto bg-slate-900/30 border border-t-0 border-slate-800 rounded-b-lg p-2 space-y-2">
-        <SortableContext
-          items={dossiers.map(d => d.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {dossiers.map(dossier => (
-            <SortableDossierCard 
-              key={dossier.id} 
-              dossier={dossier}
-              onOpenDetails={() => onOpenDetails(dossier.id)}
-              onOpenResolution={() => onOpenResolution(dossier)}
-            />
-          ))}
-        </SortableContext>
+                          {dossier.relatedDocument?.amount && (
+                            <div className="flex items-center gap-1 text-xs text-green-400">
+                              <DollarSign className="h-3 w-3" />
+                              <span>{formatAmount(dossier.relatedDocument.amount)} FCFA</span>
+                            </div>
+                          )}
 
-        {dossiers.length === 0 && (
-          <div className="text-center py-8 text-slate-500 text-sm">
-            Aucun dossier
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+                          {/* SLA indicator */}
+                          {dossier.delayDays >= 7 && (
+                            <div className="flex items-center gap-1 text-xs text-red-400">
+                              <AlertTriangle className="h-3 w-3" />
+                              <span>SLA dépassé</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-// ================================
-// Carte Dossier Sortable
-// ================================
-function SortableDossierCard({ 
-  dossier,
-  onOpenDetails,
-  onOpenResolution,
-}: { 
-  dossier: BlockedDossier;
-  onOpenDetails: () => void;
-  onOpenResolution: () => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: dossier.id });
+                      {/* Quick actions (hover) */}
+                      {viewMode === 'extended' && (
+                        <div className="mt-2 pt-2 border-t border-slate-700 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                            <Eye className="h-3 w-3 mr-1" />
+                            Détails
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+                {/* Empty state */}
+                {columnDossiers.length === 0 && (
+                  <div className="text-center py-8 text-slate-500 text-sm">
+                    <p>Aucun dossier</p>
+                  </div>
+                )}
 
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-    >
-      <DossierCard dossier={dossier} />
-    </div>
-  );
-}
-
-// ================================
-// Carte Dossier
-// ================================
-function DossierCard({ 
-  dossier, 
-  isDragging = false 
-}: { 
-  dossier: BlockedDossier;
-  isDragging?: boolean;
-}) {
-  const getImpactColor = (impact: string) => {
-    switch (impact) {
-      case 'critical': return 'bg-red-500/10 text-red-400 border-red-500/30';
-      case 'high': return 'bg-orange-500/10 text-orange-400 border-orange-500/30';
-      case 'medium': return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
-      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/30';
-    }
-  };
-
-  return (
-    <div
-      className={cn(
-        'bg-slate-800 border border-slate-700 rounded-lg p-3 cursor-move hover:bg-slate-700/50 transition-colors',
-        isDragging && 'shadow-xl shadow-blue-500/20 rotate-2'
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="text-xs font-mono text-slate-400">{dossier.reference}</span>
-        <Badge className={getImpactColor(dossier.impactLevel)} size="sm">
-          {dossier.impactLevel}
-        </Badge>
-      </div>
-
-      {/* Description */}
-      <p className="text-sm text-white mb-3 line-clamp-2">
-        {dossier.description}
-      </p>
-
-      {/* Meta */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <Building2 className="h-3 w-3" />
-          <span>{dossier.bureau}</span>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <Clock className="h-3 w-3" />
-          <span>{dossier.delayDays}j de retard</span>
-        </div>
-
-        {dossier.relatedDocument?.amount && (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <DollarSign className="h-3 w-3" />
-            <span>{(dossier.relatedDocument.amount / 1000000).toFixed(1)}M FCFA</span>
-          </div>
-        )}
-      </div>
-
-      {/* Actions rapides (au hover) */}
-      <div className="mt-3 pt-3 border-t border-slate-700 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs">
-          <Eye className="h-3 w-3 mr-1" />
-          Voir
-        </Button>
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs">
-          <Zap className="h-3 w-3 mr-1" />
-          Résoudre
-        </Button>
+                {/* Drop zone indicator */}
+                {isDraggedOver && columnDossiers.length === 0 && (
+                  <div className="border-2 border-dashed border-blue-500 rounded-lg p-4 text-center text-blue-400 text-sm">
+                    Déposer ici
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
-
-// ================================
-// Item Liste
-// ================================
-function DossierListItem({ dossier }: { dossier: BlockedDossier }) {
-  const getImpactColor = (impact: string) => {
-    switch (impact) {
-      case 'critical': return 'bg-red-500/10 text-red-400 border-red-500/30';
-      case 'high': return 'bg-orange-500/10 text-orange-400 border-orange-500/30';
-      case 'medium': return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
-      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/30';
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-4 p-4 hover:bg-slate-800/30 transition-colors cursor-pointer">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-medium text-white">{dossier.reference}</span>
-          <Badge className={getImpactColor(dossier.impactLevel)} size="sm">
-            {dossier.impactLevel}
-          </Badge>
-        </div>
-        <p className="text-sm text-slate-400 truncate">{dossier.description}</p>
-      </div>
-
-      <div className="flex items-center gap-4 text-sm text-slate-400">
-        <div className="flex items-center gap-1">
-          <Building2 className="h-3.5 w-3.5" />
-          {dossier.bureau}
-        </div>
-        <div className="flex items-center gap-1">
-          <Clock className="h-3.5 w-3.5" />
-          {dossier.delayDays}j
-        </div>
-        {dossier.relatedDocument?.amount && (
-          <div className="flex items-center gap-1">
-            <DollarSign className="h-3.5 w-3.5" />
-            {(dossier.relatedDocument.amount / 1000000).toFixed(1)}M
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline">
-          <Eye className="h-3.5 w-3.5 mr-1.5" />
-          Voir
-        </Button>
-        <Button size="sm" variant="outline">
-          <Zap className="h-3.5 w-3.5 mr-1.5" />
-          Résoudre
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// Missing imports for icons
-import { TrendingUp, CheckCircle, Lock } from 'lucide-react';

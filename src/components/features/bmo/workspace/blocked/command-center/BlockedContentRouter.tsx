@@ -53,6 +53,7 @@ import {
   BlockedTypeDistributionChart,
 } from '../analytics/BlockedAnalyticsCharts';
 import { BlockedKanbanView } from '../views/BlockedKanbanView';
+import { BlockedDetailModal, useBlockedListNavigation } from '../BlockedDetailModal';
 
 // Utility: Convert store filters to API filters
 function convertFiltersToApi(filters: {
@@ -163,6 +164,15 @@ export function BlockedContentRouter() {
 function OverviewView() {
   const { stats, navigate, openModal } = useBlockedCommandCenterStore();
   const { data, loading } = useBlockedData();
+
+  // Hook de navigation pour modal overlay
+  const {
+    selectedId,
+    handleOpen,
+    handleClose,
+    handleNext,
+    handlePrevious,
+  } = useBlockedListNavigation(data);
 
   // KPIs principaux
   const kpis = [
@@ -332,7 +342,7 @@ function OverviewView() {
               criticalDossiers.map((dossier) => (
                 <button
                   key={dossier.id}
-                  onClick={() => openModal('decision-center', { dossier })}
+                  onClick={() => handleOpen(dossier.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 transition-colors text-left"
                 >
                   <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse flex-shrink-0" />
@@ -451,7 +461,7 @@ function OverviewView() {
             {recentDossiers.map((dossier) => (
               <button
                 key={dossier.id}
-                onClick={() => openModal('decision-center', { dossier })}
+                onClick={() => handleOpen(dossier.id)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800/40 transition-colors text-left"
               >
                 <div
@@ -563,6 +573,27 @@ function OverviewView() {
           </div>
         </div>
       </section>
+
+      {/* Modal Detail */}
+      <BlockedDetailModal
+        dossiers={data}
+        selectedId={selectedId}
+        onClose={handleClose}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        onResolve={(id) => {
+          // TODO: Implémenter résolution
+          handleClose();
+        }}
+        onEscalade={(id) => {
+          openModal('decision-center', { dossier: data.find((d) => d.id === id) });
+          handleClose();
+        }}
+        onSubstitute={(id) => {
+          // TODO: Implémenter substitution
+          handleClose();
+        }}
+      />
     </div>
   );
 }
@@ -570,6 +601,15 @@ function OverviewView() {
 function QueueView() {
   const { navigation, stats, navigate, openModal } = useBlockedCommandCenterStore();
   const { data, loading } = useBlockedData();
+
+  // Hook de navigation pour modal overlay
+  const {
+    selectedId,
+    handleOpen,
+    handleClose,
+    handleNext,
+    handlePrevious,
+  } = useBlockedListNavigation(data);
 
   // Filtrer selon le sous-onglet
   const filteredDossiers = data.filter(d => {
@@ -623,7 +663,7 @@ function QueueView() {
             filteredDossiers.map((dossier) => (
               <button
                 key={dossier.id}
-                onClick={() => openModal('decision-center', { dossier })}
+                onClick={() => handleOpen(dossier.id)}
                 className="w-full flex items-center gap-4 px-4 py-4 hover:bg-slate-800/40 transition-colors text-left"
               >
                 <div
@@ -679,6 +719,27 @@ function QueueView() {
           )}
         </div>
       </section>
+
+      {/* Modal Detail */}
+      <BlockedDetailModal
+        dossiers={filteredDossiers}
+        selectedId={selectedId}
+        onClose={handleClose}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        onResolve={(id) => {
+          // TODO: Implémenter résolution
+          handleClose();
+        }}
+        onEscalade={(id) => {
+          openModal('decision-center', { dossier: filteredDossiers.find((d) => d.id === id) });
+          handleClose();
+        }}
+        onSubstitute={(id) => {
+          // TODO: Implémenter substitution
+          handleClose();
+        }}
+      />
     </div>
   );
 }
@@ -687,6 +748,15 @@ function CriticalView() {
   const { stats, navigate, openModal } = useBlockedCommandCenterStore();
   const { data, loading } = useBlockedData();
   const criticalDossiers = data.filter(d => d.impact === 'critical');
+
+  // Hook de navigation pour modal overlay
+  const {
+    selectedId,
+    handleOpen,
+    handleClose,
+    handleNext,
+    handlePrevious,
+  } = useBlockedListNavigation(criticalDossiers);
 
   return (
     <div className="p-6 space-y-6 max-w-[1800px] mx-auto">
@@ -753,7 +823,7 @@ function CriticalView() {
             criticalDossiers.map((dossier) => (
               <button
                 key={dossier.id}
-                onClick={() => openModal('decision-center', { dossier })}
+                onClick={() => handleOpen(dossier.id)}
                 className="w-full flex items-center gap-4 px-4 py-4 hover:bg-slate-800/40 transition-colors text-left"
               >
                 <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse flex-shrink-0" />
@@ -782,6 +852,27 @@ function CriticalView() {
           )}
         </div>
       </section>
+
+      {/* Modal Detail */}
+      <BlockedDetailModal
+        dossiers={criticalDossiers}
+        selectedId={selectedId}
+        onClose={handleClose}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        onResolve={(id) => {
+          // TODO: Implémenter résolution
+          handleClose();
+        }}
+        onEscalade={(id) => {
+          openModal('decision-center', { dossier: criticalDossiers.find((d) => d.id === id) });
+          handleClose();
+        }}
+        onSubstitute={(id) => {
+          // TODO: Implémenter substitution
+          handleClose();
+        }}
+      />
     </div>
   );
 }
@@ -1096,6 +1187,15 @@ function TimelineView() {
   // Trier par date (simulé avec l'ID)
   const sortedDossiers = [...data].slice(0, 10);
 
+  // Hook de navigation pour modal overlay
+  const {
+    selectedId,
+    handleOpen,
+    handleClose,
+    handleNext,
+    handlePrevious,
+  } = useBlockedListNavigation(sortedDossiers);
+
   return (
     <div className="p-6 space-y-6 max-w-[1800px] mx-auto">
       <div className="flex items-center justify-between">
@@ -1119,7 +1219,7 @@ function TimelineView() {
             {sortedDossiers.map((dossier, index) => (
               <button
                 key={dossier.id}
-                onClick={() => openModal('decision-center', { dossier })}
+                onClick={() => handleOpen(dossier.id)}
                 className="relative flex items-start gap-4 pl-10 text-left hover:bg-slate-800/20 rounded-lg p-2 -ml-2 transition-colors w-full"
               >
                 {/* Timeline dot */}
@@ -1157,6 +1257,27 @@ function TimelineView() {
           </div>
         </div>
       </section>
+
+      {/* Modal Detail */}
+      <BlockedDetailModal
+        dossiers={sortedDossiers}
+        selectedId={selectedId}
+        onClose={handleClose}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        onResolve={(id) => {
+          // TODO: Implémenter résolution
+          handleClose();
+        }}
+        onEscalade={(id) => {
+          openModal('decision-center', { dossier: sortedDossiers.find((d) => d.id === id) });
+          handleClose();
+        }}
+        onSubstitute={(id) => {
+          // TODO: Implémenter substitution
+          handleClose();
+        }}
+      />
     </div>
   );
 }

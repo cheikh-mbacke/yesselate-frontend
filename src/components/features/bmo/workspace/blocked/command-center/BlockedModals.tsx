@@ -69,18 +69,13 @@ export function BlockedModals() {
     return <SettingsModal onClose={closeModal} />;
   }
 
-  // Dossier Detail Modal (Simple - legacy)
-  if (modal.type === 'dossier-detail') {
-    return <DossierDetailModal onClose={closeModal} data={modal.data} />;
-  }
-
-  // Dossier Detail Modal Enriched (NEW - 7 tabs ultra-detailed)
-  if (modal.type === 'dossier-detail-enriched') {
+  // Dossier Detail Modal (Enriched - 7 tabs ultra-detailed)
+  if (modal.type === 'dossier-detail' || modal.type === 'dossier-detail-enriched') {
     return (
       <BlockedDossierDetailsModal
         open={true}
         onClose={closeModal}
-        dossierId={modal.data.dossierId as string}
+        dossierId={(modal.data?.dossierId || modal.data?.dossier?.id) as string}
       />
     );
   }
@@ -91,7 +86,8 @@ export function BlockedModals() {
       <BlockedResolutionModal
         open={true}
         onClose={closeModal}
-        dossier={modal.data.dossier as any}
+        dossier={modal.data?.dossier as any}
+        preselectedType={modal.data?.preselectedType as any}
       />
     );
   }

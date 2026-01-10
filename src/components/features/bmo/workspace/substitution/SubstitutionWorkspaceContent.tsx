@@ -5,6 +5,7 @@ import { useSubstitutionWorkspaceStore } from '@/lib/stores/substitutionWorkspac
 import { substitutionApiService, type Substitution } from '@/lib/services/substitutionApiService';
 import { FileText, Calendar, Users, History, BarChart3, Search, ChevronRight, Eye, Star, StarOff, RefreshCw, Zap, Clock, Building2, User, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SubstitutionDetailModal } from '@/components/features/bmo/substitution/modals';
 
 const STATUS_STYLES = {
   active: { border: 'border-l-blue-500', badge: 'bg-blue-500/20 text-blue-600' },
@@ -21,12 +22,14 @@ const URGENCY_STYLES = {
 };
 
 export function SubstitutionWorkspaceContent() {
-  const { tabs, activeTabId, openTab, currentFilter, watchlist, addToWatchlist, removeFromWatchlist } = useSubstitutionWorkspaceStore();
+  const { tabs, activeTabId, currentFilter, watchlist, addToWatchlist, removeFromWatchlist } = useSubstitutionWorkspaceStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedSubstitutionId, setSelectedSubstitutionId] = useState<string | null>(null);
 
   const queue = activeTab?.data?.queue as string | undefined;
 
@@ -47,7 +50,8 @@ export function SubstitutionWorkspaceContent() {
   }, [currentFilter, queue, searchQuery]);
 
   const handleOpenDetail = (sub: Substitution) => {
-    openTab({ type: 'detail', id: `detail:${sub.id}`, title: sub.ref, icon: '🔄', data: { substitutionId: sub.id } });
+    setSelectedSubstitutionId(sub.id);
+    setDetailModalOpen(true);
   };
 
   const handleToggleWatchlist = (e: React.MouseEvent, subId: string) => {
@@ -61,10 +65,22 @@ export function SubstitutionWorkspaceContent() {
   if (activeTab.type === 'delegations') return <PlaceholderView icon={<Users className="w-12 h-12" />} title="Délégations actives" />;
   if (activeTab.type === 'historique') return <PlaceholderView icon={<History className="w-12 h-12" />} title="Historique des substitutions" />;
   if (activeTab.type === 'analytics') return <PlaceholderView icon={<BarChart3 className="w-12 h-12" />} title="Analytics" />;
-  if (activeTab.type === 'detail') return <PlaceholderView icon={<FileText className="w-12 h-12" />} title="Détail de la substitution" />;
 
   return (
-    <div className="space-y-4">
+    <>
+      {/* Detail Modal Overlay */}
+      {selectedSubstitutionId && (
+        <SubstitutionDetailModal
+          open={detailModalOpen}
+          onClose={() => {
+            setDetailModalOpen(false);
+            setSelectedSubstitutionId(null);
+          }}
+          substitutionId={selectedSubstitutionId}
+        />
+      )}
+
+      <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -140,7 +156,8 @@ export function SubstitutionWorkspaceContent() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -1,7 +1,25 @@
 'use client';
 
+/**
+ * Centre de Commandement Alertes & Risques - Version 2.0
+ * Plateforme de surveillance et gestion des alertes
+ * Architecture identique à Gouvernance/Analytics avec sidebar collapsible
+ */
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlertWorkspaceStore } from '@/lib/stores/alertWorkspaceStore';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+
+import {
+  AlertsCommandSidebar,
+  AlertsSubNavigation,
+  AlertsKPIBar,
+  alertsCategories,
+  alertsSubCategoriesMap,
+  alertsFiltersMap,
+} from '@/components/features/bmo/alerts/command-center';
 
 import { AlertWorkspaceTabs } from '@/components/features/alerts/workspace/AlertWorkspaceTabs';
 import { AlertWorkspaceContent } from '@/components/features/alerts/workspace/AlertWorkspaceContent';
@@ -18,10 +36,21 @@ import {
   ResolveModal,
   EscalateModal,
 } from '@/components/features/alerts/workspace/AlertWorkflowModals';
+import { CommentModal } from '@/components/features/alerts/workspace/CommentModal';
+import { AssignModal } from '@/components/features/alerts/workspace/AssignModal';
+import { AlertsHelpModal } from '@/components/features/alerts/modals/AlertsHelpModal';
+import {
+  AlertsTrendChart,
+  AlertsSeverityChart,
+  AlertsResponseTimeChart,
+  AlertsCategoryChart,
+  AlertsResolutionRateChart,
+  AlertsStatusChart,
+  AlertsTeamPerformanceChart,
+} from '@/components/features/alerts/analytics/AlertsAnalyticsCharts';
 
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { FluentButton } from '@/components/ui/fluent-button';
-import { Button } from '@/components/ui/button';
 
 import {
   AlertTriangle,
@@ -35,25 +64,35 @@ import {
   Keyboard,
   Shield,
   CheckCircle,
-  LayoutDashboard,
-  FolderOpen,
-  Settings,
-  History,
-  Star,
   ChevronRight,
-  Users,
-  Calendar,
+  ChevronLeft,
   Brain,
   Workflow,
-  Plus,
-  Target,
-  XCircle,
   Bell,
-  Zap,
+  MoreHorizontal,
+  Plus,
+  Settings,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { alertsAPI } from '@/lib/api/pilotage/alertsClient';
-import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
+import {
+  useAlertTimeline,
+  useAlertStats,
+  useAcknowledgeAlert,
+  useResolveAlert,
+  useEscalateAlert,
+} from '@/lib/api/hooks';
+import { useAlertsWebSocket } from '@/lib/api/websocket/useAlertsWebSocket';
+import { useCurrentUser } from '@/lib/auth/useCurrentUser';
+import { BatchActionsBar } from '@/components/features/bmo/alerts/BatchActionsBar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // ================================
 // Types
@@ -71,88 +110,11 @@ interface AlertStats {
   avgResolutionTime: number;
 }
 
-type ViewMode = 'dashboard' | 'workspace';
-type DashboardTab = 'overview' | 'categories' | 'rules' | 'history' | 'favorites';
 type LoadReason = 'init' | 'manual' | 'auto';
-
-interface UIState {
-  viewMode: ViewMode;
-  dashboardTab: DashboardTab;
-  autoRefresh: boolean;
-  refreshInterval: number;
-}
-
-const UI_PREF_KEY = 'bmo.alerts.ui.v2';
-const DISMISSED_KEY = 'bmo.alerts.dismissed.v1';
-
-// ================================
-// Semantic colors
-// ================================
-const STATUS_ICON_COLORS = {
-  critical: 'text-rose-500',
-  warning: 'text-amber-500',
-  info: 'text-blue-500',
-  success: 'text-emerald-500',
-  neutral: 'text-slate-400',
-} as const;
-
-const BG_STATUS = {
-  critical: 'bg-rose-50 dark:bg-rose-950/30 border-rose-200/50 dark:border-rose-800/30',
-  warning: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200/50 dark:border-amber-800/30',
-  info: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200/50 dark:border-blue-800/30',
-  success: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200/50 dark:border-emerald-800/30',
-  neutral: 'bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50',
-} as const;
 
 // ================================
 // Helpers
 // ================================
-function readUIState(): UIState | null {
-  try {
-    const raw = localStorage.getItem(UI_PREF_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<UIState>;
-    return {
-      viewMode: p.viewMode === 'workspace' ? 'workspace' : 'dashboard',
-      dashboardTab: ['categories', 'rules', 'history', 'favorites'].includes(p.dashboardTab as string)
-        ? p.dashboardTab as DashboardTab
-        : 'overview',
-      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
-      refreshInterval: typeof p.refreshInterval === 'number' && p.refreshInterval >= 5000 ? p.refreshInterval : 30000,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeUIState(s: UIState) {
-  try {
-    localStorage.setItem(UI_PREF_KEY, JSON.stringify(s));
-  } catch {
-    // no-op
-  }
-}
-
-function readDismissed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.map(String));
-  } catch {
-    return new Set();
-  }
-}
-
-function writeDismissed(set: Set<string>) {
-  try {
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(set)));
-  } catch {
-    // no-op
-  }
-}
-
 function useInterval(fn: () => void, delay: number | null): void {
   const ref = useRef(fn);
   useEffect(() => { ref.current = fn; }, [fn]);
@@ -167,14 +129,24 @@ function useInterval(fn: () => void, delay: number | null): void {
 // Main Component
 // ================================
 function AlertsPageContent() {
-  const { tabs, openTab } = useAlertWorkspaceStore();
+  const { tabs, openTab, selectedAlertIds, clearSelection } = useAlertWorkspaceStore();
   const toast = useAlertToast();
+  
+  // Obtenir l'utilisateur courant
+  const { user, can } = useCurrentUser();
 
-  // UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(30000);
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
 
   // Dismissed banners
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
@@ -182,7 +154,6 @@ function AlertsPageContent() {
   // Stats
   const [stats, setStats] = useState<AlertStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
 
   // Modals
   const [showDirectionPanel, setShowDirectionPanel] = useState(false);
@@ -196,58 +167,125 @@ function AlertsPageContent() {
   const [ackOpen, setAckOpen] = useState(false);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [escalateOpen, setEscalateOpen] = useState(false);
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+
+  // Navigation entre alertes (J/K keys)
+  const [currentAlertIndex, setCurrentAlertIndex] = useState(0);
+  const [visibleAlerts, setVisibleAlerts] = useState<any[]>([]);
+
+  // Navigation history
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
 
   const abortStatsRef = useRef<AbortController | null>(null);
 
-  // API data
+  // React Query hooks
   const {
     data: timelineData,
     isLoading: timelineLoading,
     error: timelineError,
     refetch: refetchTimeline,
-  } = useApiQuery(async (_signal: AbortSignal) => alertsAPI.getTimeline({ days: 7 }), []);
+  } = useAlertTimeline({ days: 7 });
+
+  const {
+    data: statsQueryData,
+    isLoading: statsQueryLoading,
+    refetch: refetchStatsQuery,
+  } = useAlertStats();
+
+  // Mutations
+  const acknowledgeAlertMutation = useAcknowledgeAlert();
+  const resolveAlertMutation = useResolveAlert();
+  const escalateAlertMutation = useEscalateAlert();
+
+  // WebSocket pour notifications en temps réel
+  const { isConnected: wsConnected, lastNotification } = useAlertsWebSocket({
+    enableBrowserNotifications: user?.preferences?.notifications?.browser ?? true,
+    enableSound: user?.preferences?.notifications?.sound ?? true,
+    criticalOnly: false,
+  });
+
+  // Gérer les notifications WebSocket
+  useEffect(() => {
+    if (lastNotification) {
+      const { alert, type } = lastNotification;
+      
+      // Toast pour toutes les nouvelles alertes
+      if (type === 'alert.created' || type === 'alert.critical') {
+        toast.info(
+          'Nouvelle alerte',
+          `${alert.title} (${alert.severity})`,
+          {
+            duration: alert.severity === 'critical' ? 10000 : 5000,
+          }
+        );
+      }
+      
+      // Rafraîchir les stats automatiquement
+      refetchStatsQuery();
+    }
+  }, [lastNotification, toast, refetchStatsQuery]);
 
   // ================================
   // Computed values
   // ================================
-  const showDashboard = useMemo(() => viewMode === 'dashboard' || tabs.length === 0, [viewMode, tabs.length]);
+  const currentCategoryLabel = useMemo(() => {
+    return alertsCategories.find((c) => c.id === activeCategory)?.label || 'Alertes';
+  }, [activeCategory]);
 
-  const hasUrgentItems = useMemo(() =>
-    stats && (stats.critical > 0 || stats.escalated > 0),
-    [stats]
-  );
+  const currentSubCategories = useMemo(() => {
+    return alertsSubCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
 
-  const refreshLabel = useMemo(() => {
-    if (!lastRefreshAt) return 'Jamais rafraîchi';
-    const s = Math.floor((Date.now() - lastRefreshAt) / 1000);
-    if (s < 60) return `il y a ${s}s`;
-    const m = Math.floor(s / 60);
-    return `il y a ${m} min`;
-  }, [lastRefreshAt]);
+  const currentFilters = useMemo(() => {
+    const key = `${activeCategory}:${activeSubCategory}`;
+    return alertsFiltersMap[key] || [];
+  }, [activeCategory, activeSubCategory]);
 
-  // Load UI State
-  useEffect(() => {
-    const st = readUIState();
-    if (st) {
-      setViewMode(st.viewMode);
-      setDashboardTab(st.dashboardTab);
-      setAutoRefresh(st.autoRefresh);
-      setRefreshInterval(st.refreshInterval);
-    }
-    setDismissedAlerts(readDismissed());
-  }, []);
+  const hasUrgentItems = useMemo(() => stats && (stats.critical > 0 || stats.escalated > 0), [stats]);
 
-  useEffect(() => {
-    writeUIState({ viewMode, dashboardTab, autoRefresh, refreshInterval });
-  }, [viewMode, dashboardTab, autoRefresh, refreshInterval]);
-
-  useEffect(() => {
-    writeDismissed(dismissedAlerts);
-  }, [dismissedAlerts]);
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
   // ================================
   // Callbacks
   // ================================
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadStats('manual');
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 500);
+  }, []);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    setNavigationHistory((prev) => [...prev, activeCategory]);
+    setActiveCategory(category);
+    setActiveSubCategory('all');
+    setActiveFilter(null);
+  }, [activeCategory]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveFilter(null);
+  }, []);
+
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previousCategory = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((prev) => prev.slice(0, -1));
+      setActiveCategory(previousCategory);
+      setActiveSubCategory('all');
+      setActiveFilter(null);
+    }
+  }, [navigationHistory]);
+
   const openQueue = useCallback(
     (queue: string) => {
       const queueConfig: Record<string, { title: string; icon: string }> = {
@@ -273,25 +311,33 @@ function AlertsPageContent() {
         icon: config.icon,
         data: { queue },
       });
-
-      if (viewMode === 'dashboard') setViewMode('workspace');
     },
-    [openTab, viewMode]
+    [openTab]
   );
 
   const openCommandPalette = useCallback(() => {
     window.dispatchEvent(new CustomEvent('alert:open-command-palette'));
   }, []);
 
-  const closeAllOverlays = useCallback(() => {
-    setShowDirectionPanel(false);
-    setShowExport(false);
-    setShowStats(false);
-    setHelpOpen(false);
-  }, []);
+  const toggleFullscreen = useCallback(() => {
+    if (!isFullscreen) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+    setIsFullscreen(!isFullscreen);
+  }, [isFullscreen]);
 
-  // Load Stats
+  // Load Stats - maintenant on utilise les stats de React Query
   const loadStats = useCallback(async (reason: LoadReason = 'manual') => {
+    // Si on a des stats de React Query, on les utilise
+    if (statsQueryData?.stats) {
+      setStats(statsQueryData.stats);
+      setStatsLoading(false);
+      return;
+    }
+
+    // Sinon, fallback sur le calcul local
     abortStatsRef.current?.abort();
     const ac = new AbortController();
     abortStatsRef.current = ac;
@@ -302,14 +348,20 @@ function AlertsPageContent() {
       const { calculateAlertStats } = await import('@/lib/data/alerts');
       const calculatedStats = calculateAlertStats();
       setStats(calculatedStats);
-      setLastRefreshAt(Date.now());
     } catch (e) {
       console.error('Erreur chargement stats:', e);
       toast.error('Erreur de chargement', 'Impossible de charger les statistiques');
     } finally {
       setStatsLoading(false);
     }
-  }, [toast]);
+  }, [toast, statsQueryData]);
+
+  // Sync stats from React Query
+  useEffect(() => {
+    if (statsQueryData?.stats) {
+      setStats(statsQueryData.stats);
+    }
+  }, [statsQueryData]);
 
   useEffect(() => {
     loadStats('init');
@@ -317,8 +369,8 @@ function AlertsPageContent() {
   }, [loadStats]);
 
   useInterval(
-    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
-    autoRefresh ? refreshInterval : null
+    () => { loadStats('auto'); },
+    30000
   );
 
   // Keyboard shortcuts
@@ -330,485 +382,722 @@ function AlertsPageContent() {
 
       const isMod = e.metaKey || e.ctrlKey;
 
+      // ⌘K - Palette de commandes
       if (isMod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         openCommandPalette();
         return;
       }
 
+      // Escape - Fermer les modales
       if (e.key === 'Escape') {
         e.preventDefault();
-        closeAllOverlays();
+        setShowDirectionPanel(false);
+        setShowExport(false);
+        setShowStats(false);
+        setHelpOpen(false);
+        setDetailOpen(false);
+        setAckOpen(false);
+        setResolveOpen(false);
+        setEscalateOpen(false);
         return;
       }
 
-      if (isMod && e.key === '1') { e.preventDefault(); openQueue('critical'); }
-      if (isMod && e.key === '2') { e.preventDefault(); openQueue('warning'); }
-      if (isMod && e.key === '3') { e.preventDefault(); openQueue('blocked'); }
-      if (isMod && e.key === '4') { e.preventDefault(); openQueue('sla'); }
-      if (isMod && e.key === '5') { e.preventDefault(); openQueue('resolved'); }
+      // Navigation catégories (⌘1-5)
+      if (isMod && e.key === '1') { e.preventDefault(); handleCategoryChange('critical'); }
+      if (isMod && e.key === '2') { e.preventDefault(); handleCategoryChange('warning'); }
+      if (isMod && e.key === '3') { e.preventDefault(); handleCategoryChange('sla'); }
+      if (isMod && e.key === '4') { e.preventDefault(); handleCategoryChange('blocked'); }
+      if (isMod && e.key === '5') { e.preventDefault(); handleCategoryChange('resolved'); }
 
+      // ⌘E - Export
       if (isMod && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         setShowExport(true);
         return;
       }
 
+      // ⌘B - Toggle sidebar
+      if (isMod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((p) => !p);
+        return;
+      }
+
+      // ? - Aide
+      if (e.key === '?' && !isMod) {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+
+      // F1 - Aide
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+
+      // F11 - Plein écran
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+← - Retour
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
+
+      // === NOUVEAUX RACCOURCIS AVANCÉS ===
+
+      // / - Focus recherche
+      if (e.key === '/' && !isMod) {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
+      // A - Acquitter (si une alerte est sélectionnée)
+      if (e.key.toLowerCase() === 'a' && !isMod && selectedAlert) {
+        e.preventDefault();
+        setAckOpen(true);
+        return;
+      }
+
+      // R - Résoudre (si une alerte est sélectionnée)
+      if (e.key.toLowerCase() === 'r' && !isMod && selectedAlert) {
+        e.preventDefault();
+        setResolveOpen(true);
+        return;
+      }
+
+      // E - Escalader (sans Ctrl/Cmd, si une alerte est sélectionnée)
+      if (e.key.toLowerCase() === 'e' && !isMod && selectedAlert) {
+        e.preventDefault();
+        setEscalateOpen(true);
+        return;
+      }
+
+      // N - Nouvelle note / commentaire
+      if (e.key.toLowerCase() === 'n' && !isMod && selectedAlert) {
+        e.preventDefault();
+        setCommentOpen(true);
+        return;
+      }
+
+      // I - Assigner (si une alerte est sélectionnée)
+      if (e.key.toLowerCase() === 'i' && !isMod && selectedAlert && can('alerts.assign')) {
+        e.preventDefault();
+        setAssignOpen(true);
+        return;
+      }
+
+      // J - Alerte suivante (navigation vim-style)
+      if (e.key.toLowerCase() === 'j' && !isMod) {
+        e.preventDefault();
+        if (visibleAlerts.length === 0) {
+          toast.warning('Navigation', 'Aucune alerte disponible');
+          return;
+        }
+        const nextIndex = Math.min(currentAlertIndex + 1, visibleAlerts.length - 1);
+        setCurrentAlertIndex(nextIndex);
+        setSelectedAlert(visibleAlerts[nextIndex]);
+        setDetailOpen(true);
+        toast.success('Navigation', `Alerte ${nextIndex + 1}/${visibleAlerts.length}`);
+        return;
+      }
+
+      // K - Alerte précédente (navigation vim-style)
+      if (e.key.toLowerCase() === 'k' && !isMod) {
+        e.preventDefault();
+        if (visibleAlerts.length === 0) {
+          toast.warning('Navigation', 'Aucune alerte disponible');
+          return;
+        }
+        const prevIndex = Math.max(currentAlertIndex - 1, 0);
+        setCurrentAlertIndex(prevIndex);
+        setSelectedAlert(visibleAlerts[prevIndex]);
+        setDetailOpen(true);
+        toast.success('Navigation', `Alerte ${prevIndex + 1}/${visibleAlerts.length}`);
+        return;
+      }
+
+      // G+A - Go to Active alerts
+      if (e.key.toLowerCase() === 'g' && !isMod) {
+        // Attendre le prochain keystroke
+        const handleSecondKey = (e2: KeyboardEvent) => {
+          if (e2.key.toLowerCase() === 'a') {
+            e2.preventDefault();
+            handleCategoryChange('overview');
+          } else if (e2.key.toLowerCase() === 'c') {
+            e2.preventDefault();
+            handleCategoryChange('critical');
+          } else if (e2.key.toLowerCase() === 'r') {
+            e2.preventDefault();
+            handleCategoryChange('resolved');
+          }
+          window.removeEventListener('keydown', handleSecondKey);
+        };
+        window.addEventListener('keydown', handleSecondKey);
+        setTimeout(() => window.removeEventListener('keydown', handleSecondKey), 2000);
+        return;
+      }
+
+      // ⌘R - Rafraîchir
+      if (isMod && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        handleRefresh();
+        return;
+      }
+
+      // ⌘S - Statistiques
       if (isMod && e.key.toLowerCase() === 's') {
         e.preventDefault();
         setShowStats(true);
         return;
       }
 
-      if (isMod && e.key.toLowerCase() === 'b') {
+      // ⌘D - Direction panel
+      if (isMod && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        setShowDirectionPanel((p) => !p);
-        return;
-      }
-
-      if (e.key === '?' && !isMod) {
-        e.preventDefault();
-        setHelpOpen(true);
+        setShowDirectionPanel(true);
         return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeAllOverlays, openQueue, openCommandPalette]);
+  }, [openCommandPalette, toggleFullscreen, handleGoBack, handleCategoryChange, selectedAlert, toast, handleRefresh]);
 
-  // Dashboard tabs
-  const dashboardTabs = useMemo(() => [
-    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'categories' as DashboardTab, label: 'Par catégorie', icon: FolderOpen },
-    { id: 'rules' as DashboardTab, label: 'Règles', icon: Settings },
-    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
-    { id: 'favorites' as DashboardTab, label: 'Suivis', icon: Star },
-  ], []);
+  // ================================
+  // Render Content based on category
+  // ================================
+  const renderContent = () => {
+    // Si des onglets workspace sont ouverts, afficher le workspace
+    if (tabs.length > 0) {
+      return (
+        <div className="space-y-4">
+          <AlertWorkspaceTabs />
+          <AlertWorkspaceContent />
+        </div>
+      );
+    }
 
-  // Alert categories
-  const categoryStats = useMemo(() => [
-    { id: 'critical', name: 'Critiques', icon: AlertCircle, color: 'rose', description: 'Action immédiate requise' },
-    { id: 'warning', name: 'Avertissements', icon: AlertTriangle, color: 'amber', description: 'Attention requise' },
-    { id: 'blocked', name: 'Bloqués', icon: Shield, color: 'orange', description: 'Dossiers en attente' },
-    { id: 'sla', name: 'SLA dépassés', icon: Clock, color: 'purple', description: 'Délais non respectés' },
-  ], []);
+    // Sinon, afficher le contenu selon la catégorie
+    switch (activeCategory) {
+      case 'overview':
+        return (
+          <div className="space-y-6">
+            {/* Bannière alertes critiques */}
+            <AlertAlertsBanner
+              dismissedIds={dismissedAlerts}
+              onDismiss={(id) => setDismissedAlerts((prev) => new Set(prev).add(id))}
+            />
+
+            {/* Alertes critiques */}
+            {stats && stats.critical > 0 && (
+              <div className="p-4 rounded-lg border bg-red-500/10 border-red-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <div>
+                      <p className="font-medium text-slate-100">
+                        {stats.critical} alerte{stats.critical > 1 ? 's' : ''} critique{stats.critical > 1 ? 's' : ''}
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        Action immédiate requise pour éviter un impact opérationnel ou financier
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => handleCategoryChange('critical')}
+                    className="text-slate-300 hover:text-white"
+                  >
+                    Traiter
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Categories cards */}
+            <section>
+              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
+                Par catégorie
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { id: 'critical', name: 'Critiques', icon: AlertCircle, color: 'red', count: stats?.critical ?? 0 },
+                  { id: 'warning', name: 'Avertissements', icon: AlertTriangle, color: 'amber', count: stats?.warning ?? 0 },
+                  { id: 'sla', name: 'SLA dépassés', icon: Clock, color: 'purple', count: stats?.escalated ?? 0 },
+                  { id: 'blocked', name: 'Bloqués', icon: Shield, color: 'orange', count: 0 },
+                ].map((cat) => {
+                  const Icon = cat.icon;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => handleCategoryChange(cat.id)}
+                      className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-all"
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={cn(
+                          'w-10 h-10 rounded-lg flex items-center justify-center',
+                          `bg-${cat.color}-500/20`
+                        )}>
+                          <Icon className={cn('w-5 h-5', `text-${cat.color}-400`)} />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-200">{cat.name}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={cn(
+                          'text-2xl font-bold',
+                          cat.count > 0 ? `text-${cat.color}-400` : 'text-slate-500'
+                        )}>
+                          {cat.count}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Analytics & Tendances */}
+            <section>
+              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
+                Analytics & Tendances
+              </h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Trend Chart */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Évolution des alertes</h3>
+                  <AlertsTrendChart />
+                </div>
+
+                {/* Severity Distribution */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Répartition par sévérité</h3>
+                  <AlertsSeverityChart />
+                </div>
+
+                {/* Response Time */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Temps de réponse</h3>
+                  <AlertsResponseTimeChart />
+                </div>
+
+                {/* Category Distribution */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Répartition par catégorie</h3>
+                  <AlertsCategoryChart />
+                </div>
+
+                {/* Resolution Rate */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Taux de résolution</h3>
+                  <AlertsResolutionRateChart />
+                </div>
+
+                {/* Status Distribution */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Statut des alertes</h3>
+                  <AlertsStatusChart />
+                </div>
+
+                {/* Team Performance */}
+                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 lg:col-span-2">
+                  <h3 className="text-sm font-medium text-slate-300 mb-3">Performance des équipes</h3>
+                  <AlertsTeamPerformanceChart />
+                </div>
+              </div>
+            </section>
+
+            {/* Outils avancés */}
+            <section>
+              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
+                Outils avancés
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <button
+                  onClick={() => setShowDirectionPanel(true)}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <Activity className="w-5 h-5 text-indigo-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Pilotage</p>
+                  <p className="text-xs text-slate-500">Vue Direction</p>
+                </button>
+                <button
+                  onClick={() => handleCategoryChange('blocked')}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <Shield className="w-5 h-5 text-orange-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Bloqués</p>
+                  <p className="text-xs text-slate-500">Dossiers en attente</p>
+                </button>
+                <button
+                  onClick={() => handleCategoryChange('rules')}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <Workflow className="w-5 h-5 text-purple-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Règles</p>
+                  <p className="text-xs text-slate-500">Configuration</p>
+                </button>
+                <button
+                  onClick={() => {}}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <Brain className="w-5 h-5 text-pink-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Analytics IA</p>
+                  <p className="text-xs text-slate-500">Prédictions</p>
+                </button>
+                <button
+                  onClick={() => setShowStats(true)}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <BarChart3 className="w-5 h-5 text-blue-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Statistiques</p>
+                  <p className="text-xs text-slate-500">Tableaux de bord</p>
+                </button>
+                <button
+                  onClick={() => setShowExport(true)}
+                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
+                >
+                  <Download className="w-5 h-5 text-slate-400 mb-2" />
+                  <p className="font-medium text-sm text-slate-200">Export</p>
+                  <p className="text-xs text-slate-500">Télécharger</p>
+                </button>
+              </div>
+            </section>
+
+            {/* Compteurs détaillés */}
+            <section>
+              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
+                Files de traitement
+              </h2>
+              <AlertLiveCounters onQueueClick={openQueue} compact={false} />
+            </section>
+
+            {/* Bloc gouvernance */}
+            <div className="p-4 rounded-lg border bg-blue-500/10 border-blue-500/30">
+              <div className="flex items-center gap-3">
+                <Shield className="w-6 h-6 text-blue-400 flex-none" />
+                <div className="flex-1">
+                  <h3 className="font-bold text-blue-300">
+                    Gouvernance d'exploitation
+                  </h3>
+                  <p className="text-sm text-slate-400">
+                    Objectif : détecter tôt, prioriser juste, tracer tout. Chaque alerte nécessite une action documentée.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'critical':
+      case 'warning':
+      case 'sla':
+      case 'blocked':
+      case 'acknowledged':
+      case 'resolved':
+        // Ouvrir automatiquement un onglet workspace pour ces catégories
+        if (tabs.length === 0) {
+          openQueue(activeCategory);
+        }
+        return <AlertWorkspaceContent />;
+
+      case 'rules':
+        return (
+          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
+            <h3 className="text-lg font-semibold mb-4 text-slate-200">Règles d'alerte</h3>
+            <p className="text-slate-400 mb-6">Configuration des seuils, escalades et notifications automatiques.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
+                <Settings className="w-6 h-6 text-blue-400 mb-3" />
+                <h4 className="font-medium text-slate-200 mb-1">Seuils</h4>
+                <p className="text-sm text-slate-500">Définir les niveaux d'alerte</p>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
+                <Workflow className="w-6 h-6 text-purple-400 mb-3" />
+                <h4 className="font-medium text-slate-200 mb-1">Escalades</h4>
+                <p className="text-sm text-slate-500">Chaîne de responsabilité</p>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
+                <Bell className="w-6 h-6 text-amber-400 mb-3" />
+                <h4 className="font-medium text-slate-200 mb-1">Notifications</h4>
+                <p className="text-sm text-slate-500">Canaux et fréquence</p>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'history':
+        return (
+          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
+            <h3 className="text-lg font-semibold mb-4 text-slate-200">Historique des alertes</h3>
+            <p className="text-slate-400">Journal des alertes et actions prises.</p>
+          </div>
+        );
+
+      case 'favorites':
+        return (
+          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
+            <h3 className="text-lg font-semibold mb-4 text-slate-200">Alertes suivies</h3>
+            <p className="text-slate-400">Vos alertes épinglées et favoris.</p>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   // ================================
   // Render
   // ================================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <AlertsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          critical: stats?.critical,
+          warning: stats?.warning,
+          sla: stats?.escalated,
+          blocked: 0,
+          acknowledged: stats?.acknowledged,
+          resolved: stats?.resolved,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={openCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
-            <h1 className="font-semibold text-slate-200">Alertes & Risques</h1>
-            {stats && (
-              <span className="text-sm text-slate-400">
-                {stats.critical + stats.warning} actives
-              </span>
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              <h1 className="text-base font-semibold text-slate-200">Alertes & Risques</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+
+            {/* Urgent indicator */}
             {hasUrgentItems && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
                 {stats?.critical} critique{(stats?.critical ?? 0) > 1 ? 's' : ''}
-              </span>
+              </Badge>
             )}
-            <span className="text-xs text-slate-500">{refreshLabel}</span>
-        </div>
+          </div>
 
-          <div className="flex items-center gap-2">
-            <button
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={openCommandPalette}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
-              type="button"
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:inline">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
-            </button>
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-            <button
-              onClick={() => loadStats('manual')}
-              className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800/50 transition-colors"
-              type="button"
-              title="Rafraîchir"
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
             >
-              <RefreshCw className={cn('w-4 h-4 text-slate-400', statsLoading && 'animate-spin')} />
-            </button>
+              <Bell className="h-4 w-4" />
+              {hasUrgentItems && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {stats?.critical}
+                </span>
+              )}
+            </Button>
+
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleRefresh}>
+                  <RefreshCw className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowDirectionPanel(true)}>
+                  <Activity className="h-4 w-4 mr-2" />
+                  Vue Direction
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowExport(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowStats(true)}>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Statistiques
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={toggleFullscreen}>
+                  {isFullscreen ? (
+                    <>
+                      <Minimize2 className="h-4 w-4 mr-2" />
+                      Quitter plein écran
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="h-4 w-4 mr-2" />
+                      Plein écran
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHelpOpen(true)}>
+                  <Keyboard className="h-4 w-4 mr-2" />
+                  Raccourcis (?)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Workspace tabs */}
-        {(viewMode === 'workspace' || tabs.length > 0) && (
-          <div className="mb-6">
-            <AlertWorkspaceTabs />
+        {/* Sub Navigation */}
+        <AlertsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+          filters={currentFilters}
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+        />
+
+        {/* KPI Bar */}
+        <AlertsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          stats={{
+            critical: stats?.critical,
+            warning: stats?.warning,
+            sla: stats?.escalated,
+            blocked: 0,
+            acknowledged: stats?.acknowledged,
+            resolved: stats?.resolved,
+            avgResponseTime: stats?.avgResponseTime,
+            avgResolutionTime: stats?.avgResolutionTime,
+            total: stats?.total,
+          }}
+          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+          onRefresh={handleRefresh}
+          onKPIClick={(kpiId) => {
+            if (['critical', 'warning', 'sla', 'blocked', 'acknowledged', 'resolved'].includes(kpiId)) {
+              handleCategoryChange(kpiId);
+            }
+          }}
+          isRefreshing={isRefreshing}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            {renderContent()}
           </div>
-        )}
-
-        {showDashboard ? (
-          <div className="space-y-8">
-            {/* Navigation dashboard */}
-            <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-              {dashboardTabs.map((t) => {
-                const Icon = t.icon;
-                const isActive = dashboardTab === t.id;
-                return (
-              <button
-                    key={t.id}
-                    onClick={() => setDashboardTab(t.id)}
-                className={cn(
-                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-                      isActive
-                        ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                    )}
-                    type="button"
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-              </button>
-                );
-              })}
-        </nav>
-
-            {/* Dashboard content */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-8">
-                {/* Bannière alertes critiques */}
-                <AlertAlertsBanner
-                  dismissedIds={dismissedAlerts}
-                  onDismiss={(id) => setDismissedAlerts((prev) => new Set(prev).add(id))}
-                />
-
-                {/* Alertes critiques */}
-                {stats && stats.critical > 0 && (
-                  <div className={cn('p-4 rounded-lg border', BG_STATUS.critical)}>
-                    <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-                        <AlertCircle className={cn('w-5 h-5', STATUS_ICON_COLORS.critical)} />
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {stats.critical} alerte{stats.critical > 1 ? 's' : ''} critique{stats.critical > 1 ? 's' : ''}
-                          </p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            Action immédiate requise pour éviter un impact opérationnel ou financier
-                          </p>
-                        </div>
-                      </div>
-            <button
-                        onClick={() => openQueue('critical')}
-                        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                        type="button"
-            >
-                        Traiter
-                        <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-                  </div>
-                )}
-
-                {/* KPIs principaux */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            <button
-                    onClick={() => openQueue('critical')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      stats && stats.critical > 0 ? BG_STATUS.critical : BG_STATUS.neutral
-                    )}
-              type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className={cn('w-4 h-4', stats && stats.critical > 0 ? 'text-rose-500' : 'text-slate-400')} />
-                      <span className="text-sm text-slate-500">Critiques</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.critical ?? '—'}
-                    </p>
-            </button>
-
-              <button
-                    onClick={() => openQueue('warning')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      stats && stats.warning > 0 ? BG_STATUS.warning : BG_STATUS.neutral
-                    )}
-                type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm text-slate-500">Warnings</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.warning ?? '—'}
-                    </p>
-              </button>
-
-                    <button
-                    onClick={() => openQueue('sla')}
-                    className="p-4 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200/50 dark:border-purple-800/30 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-purple-500" />
-                      <span className="text-sm text-slate-500">SLA</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.escalated ?? '—'}
-                    </p>
-                    </button>
-
-                    <button
-                    onClick={() => openQueue('resolved')}
-                    className={cn('p-4 rounded-lg border text-left transition-all hover:shadow-sm', BG_STATUS.success)}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                      <span className="text-sm text-slate-500">Résolues</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.resolved ?? '—'}
-                    </p>
-                    </button>
-
-                    <button
-                    onClick={() => openQueue('acknowledged')}
-                    className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/30 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Bell className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm text-slate-500">Acquittées</span>
-                  </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.acknowledged ?? '—'}
-                    </p>
-                  </button>
-
-                  <div className="p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="w-4 h-4 text-slate-500" />
-                      <span className="text-sm text-slate-500">Total</span>
-            </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {stats?.total ?? '—'}
-                    </p>
-            </div>
-          </div>
-
-                {/* Par catégorie */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Par catégorie
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {categoryStats.map((cat) => {
-                      const Icon = cat.icon;
-                      const count = cat.id === 'critical' ? stats?.critical :
-                                   cat.id === 'warning' ? stats?.warning :
-                                   cat.id === 'sla' ? stats?.escalated : 0;
-                      return (
-                        <button
-                          key={cat.id}
-                          onClick={() => openQueue(cat.id)}
-                          className={cn(
-                            'p-4 rounded-lg border text-left hover:shadow-sm transition-all',
-                            `border-${cat.color}-200/50 dark:border-${cat.color}-800/30`,
-                            `bg-${cat.color}-50/30 dark:bg-${cat.color}-950/20`
-                          )}
-                          type="button"
-                        >
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', `bg-${cat.color}-500/20`)}>
-                              <Icon className={cn('w-5 h-5', `text-${cat.color}-600`)} />
-        </div>
-                    <div>
-                              <p className="font-medium">{cat.name}</p>
-                              <p className="text-xs text-slate-500">{cat.description}</p>
-                    </div>
-                  </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-lg font-semibold">{count ?? 0}</span>
-                </div>
-                        </button>
-                      );
-                    })}
-                </div>
-                </section>
-
-                {/* Outils avancés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Outils avancés
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <button
-                      onClick={() => setShowDirectionPanel(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                    type="button"
-                    >
-                      <Activity className="w-5 h-5 text-indigo-500 mb-2" />
-                      <p className="font-medium text-sm">Pilotage</p>
-                      <p className="text-xs text-slate-500">Vue Direction</p>
-                  </button>
-                  <button
-                    onClick={() => openQueue('blocked')}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Shield className="w-5 h-5 text-orange-500 mb-2" />
-                      <p className="font-medium text-sm">Bloqués</p>
-                      <p className="text-xs text-slate-500">Dossiers en attente</p>
-                  </button>
-                  <button
-                      onClick={() => {}}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                    type="button"
-                    >
-                      <Workflow className="w-5 h-5 text-purple-500 mb-2" />
-                      <p className="font-medium text-sm">Workflow</p>
-                      <p className="text-xs text-slate-500">Processus</p>
-                  </button>
-                  <button
-                      onClick={() => {}}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                    type="button"
-                    >
-                      <Brain className="w-5 h-5 text-pink-500 mb-2" />
-                      <p className="font-medium text-sm">Analytics IA</p>
-                      <p className="text-xs text-slate-500">Prédictions</p>
-                  </button>
-                  <button
-                      onClick={() => setShowStats(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                    type="button"
-                    >
-                      <BarChart3 className="w-5 h-5 text-blue-500 mb-2" />
-                      <p className="font-medium text-sm">Statistiques</p>
-                      <p className="text-xs text-slate-500">Tableaux de bord</p>
-                  </button>
-                  <button
-                      onClick={() => setShowExport(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                    type="button"
-                    >
-                      <Download className="w-5 h-5 text-slate-500 mb-2" />
-                      <p className="font-medium text-sm">Export</p>
-                      <p className="text-xs text-slate-500">Télécharger</p>
-                  </button>
-                </div>
-                </section>
-
-                {/* Compteurs détaillés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Files de traitement
-                  </h2>
-                  <AlertLiveCounters onQueueClick={openQueue} compact={false} />
-                </section>
-
-                {/* Bloc gouvernance */}
-                <div className={cn('p-4 rounded-lg border', BG_STATUS.info)}>
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-6 h-6 text-blue-500 flex-none" />
-                    <div className="flex-1">
-                      <h3 className="font-bold text-blue-700 dark:text-blue-300">
-                        Gouvernance d'exploitation
-                      </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        Objectif : détecter tôt, prioriser juste, tracer tout. Chaque alerte nécessite une action documentée.
-                      </p>
-                    </div>
-                        </div>
-                      </div>
-
-                {/* Astuce raccourcis */}
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
-                  <div className="flex items-center gap-3">
-                    <Keyboard className="w-5 h-5 text-slate-400" />
-                    <p className="text-sm text-slate-400">
-                      <strong className="text-slate-300">Astuce :</strong> utilise{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘1-5</kbd>{' '}
-                      pour les files,{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘K</kbd>{' '}
-                      pour la palette, et{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">?</kbd>{' '}
-                      pour l'aide.
-                    </p>
-                        </div>
-                                    </div>
-                                  </div>
-            )}
-
-            {dashboardTab === 'categories' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {categoryStats.map((cat) => {
-                    const Icon = cat.icon;
-                    const count = cat.id === 'critical' ? stats?.critical :
-                                 cat.id === 'warning' ? stats?.warning :
-                                 cat.id === 'sla' ? stats?.escalated : 0;
-                    return (
-                      <div
-                        key={cat.id}
-                        className="p-6 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50"
-                      >
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', `bg-${cat.color}-500/20`)}>
-                            <Icon className={cn('w-6 h-6', `text-${cat.color}-600`)} />
-                                  </div>
-                          <div>
-                            <h3 className="font-semibold text-lg">{cat.name}</h3>
-                            <p className="text-sm text-slate-500">{count ?? 0} alertes</p>
-                                </div>
-                        </div>
-                        <p className="text-sm text-slate-500 mb-4">{cat.description}</p>
-                        <button
-                          onClick={() => openQueue(cat.id)}
-                          className="w-full py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                          type="button"
-                        >
-                          Voir les alertes
-                        </button>
-                      </div>
-                    );
-                  })}
-                    </div>
-              </div>
-            )}
-
-            {dashboardTab === 'rules' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Règles d'alerte</h3>
-                <p className="text-slate-500">Configuration des seuils, escalades et notifications automatiques.</p>
-                      </div>
-            )}
-
-            {dashboardTab === 'history' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Historique des alertes</h3>
-                <p className="text-slate-500">Journal des alertes et actions prises.</p>
-                        </div>
-            )}
-
-            {dashboardTab === 'favorites' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Alertes suivies</h3>
-                <p className="text-slate-500">Vos alertes épinglées et favoris.</p>
-                  </div>
-            )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {tabs.length > 0 && <AlertWorkspaceTabs />}
-                <AlertWorkspaceContent />
-              </div>
-            )}
         </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats?.total ?? 0} alertes • {stats?.critical ?? 0} critiques • {stats?.resolved ?? 0} résolues
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* WebSocket Status */}
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  wsConnected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'
+                )}
+              />
+              <span className="text-slate-500">
+                {wsConnected ? 'Temps réel actif' : 'Hors ligne'}
+              </span>
+            </div>
+            <span className="text-slate-700">•</span>
+            {/* Sync Status */}
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
 
       {/* Workflow modals */}
       <AlertDetailModal
@@ -826,11 +1115,16 @@ function AlertsPageContent() {
         onConfirm={async (note) => {
           if (!selectedAlert?.id) return;
           try {
-            await alertsAPI.acknowledge(String(selectedAlert.id), { note, userId: 'user-001' });
+            await acknowledgeAlertMutation.mutateAsync({
+              id: String(selectedAlert.id),
+              note,
+              userId: user.id,
+            });
             toast.success('Alerte acquittée', 'Traçabilité enregistrée');
-            refetchTimeline();
+            setAckOpen(false);
+            setDetailOpen(false);
           } catch (e) {
-            toast.error('Erreur', e instanceof Error ? e.message : 'Impossible d'acquitter');
+            toast.error('Erreur', e instanceof Error ? e.message : 'Impossible d\'acquitter');
           }
         }}
       />
@@ -841,14 +1135,16 @@ function AlertsPageContent() {
         onConfirm={async (resolution) => {
           if (!selectedAlert?.id) return;
           try {
-            await alertsAPI.resolve(String(selectedAlert.id), {
+            await resolveAlertMutation.mutateAsync({
+              id: String(selectedAlert.id),
               resolutionType: resolution.type,
               note: resolution.note,
               proof: resolution.proof,
-              userId: 'user-001',
+              userId: user.id,
             });
             toast.success('Alerte résolue', 'Résolution tracée');
-            refetchTimeline();
+            setResolveOpen(false);
+            setDetailOpen(false);
           } catch (e) {
             toast.error('Erreur', e instanceof Error ? e.message : 'Impossible de résoudre');
           }
@@ -861,16 +1157,53 @@ function AlertsPageContent() {
         onConfirm={async (escalation) => {
           if (!selectedAlert?.id) return;
           try {
-            await alertsAPI.escalate(String(selectedAlert.id), {
+            await escalateAlertMutation.mutateAsync({
+              id: String(selectedAlert.id),
               escalateTo: escalation.to,
               reason: escalation.reason,
               priority: escalation.priority,
-              userId: 'user-001',
+              userId: user.id,
             });
             toast.success('Escalade envoyée', 'Notification envoyée');
-            refetchTimeline();
+            setEscalateOpen(false);
+            setDetailOpen(false);
           } catch (e) {
-            toast.error('Erreur', e instanceof Error ? e.message : 'Impossible d'escalader');
+            toast.error('Erreur', e instanceof Error ? e.message : 'Impossible d\'escalader');
+          }
+        }}
+      />
+
+      {/* Comment Modal */}
+      <CommentModal
+        open={commentOpen}
+        onClose={() => setCommentOpen(false)}
+        alert={selectedAlert}
+        onConfirm={async (comment) => {
+          if (!selectedAlert?.id) return;
+          try {
+            console.log('Commentaire ajouté:', comment);
+            toast.success('Commentaire ajouté', 'Votre commentaire a été publié');
+            setCommentOpen(false);
+          } catch (error) {
+            toast.error('Erreur', 'Échec de l\'ajout du commentaire');
+          }
+        }}
+      />
+
+      {/* Assign Modal */}
+      <AssignModal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        alert={selectedAlert}
+        onConfirm={async (userId, note) => {
+          if (!selectedAlert?.id) return;
+          try {
+            console.log('Alerte assignée à:', userId, 'Note:', note);
+            toast.success('Alerte assignée', `Alerte assignée avec succès`);
+            setAssignOpen(false);
+            setSelectedAlert(null);
+          } catch (error) {
+            toast.error('Erreur', 'Échec de l\'assignation');
           }
         }}
       />
@@ -888,53 +1221,156 @@ function AlertsPageContent() {
       <AlertStatsModal open={showStats} onClose={() => setShowStats(false)} />
 
       {/* Help Modal */}
-      <FluentModal open={helpOpen} onClose={() => setHelpOpen(false)} title="Raccourcis clavier" maxWidth="2xl">
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-200 mb-2">Navigation</h3>
-            <div className="space-y-2">
-              {[
-                { key: '⌘1', action: 'Alertes critiques' },
-                { key: '⌘2', action: 'Avertissements' },
-                { key: '⌘3', action: 'Dossiers bloqués' },
-                { key: '⌘4', action: 'SLA dépassés' },
-                { key: '⌘5', action: 'Alertes résolues' },
-                { key: '⌘K', action: 'Palette de commandes' },
-              ].map(({ key, action }) => (
-                <div key={key} className="flex items-center justify-between py-1.5 text-sm">
-                  <span className="text-slate-400">{action}</span>
-                  <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">{key}</kbd>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Help Modal */}
+      <AlertsHelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
 
-          <div>
-            <h3 className="text-sm font-semibold text-slate-200 mb-2">Actions</h3>
-            <div className="space-y-2">
-              {[
-                { key: '⌘E', action: 'Exporter' },
-                { key: '⌘S', action: 'Statistiques' },
-                { key: '⌘B', action: 'Toggle panneau pilotage' },
-                { key: '?', action: 'Aide' },
-                { key: 'Esc', action: 'Fermer modales' },
-              ].map(({ key, action }) => (
-                <div key={key} className="flex items-center justify-between py-1.5 text-sm">
-                  <span className="text-slate-400">{action}</span>
-                  <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">{key}</kbd>
-            </div>
-              ))}
-            </div>
-          </div>
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
+      )}
 
-          <div className="pt-2">
-            <FluentButton variant="primary" onClick={() => setHelpOpen(false)}>
-              Fermer
-            </FluentButton>
-          </div>
-        </div>
-      </FluentModal>
+      {/* Batch Actions Bar */}
+      <BatchActionsBar
+        selectedCount={selectedAlertIds?.length ?? 0}
+        onAcknowledge={can('alerts.acknowledge') ? async () => {
+          try {
+            // Bulk acknowledge logic here
+            for (const id of selectedAlertIds || []) {
+              await acknowledgeAlertMutation.mutateAsync({
+                id: String(id),
+                userId: user.id,
+              });
+            }
+            toast.success('Alertes acquittées', `${selectedAlertIds?.length ?? 0} alertes ont été acquittées`);
+            clearSelection();
+          } catch (e) {
+            toast.error('Erreur', 'Impossible d\'acquitter les alertes');
+          }
+        } : undefined}
+        onResolve={can('alerts.resolve') ? async () => {
+          try {
+            for (const id of selectedAlertIds || []) {
+              await resolveAlertMutation.mutateAsync({
+                id: String(id),
+                resolutionType: 'fixed',
+                note: 'Résolution en masse',
+                userId: user.id,
+              });
+            }
+            toast.success('Alertes résolues', `${selectedAlertIds?.length ?? 0} alertes ont été résolues`);
+            clearSelection();
+          } catch (e) {
+            toast.error('Erreur', 'Impossible de résoudre les alertes');
+          }
+        } : undefined}
+        onEscalate={can('alerts.escalate') ? async () => {
+          try{
+            for (const id of selectedAlertIds || []) {
+              await escalateAlertMutation.mutateAsync({
+                id: String(id),
+                escalateTo: 'direction',
+                reason: 'Escalade en masse',
+                userId: user.id,
+              });
+            }
+            toast.success('Alertes escaladées', `${selectedAlertIds?.length ?? 0} alertes ont été escaladées`);
+            clearSelection();
+          } catch (e) {
+            toast.error('Erreur', 'Impossible d\'escalader les alertes');
+          }
+        } : undefined}
+        onAssign={can('alerts.assign') ? async () => {
+          toast.info('Fonction à venir', 'Sélection de l\'utilisateur en cours de développement');
+        } : undefined}
+        onDelete={can('alerts.delete') ? async () => {
+          toast.warning('Suppression', 'Confirmation requise avant suppression');
+        } : undefined}
+        onClear={clearSelection}
+      />
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    { id: '1', type: 'critical', title: 'Alerte critique: Dépassement budget', time: 'il y a 15 min', read: false },
+    { id: '2', type: 'warning', title: 'SLA proche du dépassement', time: 'il y a 1h', read: false },
+    { id: '3', type: 'info', title: 'Alerte résolue: Facture validée', time: 'il y a 3h', read: true },
+    { id: '4', type: 'warning', title: 'Nouveau blocage détecté', time: 'il y a 5h', read: true },
+    { id: '5', type: 'info', title: 'Escalade effectuée', time: 'hier', read: true },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-amber-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
 

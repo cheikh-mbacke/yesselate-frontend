@@ -1,304 +1,281 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { useAnalyticsWorkspaceStore } from '@/lib/stores/analyticsWorkspaceStore';
+/**
+ * Centre de Commandement Analytics - Version 2.0
+ * Plateforme de pilotage et analyse des KPIs
+ * Architecture cohérente avec la page Gouvernance
+ */
 
-import { AnalyticsWorkspaceTabs } from '@/components/features/bmo/analytics/workspace/AnalyticsWorkspaceTabs';
-import { AnalyticsWorkspaceContent } from '@/components/features/bmo/analytics/workspace/AnalyticsWorkspaceContent';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  BarChart3,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  Plus,
+  Download,
+  Settings,
+  MoreHorizontal,
+} from 'lucide-react';
+import { useAnalyticsWorkspaceStore } from '@/lib/stores/analyticsWorkspaceStore';
+import {
+  AnalyticsCommandSidebar,
+  AnalyticsSubNavigation,
+  AnalyticsKPIBar,
+  AnalyticsContentRouter,
+  AnalyticsFiltersPanel,
+  analyticsCategories,
+} from '@/components/features/bmo/analytics/command-center';
 import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
 import { AnalyticsStatsModal } from '@/components/features/bmo/analytics/workspace/AnalyticsStatsModal';
 import { AnalyticsExportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsExportModal';
 import { AnalyticsAlertConfigModal } from '@/components/features/bmo/analytics/workspace/AnalyticsAlertConfigModal';
 import { AnalyticsReportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsReportModal';
-
-import { FluentModal } from '@/components/ui/fluent-modal';
-import { FluentButton } from '@/components/ui/fluent-button';
-
+import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
+import { KPIDetailModal } from '@/components/features/bmo/analytics/workspace/KPIDetailModal';
+import { AlertDetailModal } from '@/components/features/bmo/analytics/workspace/AlertDetailModal';
+import { GlobalSearch } from '@/components/features/bmo/analytics/search';
+import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
 import {
-  BarChart3,
-  Search,
-  LayoutDashboard,
-  FolderOpen,
-  Settings,
-  History,
-  Star,
-  ChevronRight,
-  TrendingUp,
-  Activity,
-  DollarSign,
-  AlertCircle,
-  CheckCircle,
-  Clock,
-  Shield,
-  Users,
-  Calendar,
-  Brain,
-  Workflow,
-  Download,
-  RefreshCw,
-  Plus,
-  Target,
-  PieChart,
-  LineChart,
-  Zap,
-  AlertTriangle,
-  XCircle,
-  Keyboard,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { analyticsAPI } from '@/lib/api/pilotage/analyticsClient';
-import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // ================================
 // Types
 // ================================
-type ViewMode = 'dashboard' | 'workspace';
-type DashboardTab = 'overview' | 'performance' | 'financial' | 'history' | 'favorites';
-type LoadReason = 'init' | 'manual' | 'auto';
-
-interface AnalyticsStats {
-  total: number;
-  kpis: number;
-  reports: number;
-  alerts: number;
-  trends: number;
-  avgPerformance: number;
-  byCategory: { category: string; count: number }[];
-  byDepartment: { department: string; count: number }[];
-  ts: string;
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
 }
 
-interface UIState {
-  viewMode: ViewMode;
-  dashboardTab: DashboardTab;
-  autoRefresh: boolean;
-}
-
-const UI_PREF_KEY = 'bmo.analytics.ui.v3';
-
-// ================================
-// Semantic colors
-// ================================
-const STATUS_ICON_COLORS = {
-  good: 'text-emerald-500',
-  warning: 'text-amber-500',
-  critical: 'text-rose-500',
-  neutral: 'text-slate-400',
-  info: 'text-blue-500',
-} as const;
-
-const BG_STATUS = {
-  good: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200/50 dark:border-emerald-800/30',
-  warning: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200/50 dark:border-amber-800/30',
-  critical: 'bg-rose-50 dark:bg-rose-950/30 border-rose-200/50 dark:border-rose-800/30',
-  neutral: 'bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50',
-  info: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200/50 dark:border-blue-800/30',
-} as const;
-
-// ================================
-// Helpers
-// ================================
-function readUIState(): UIState | null {
-  try {
-    const raw = localStorage.getItem(UI_PREF_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<UIState>;
-    return {
-      viewMode: p.viewMode === 'workspace' ? 'workspace' : 'dashboard',
-      dashboardTab: ['performance', 'financial', 'history', 'favorites'].includes(p.dashboardTab as string)
-        ? p.dashboardTab as DashboardTab
-        : 'overview',
-      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeUIState(s: UIState) {
-  try {
-    localStorage.setItem(UI_PREF_KEY, JSON.stringify(s));
-  } catch {
-    // no-op
-  }
-}
-
-function useInterval(fn: () => void, delay: number | null): void {
-  const ref = useRef(fn);
-  useEffect(() => { ref.current = fn; }, [fn]);
-  useEffect(() => {
-    if (delay === null) return;
-    const id = window.setInterval(() => ref.current(), delay);
-    return () => window.clearInterval(id);
-  }, [delay]);
-}
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  performance: [
+    { id: 'all', label: 'Tous les KPIs' },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'warning', label: 'Attention', badge: 5, badgeType: 'warning' },
+    { id: 'success', label: 'OK' },
+  ],
+  financial: [
+    { id: 'budget', label: 'Budget' },
+    { id: 'expenses', label: 'Dépenses' },
+    { id: 'forecasts', label: 'Prévisions' },
+  ],
+  trends: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'positive', label: 'Positives' },
+    { id: 'negative', label: 'Négatives', badge: 4, badgeType: 'warning' },
+    { id: 'stable', label: 'Stables' },
+  ],
+  alerts: [
+    { id: 'all', label: 'Toutes', badge: 8 },
+    { id: 'critical', label: 'Critiques', badge: 2, badgeType: 'critical' },
+    { id: 'warning', label: 'Avertissements', badge: 6, badgeType: 'warning' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  reports: [
+    { id: 'all', label: 'Tous' },
+    { id: 'recent', label: 'Récents' },
+    { id: 'scheduled', label: 'Planifiés' },
+    { id: 'favorites', label: 'Favoris' },
+  ],
+  kpis: [
+    { id: 'all', label: 'Tous' },
+    { id: 'operational', label: 'Opérationnels' },
+    { id: 'strategic', label: 'Stratégiques' },
+    { id: 'custom', label: 'Personnalisés' },
+  ],
+  comparison: [
+    { id: 'bureaux', label: 'Par bureau' },
+    { id: 'period', label: 'Par période' },
+    { id: 'category', label: 'Par catégorie' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous' },
+    { id: 'btp', label: 'BTP' },
+    { id: 'bj', label: 'BJ' },
+    { id: 'bs', label: 'BS' },
+  ],
+};
 
 // ================================
 // Main Component
 // ================================
 export default function AnalyticsPage() {
-  const { openTab, tabs, activeTabId, openCommandPalette } = useAnalyticsWorkspaceStore();
+  return (
+    <AnalyticsToastProvider>
+      <AnalyticsPageContent />
+    </AnalyticsToastProvider>
+  );
+}
 
-  // UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [autoRefresh, setAutoRefresh] = useState(true);
+function AnalyticsPageContent() {
+  const toast = useAnalyticsToast();
+  const {
+    openTab,
+    tabs,
+    isFullScreen,
+    toggleFullScreen,
+    openCommandPalette,
+  } = useAnalyticsWorkspaceStore();
 
-  // Stats state
-  const [statsData, setStatsData] = useState<AnalyticsStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
+  // Activer les notifications temps réel
+  const { isConnected, subscriptionsCount } = useRealtimeAnalytics({
+    autoConnect: true,
+    showToasts: true,
+    autoInvalidateQueries: true,
+  });
+
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
 
   // Modals state
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [alertConfigModalOpen, setAlertConfigModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [kpiDetailModalOpen, setKpiDetailModalOpen] = useState(false);
+  const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null);
+  const [alertDetailModalOpen, setAlertDetailModalOpen] = useState(false);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
-  const abortStatsRef = useRef<AbortController | null>(null);
-
-  // KPIs from API
-  const {
-    data: kpiData,
-    isLoading: kpisLoading,
-    error: kpisError,
-    refetch: refetchKpis,
-  } = useApiQuery(async (_signal: AbortSignal) => analyticsAPI.getKpis(), []);
-
-  // Load UI State
-  useEffect(() => {
-    const st = readUIState();
-    if (st) {
-      setViewMode(st.viewMode);
-      setDashboardTab(st.dashboardTab);
-      setAutoRefresh(st.autoRefresh);
-    }
-  }, []);
-
-  useEffect(() => {
-    writeUIState({ viewMode, dashboardTab, autoRefresh });
-  }, [viewMode, dashboardTab, autoRefresh]);
+  // Navigation history for back button
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
 
   // ================================
   // Computed values
   // ================================
-  const showDashboard = useMemo(() => viewMode === 'dashboard' || tabs.length === 0, [viewMode, tabs.length]);
+  const currentCategoryLabel = useMemo(() => {
+    return analyticsCategories.find((c) => c.id === activeCategory)?.label || 'Analytics';
+  }, [activeCategory]);
 
-  const hasUrgentItems = useMemo(() =>
-    statsData && (statsData.alerts > 0),
-    [statsData]
-  );
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
 
-  const statsLastUpdate = useMemo(() => {
-    if (!statsData?.ts) return null;
-    return new Date(statsData.ts).toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }, [statsData?.ts]);
-
-  const kpiCards = useMemo(() => {
-    const kpis = kpiData?.kpis ?? [];
-    return kpis.slice(0, 6).map((k) => ({
-      id: k.id,
-      label: k.name,
-      value: `${k.value}${k.unit ?? ''}`,
-      status: (k.status as 'good' | 'warning' | 'critical' | 'neutral') || 'neutral',
-    }));
-  }, [kpiData]);
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
   // ================================
   // Callbacks
   // ================================
-  const openQueue = useCallback(
-    (queue: string) => {
-      const titles: Record<string, string> = {
-        overview: "Vue d'ensemble",
-        performance: 'Performance',
-        financial: 'Financier',
-        trends: 'Tendances',
-        alerts: 'Alertes',
-        reports: 'Rapports',
-      };
-      openTab({
-        type: 'inbox',
-        id: `inbox:${queue}`,
-        title: titles[queue] || queue,
-        icon: '📊',
-        data: { queue },
-      });
-      if (viewMode === 'dashboard') setViewMode('workspace');
-    },
-    [openTab, viewMode]
-  );
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      toast.dataRefreshed();
+    }, 1500);
+  }, [toast]);
 
-  const closeAllOverlays = useCallback(() => {
-    setStatsModalOpen(false);
-    setExportModalOpen(false);
-    setAlertConfigModalOpen(false);
-    setReportModalOpen(false);
-    setHelpOpen(false);
+  const handleCategoryChange = useCallback((category: string) => {
+    setNavigationHistory((prev) => [...prev, activeCategory]);
+    setActiveCategory(category);
+    setActiveSubCategory('all');
+  }, [activeCategory]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
   }, []);
 
-  // Load Stats
-  const loadStats = useCallback(
-    async (reason: LoadReason = 'manual') => {
-      abortStatsRef.current?.abort();
-      const ac = new AbortController();
-      abortStatsRef.current = ac;
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previousCategory = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((prev) => prev.slice(0, -1));
+      setActiveCategory(previousCategory);
+      setActiveSubCategory('all');
+    }
+  }, [navigationHistory]);
 
-      setStatsLoading(true);
+  const handleApplyFilters = useCallback((filters: Record<string, string[]>) => {
+    setActiveFilters(filters);
+    const totalFilters = Object.values(filters).reduce((acc, arr) => acc + arr.length, 0);
+    if (totalFilters > 0) {
+      toast.info('Filtres appliqués', `${totalFilters} filtre(s) actif(s)`);
+    }
+    console.log('Filtres appliqués:', filters);
+    // Ici, vous pouvez ajouter la logique pour filtrer les données
+  }, [toast]);
 
-      try {
-        await new Promise((r) => setTimeout(r, reason === 'init' ? 300 : 150));
-        if (ac.signal.aborted) return;
-
-        const mockStats: AnalyticsStats = {
-          total: 156,
-          kpis: 24,
-          reports: 45,
-          alerts: 8,
-          trends: 12,
-          avgPerformance: 87,
-          byCategory: [
-            { category: 'Performance', count: 42 },
-            { category: 'Financier', count: 38 },
-            { category: 'RH', count: 28 },
-            { category: 'Opérationnel', count: 48 },
-          ],
-          byDepartment: [
-            { department: 'DAF', count: 45 },
-            { department: 'DRH', count: 32 },
-            { department: 'DSI', count: 28 },
-            { department: 'Direction', count: 51 },
-          ],
-          ts: new Date().toISOString(),
-        };
-
-        setStatsData(mockStats);
-        
-        if (reason === 'manual') {
-          refetchKpis?.();
-        }
-      } catch (error) {
-        if (ac.signal.aborted) return;
-        console.error('Erreur chargement stats:', error);
-      } finally {
-        setStatsLoading(false);
-      }
-    },
-    [refetchKpis]
-  );
-
+  // ================================
+  // Keyboard shortcuts
+  // ================================
   useEffect(() => {
-    loadStats('init');
-    return () => { abortStatsRef.current?.abort(); };
-  }, [loadStats]);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-  useInterval(
-    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
-    autoRefresh ? 60_000 : null
-  );
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        setExportModalOpen(true);
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullScreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [openCommandPalette, toggleFullScreen, handleGoBack]);
 
   // Custom events
   useEffect(() => {
@@ -320,512 +297,201 @@ export default function AnalyticsPage() {
     };
   }, []);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.isContentEditable) return;
-      if (['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() || '')) return;
-
-      const isMod = e.metaKey || e.ctrlKey;
-
-      if (isMod && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        openCommandPalette();
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeAllOverlays();
-        return;
-      }
-
-      if (isMod && e.key === 's') {
-        e.preventDefault();
-        setStatsModalOpen(true);
-        return;
-      }
-
-      if (isMod && e.key === 'e') {
-        e.preventDefault();
-        setExportModalOpen(true);
-        return;
-      }
-
-      if (e.key === '?' && !isMod) {
-        e.preventDefault();
-        setHelpOpen(true);
-        return;
-      }
-
-      if (isMod && e.key === '1') { e.preventDefault(); openQueue('overview'); }
-      if (isMod && e.key === '2') { e.preventDefault(); openQueue('performance'); }
-      if (isMod && e.key === '3') { e.preventDefault(); openQueue('financial'); }
-      if (isMod && e.key === '4') { e.preventDefault(); openQueue('trends'); }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeAllOverlays, openQueue, openCommandPalette]);
-
-  // Dashboard tabs
-  const dashboardTabs = useMemo(() => [
-    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'performance' as DashboardTab, label: 'Performance', icon: Activity },
-    { id: 'financial' as DashboardTab, label: 'Financier', icon: DollarSign },
-    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
-    { id: 'favorites' as DashboardTab, label: 'Suivis', icon: Star },
-  ], []);
-
-  // Analytics categories
-  const categoryStats = useMemo(() => [
-    { id: 'performance', name: 'Performance', icon: Activity, color: 'emerald', description: 'KPIs opérationnels' },
-    { id: 'financial', name: 'Financier', icon: DollarSign, color: 'amber', description: 'Budget & dépenses' },
-    { id: 'trends', name: 'Tendances', icon: TrendingUp, color: 'purple', description: 'Évolutions et prédictions' },
-    { id: 'alerts', name: 'Alertes', icon: AlertTriangle, color: 'rose', description: 'Seuils et notifications' },
-  ], []);
-
   // ================================
   // Render
   // ================================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullScreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <AnalyticsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={openCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <BarChart3 className="w-5 h-5 text-blue-400" />
-            <h1 className="font-semibold text-slate-200">Analytics & Rapports</h1>
-            {statsData && (
-              <span className="text-sm text-slate-400">
-                {statsData.kpis} KPIs actifs
-              </span>
-            )}
-            {hasUrgentItems && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                {statsData?.alerts} alerte{(statsData?.alerts ?? 0) > 1 ? 's' : ''}
-              </span>
-            )}
-            {statsLastUpdate && (
-              <span className="text-xs text-slate-500">
-                MAJ: {statsLastUpdate}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={openCommandPalette}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
-              type="button"
-            >
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:inline">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
-            </button>
-
-            <button
-              onClick={() => setReportModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
-              type="button"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Nouveau rapport</span>
-            </button>
-
-            <button
-              onClick={() => loadStats('manual')}
-              className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800/50 transition-colors"
-              type="button"
-              title="Rafraîchir"
-            >
-              <RefreshCw className={cn('w-4 h-4 text-slate-400', statsLoading && 'animate-spin')} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Workspace tabs */}
-        {(viewMode === 'workspace' || tabs.length > 0) && (
-          <div className="mb-6">
-            <AnalyticsWorkspaceTabs />
-          </div>
-        )}
-
-        {showDashboard ? (
-          <div className="space-y-8">
-            {/* Navigation dashboard */}
-            <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-              {dashboardTabs.map((t) => {
-                const Icon = t.icon;
-                const isActive = dashboardTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setDashboardTab(t.id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-                      isActive
-                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                    )}
-                    type="button"
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Dashboard content */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-8">
-                {/* Alertes critiques */}
-                {statsData && statsData.alerts > 0 && (
-                  <div className={cn('p-4 rounded-lg border', BG_STATUS.warning)}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className={cn('w-5 h-5', STATUS_ICON_COLORS.warning)} />
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {statsData.alerts} alerte{statsData.alerts > 1 ? 's' : ''} active{statsData.alerts > 1 ? 's' : ''}
-                          </p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            Des KPIs ont dépassé leurs seuils d'alerte
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => openQueue('alerts')}
-                        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                        type="button"
-                      >
-                        Voir
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* KPIs temps réel */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Indicateurs temps réel
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    {kpisLoading ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 animate-pulse">
-                          <div className="h-3 w-20 bg-slate-700/60 rounded mb-2" />
-                          <div className="h-6 w-14 bg-slate-700/60 rounded" />
-                        </div>
-                      ))
-                    ) : kpisError ? (
-                      <div className="col-span-6 p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50">
-                        <p className="text-sm text-slate-500">KPIs indisponibles: {kpisError.message}</p>
-                      </div>
-                    ) : (
-                      kpiCards.map((kpi) => {
-                        const dotColor =
-                          kpi.status === 'critical' ? 'bg-rose-400' :
-                          kpi.status === 'warning' ? 'bg-amber-400' :
-                          kpi.status === 'good' ? 'bg-emerald-400' : 'bg-slate-500';
-                        return (
-                          <button
-                            key={kpi.id}
-                            onClick={openCommandPalette}
-                            className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left hover:shadow-sm transition-all"
-                            type="button"
-                          >
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={cn('w-2 h-2 rounded-full', dotColor)} />
-                              <p className="text-xs text-slate-500 truncate">{kpi.label}</p>
-                            </div>
-                            <span className="text-lg font-bold text-slate-900 dark:text-slate-100">{kpi.value}</span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
-
-                {/* KPIs principaux */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <button
-                    onClick={() => openQueue('performance')}
-                    className={cn('p-4 rounded-lg border text-left transition-all hover:shadow-sm', BG_STATUS.good)}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Activity className="w-4 h-4 text-emerald-500" />
-                      <span className="text-sm text-slate-500">Performance</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.avgPerformance ?? '—'}%
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('trends')}
-                    className={cn('p-4 rounded-lg border text-left transition-all hover:shadow-sm', BG_STATUS.info)}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm text-slate-500">Tendances</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.trends ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('reports')}
-                    className="p-4 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200/50 dark:border-purple-800/30 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <PieChart className="w-4 h-4 text-purple-500" />
-                      <span className="text-sm text-slate-500">Rapports</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.reports ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('alerts')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.alerts > 0 ? BG_STATUS.warning : BG_STATUS.neutral
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className={cn('w-4 h-4', statsData && statsData.alerts > 0 ? 'text-amber-500' : 'text-slate-400')} />
-                      <span className="text-sm text-slate-500">Alertes</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.alerts ?? '—'}
-                    </p>
-                  </button>
-
-                  <div className="p-4 rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm text-slate-500">KPIs</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.kpis ?? '—'}
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <BarChart3 className="w-4 h-4 text-slate-500" />
-                      <span className="text-sm text-slate-500">Total</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.total ?? '—'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Par catégorie */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Par catégorie
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {categoryStats.map((cat) => {
-                      const Icon = cat.icon;
-                      const count = statsData?.byCategory.find(c => c.category.toLowerCase().includes(cat.id))?.count || 0;
-                      return (
-                        <button
-                          key={cat.id}
-                          onClick={() => openQueue(cat.id)}
-                          className={cn(
-                            'p-4 rounded-lg border text-left hover:shadow-sm transition-all',
-                            `border-${cat.color}-200/50 dark:border-${cat.color}-800/30`,
-                            `bg-${cat.color}-50/30 dark:bg-${cat.color}-950/20`
-                          )}
-                          type="button"
-                        >
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', `bg-${cat.color}-500/20`)}>
-                              <Icon className={cn('w-5 h-5', `text-${cat.color}-600`)} />
-                            </div>
-                            <div>
-                              <p className="font-medium">{cat.name}</p>
-                              <p className="text-xs text-slate-500">{cat.description}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-lg font-semibold">{count}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* Par département */}
-                {statsData && (
-                  <section>
-                    <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                      Par département
-                    </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      {statsData.byDepartment.map((d) => (
-                        <div
-                          key={d.department}
-                          className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left"
-                        >
-                          <p className="text-sm text-slate-500 mb-1">{d.department}</p>
-                          <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                            {d.count}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {/* Outils avancés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Outils avancés
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <button
-                      onClick={() => setReportModalOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <PieChart className="w-5 h-5 text-purple-500 mb-2" />
-                      <p className="font-medium text-sm">Rapports</p>
-                      <p className="text-xs text-slate-500">Génération</p>
-                    </button>
-                    <button
-                      onClick={() => setAlertConfigModalOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <AlertTriangle className="w-5 h-5 text-amber-500 mb-2" />
-                      <p className="font-medium text-sm">Alertes</p>
-                      <p className="text-xs text-slate-500">Configuration</p>
-                    </button>
-                    <button
-                      onClick={() => openQueue('trends')}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <LineChart className="w-5 h-5 text-blue-500 mb-2" />
-                      <p className="font-medium text-sm">Tendances</p>
-                      <p className="text-xs text-slate-500">Évolutions</p>
-                    </button>
-                    <button
-                      onClick={() => {}}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Brain className="w-5 h-5 text-pink-500 mb-2" />
-                      <p className="font-medium text-sm">IA Prédictive</p>
-                      <p className="text-xs text-slate-500">Prévisions</p>
-                    </button>
-                    <button
-                      onClick={() => setStatsModalOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <BarChart3 className="w-5 h-5 text-emerald-500 mb-2" />
-                      <p className="font-medium text-sm">Statistiques</p>
-                      <p className="text-xs text-slate-500">Vue détaillée</p>
-                    </button>
-                    <button
-                      onClick={() => setExportModalOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Download className="w-5 h-5 text-slate-500 mb-2" />
-                      <p className="font-medium text-sm">Export</p>
-                      <p className="text-xs text-slate-500">Télécharger</p>
-                    </button>
-                  </div>
-                </section>
-
-                {/* Bloc gouvernance */}
-                <div className={cn('p-4 rounded-lg border', BG_STATUS.info)}>
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-6 h-6 text-blue-500 flex-none" />
-                    <div className="flex-1">
-                      <h3 className="font-bold text-blue-700 dark:text-blue-300">
-                        Pilotage par les données
-                      </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        Surveillez les KPIs clés, analysez les tendances et générez des rapports détaillés pour piloter l'activité avec précision.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Astuce raccourcis */}
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
-                  <div className="flex items-center gap-3">
-                    <Keyboard className="w-5 h-5 text-slate-400" />
-                    <p className="text-sm text-slate-400">
-                      <strong className="text-slate-300">Astuce :</strong> utilise{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘1-4</kbd>{' '}
-                      pour les vues,{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘K</kbd>{' '}
-                      pour la palette, et{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">?</kbd>{' '}
-                      pour l'aide.
-                    </p>
-                  </div>
-                </div>
-              </div>
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
 
-            {dashboardTab === 'performance' && (
-              <div className="space-y-6">
-                <AnalyticsWorkspaceContent />
-              </div>
-            )}
-
-            {dashboardTab === 'financial' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Données financières</h3>
-                <p className="text-slate-500">Budget, dépenses et analyses financières.</p>
-              </div>
-            )}
-
-            {dashboardTab === 'history' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Historique des rapports</h3>
-                <p className="text-slate-500">Journal des rapports générés et consultations.</p>
-              </div>
-            )}
-
-            {dashboardTab === 'favorites' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">KPIs et rapports suivis</h3>
-                <p className="text-slate-500">Vos indicateurs et rapports épinglés.</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {tabs.length > 0 && <AnalyticsWorkspaceTabs />}
-            <div className="rounded-xl border border-slate-700/50 bg-slate-900/50 overflow-hidden">
-              <AnalyticsWorkspaceContent />
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Analytics</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
-        )}
-      </main>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Global Search */}
+            <div className="w-64 hidden lg:block">
+              <GlobalSearch
+                placeholder="Rechercher..."
+                onSearch={async (query, filters) => {
+                  // Ici, vous pouvez implémenter la recherche via API
+                  console.log('Recherche:', query, filters);
+                  return [];
+                }}
+                showFilters={false}
+                maxResults={5}
+              />
+            </div>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1 hidden lg:block" />
+
+            {/* New Report Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setReportModalOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="text-xs hidden sm:inline">Nouveau</span>
+            </Button>
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
+
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleRefresh}>
+                  <RefreshCw className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFiltersPanelOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Filtres avancés
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setExportModalOpen(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setAlertConfigModalOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Configurer alertes
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Statistiques
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <AnalyticsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        <AnalyticsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+          onRefresh={handleRefresh}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <AnalyticsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              24 KPIs • 8 alertes • 45 rapports
+            </span>
+            {isConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Temps réel ({subscriptionsCount} abonnements)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
 
       {/* Command Palette */}
       <AnalyticsCommandPalette />
@@ -833,61 +499,152 @@ export default function AnalyticsPage() {
       {/* Modals */}
       <AnalyticsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
       <AnalyticsExportModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} />
-      <AnalyticsAlertConfigModal open={alertConfigModalOpen} onClose={() => setAlertConfigModalOpen(false)} />
+      <AnalyticsAlertConfigModal
+        open={alertConfigModalOpen}
+        onClose={() => setAlertConfigModalOpen(false)}
+      />
       <AnalyticsReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} />
+      <KPIDetailModal
+        open={kpiDetailModalOpen}
+        onClose={() => {
+          setKpiDetailModalOpen(false);
+          setSelectedKpiId(null);
+        }}
+        kpiId={selectedKpiId}
+      />
+      <AlertDetailModal
+        open={alertDetailModalOpen}
+        onClose={() => {
+          setAlertDetailModalOpen(false);
+          setSelectedAlertId(null);
+        }}
+        alertId={selectedAlertId}
+      />
 
-      {/* Help Modal */}
-      <FluentModal open={helpOpen} onClose={() => setHelpOpen(false)} title="Raccourcis & Actions">
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-sm font-medium text-slate-300 mb-3">Navigation</h3>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Rechercher / Commandes</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘K</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Vue d'ensemble</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘1</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Performance</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘2</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Financier</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘3</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Tendances</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘4</kbd>
-              </div>
-            </div>
-          </div>
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
+      )}
 
-          <div>
-            <h3 className="text-sm font-medium text-slate-300 mb-3">Actions</h3>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Statistiques</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘S</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Export</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘E</kbd>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-slate-400">Fermer</span>
-                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">Esc</kbd>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <FluentButton variant="secondary" onClick={() => setHelpOpen(false)} className="w-full">Fermer</FluentButton>
-          </div>
-        </div>
-      </FluentModal>
+      {/* Filters Panel */}
+      <AnalyticsFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+      />
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'KPI Performance critique',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Tendance négative détectée',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Rapport hebdomadaire disponible',
+      time: 'il y a 3h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: 'Seuil budget atteint à 80%',
+      time: 'il y a 5h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Nouvelle analyse disponible',
+      time: 'hier',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

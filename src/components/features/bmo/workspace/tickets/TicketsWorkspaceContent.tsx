@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTicketsWorkspaceStore } from '@/lib/stores/ticketsWorkspaceStore';
-import { ticketsApiService, type Ticket } from '@/lib/services/ticketsApiService';
+import { ticketsApi, type Ticket } from '@/lib/services/ticketsApiService';
 import { FileText, AlertTriangle, User, Clock, BarChart3, Search, ChevronRight, Eye, Star, StarOff, MessageSquare, Paperclip, Zap, Building2, Timer, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -41,7 +41,7 @@ export function TicketsWorkspaceContent() {
           else if (['critical', 'high', 'medium', 'low'].includes(queue)) filter.priority = queue as Ticket['priority'];
         }
         if (searchQuery) filter.search = searchQuery;
-        const result = await ticketsApiService.getAll(filter, 'priority', 1, 50);
+        const result = await ticketsApi.getAll(filter, 'priority', 1, 50);
         setTickets(result.data);
       } catch (error) { console.error('Failed:', error); }
       finally { setLoading(false); }
@@ -102,9 +102,9 @@ export function TicketsWorkspaceContent() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600">{ticket.ref}</span>
-                        <span className={cn("text-xs font-medium px-2 py-0.5 rounded", statusStyle.badge)}>{ticketsApiService.getStatusLabel(ticket.status)}</span>
+                        <span className={cn("text-xs font-medium px-2 py-0.5 rounded", statusStyle.badge)}>{ticketsApi.getStatusLabel(ticket.status)}</span>
                         <span className={cn("text-xs font-medium px-2 py-0.5 rounded flex items-center gap-1", priorityStyle.badge)}><PriorityIcon className="w-3 h-3" />{ticket.priority}</span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-purple-500/10 text-purple-600">{ticketsApiService.getCategoryLabel(ticket.category)}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-purple-500/10 text-purple-600">{ticketsApi.getCategoryLabel(ticket.category)}</span>
                         {ticket.sla.breached && <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-600 flex items-center gap-1"><XCircle className="w-3 h-3" />SLA</span>}
                       </div>
                       <p className="font-medium text-slate-900 dark:text-slate-100">{ticket.titre}</p>

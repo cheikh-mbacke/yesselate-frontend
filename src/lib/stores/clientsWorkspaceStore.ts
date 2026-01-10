@@ -31,6 +31,70 @@ export interface ClientsFilter {
   search?: string;
 }
 
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+export const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'activity', label: 'Activité récente', badge: 12 },
+  ],
+  prospects: [
+    { id: 'all', label: 'Tous', badge: 12 },
+    { id: 'hot', label: 'Chauds', badge: 3, badgeType: 'critical' },
+    { id: 'warm', label: 'Tièdes', badge: 5, badgeType: 'warning' },
+    { id: 'cold', label: 'Froids', badge: 4 },
+  ],
+  premium: [
+    { id: 'all', label: 'Tous', badge: 8 },
+    { id: 'strategic', label: 'Stratégiques', badge: 3 },
+    { id: 'growth', label: 'Croissance', badge: 5 },
+  ],
+  litiges: [
+    { id: 'all', label: 'Tous', badge: 3 },
+    { id: 'open', label: 'Ouverts', badge: 2, badgeType: 'critical' },
+    { id: 'in_progress', label: 'En cours', badge: 1, badgeType: 'warning' },
+    { id: 'resolved', label: 'Résolus' },
+  ],
+  historique: [
+    { id: 'all', label: 'Tout' },
+    { id: 'week', label: 'Cette semaine' },
+    { id: 'month', label: 'Ce mois' },
+    { id: 'quarter', label: 'Ce trimestre' },
+  ],
+  contrats: [
+    { id: 'all', label: 'Tous', badge: 24 },
+    { id: 'active', label: 'Actifs', badge: 18 },
+    { id: 'expiring', label: 'À renouveler', badge: 4, badgeType: 'warning' },
+    { id: 'expired', label: 'Expirés', badge: 2 },
+  ],
+  performance: [
+    { id: 'all', label: 'Vue générale' },
+    { id: 'satisfaction', label: 'Satisfaction' },
+    { id: 'revenue', label: 'Chiffre d\'affaires' },
+    { id: 'retention', label: 'Rétention' },
+  ],
+  entreprises: [
+    { id: 'all', label: 'Toutes', badge: 156 },
+    { id: 'tpe', label: 'TPE', badge: 45 },
+    { id: 'pme', label: 'PME', badge: 68 },
+    { id: 'eti', label: 'ETI', badge: 32 },
+    { id: 'ge', label: 'GE', badge: 11 },
+  ],
+  interactions: [
+    { id: 'all', label: 'Toutes', badge: 28 },
+    { id: 'pending', label: 'En attente', badge: 5, badgeType: 'warning' },
+    { id: 'today', label: 'Aujourd\'hui', badge: 8 },
+    { id: 'week', label: 'Cette semaine', badge: 15 },
+  ],
+};
+
 interface ClientsWorkspaceState {
   tabs: ClientsTab[];
   activeTabId: string | null;
@@ -42,6 +106,16 @@ interface ClientsWorkspaceState {
   exportModalOpen: boolean;
   directionPanelOpen: boolean;
   viewMode: 'dashboard' | 'workspace';
+
+  // Navigation State (Command Center)
+  activeCategory: string;
+  activeSubCategory: string;
+  sidebarCollapsed: boolean;
+  navigationHistory: string[];
+  notificationsPanelOpen: boolean;
+  filtersPanelOpen: boolean;
+  kpiBarCollapsed: boolean;
+  isFullScreen: boolean;
 
   openTab: (tab: Omit<ClientsTab, 'id'> & { id?: string }) => void;
   closeTab: (tabId: string) => void;
@@ -58,6 +132,15 @@ interface ClientsWorkspaceState {
   setExportModalOpen: (open: boolean) => void;
   setDirectionPanelOpen: (open: boolean) => void;
   setViewMode: (mode: 'dashboard' | 'workspace') => void;
+  setActiveCategory: (category: string) => void;
+  setActiveSubCategory: (subCategory: string) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  toggleSidebarCollapsed: () => void;
+  goBack: () => void;
+  setNotificationsPanelOpen: (open: boolean) => void;
+  setFiltersPanelOpen: (open: boolean) => void;
+  setKpiBarCollapsed: (collapsed: boolean) => void;
+  toggleFullScreen: () => void;
   reset: () => void;
 }
 
@@ -78,6 +161,16 @@ export const useClientsWorkspaceStore = create<ClientsWorkspaceState>()(
       exportModalOpen: false,
       directionPanelOpen: false,
       viewMode: 'dashboard',
+
+      // Navigation State (Command Center)
+      activeCategory: 'overview',
+      activeSubCategory: 'all',
+      sidebarCollapsed: false,
+      navigationHistory: [],
+      notificationsPanelOpen: false,
+      filtersPanelOpen: false,
+      kpiBarCollapsed: false,
+      isFullScreen: false,
 
       openTab: (tab) => {
         const id = tab.id || `${tab.type}:${Date.now()}`;
@@ -111,9 +204,38 @@ export const useClientsWorkspaceStore = create<ClientsWorkspaceState>()(
       setExportModalOpen: (open) => set({ exportModalOpen: open }),
       setDirectionPanelOpen: (open) => set({ directionPanelOpen: open }),
       setViewMode: (mode) => set({ viewMode: mode }),
+      setActiveCategory: (category: string) => {
+        const { activeCategory } = get();
+        set((state) => ({
+          navigationHistory: [...state.navigationHistory, activeCategory],
+          activeCategory: category,
+          activeSubCategory: 'all',
+        }));
+      },
+      setActiveSubCategory: (subCategory: string) => set({ activeSubCategory: subCategory }),
+      setSidebarCollapsed: (collapsed: boolean) => set({ sidebarCollapsed: collapsed }),
+      toggleSidebarCollapsed: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      goBack: () => {
+        const { navigationHistory } = get();
+        if (navigationHistory.length > 0) {
+          const previousCategory = navigationHistory[navigationHistory.length - 1];
+          set({
+            navigationHistory: navigationHistory.slice(0, -1),
+            activeCategory: previousCategory,
+            activeSubCategory: 'all',
+          });
+        }
+      },
+      setNotificationsPanelOpen: (open: boolean) => set({ notificationsPanelOpen: open }),
+      setFiltersPanelOpen: (open: boolean) => set({ filtersPanelOpen: open }),
+      setKpiBarCollapsed: (collapsed: boolean) => set({ kpiBarCollapsed: collapsed }),
+      toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
       reset: () => set({ tabs: defaultTabs, activeTabId: 'inbox:all', selectedIds: new Set(), currentFilter: {}, commandPaletteOpen: false }),
     }),
     { name: 'clients:workspace', partialize: (state) => ({ watchlist: state.watchlist, viewMode: state.viewMode }) }
   )
 );
+
+// Export subcategories map for external use
+export { subCategoriesMap };
 

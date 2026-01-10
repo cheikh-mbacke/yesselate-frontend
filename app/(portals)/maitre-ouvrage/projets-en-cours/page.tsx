@@ -1,827 +1,806 @@
 /**
  * ====================================================================
- * PAGE: Projets en Cours - BMO
+ * PAGE: Projets en Cours - BMO Command Center
  * ====================================================================
  * 
- * Refonte complète avec architecture workspace sophistiquée
- * et niveau de détail aligné sur validation-bc.
+ * Architecture sophistiquée alignée avec Blocked Command Center
+ * Layout: Sidebar + Header + SubNav + KPIBar + Content + StatusBar + Modals
  */
 
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import { useProjetsWorkspaceStore } from '@/lib/stores/projetsWorkspaceStore';
-import { projetsApiService, type ProjetsStats } from '@/lib/services/projetsApiService';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
-  ProjetsWorkspaceTabs,
-  ProjetsWorkspaceContent,
-  ProjetsLiveCounters,
+  Briefcase,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  Plus,
+  Download,
+  Settings,
+  MoreHorizontal,
+  Maximize2,
+  Minimize2,
+  Filter,
+  LayoutGrid,
+  List,
+  Columns,
+  GanttChart,
+} from 'lucide-react';
+
+// Command Center Components
+import {
+  ProjetsCommandSidebar,
+  ProjetsSubNavigation,
+  ProjetsKPIBar,
+  ProjetsContentRouter,
+  ProjetsModals,
+  projetsCategories,
+  projetsSubCategoriesMap,
+  projetsFiltersMap,
+  useProjetsCommandCenterStore,
+  type ProjetsKPIData,
+  type ProjetsMainCategory,
+  type ProjetsSubCategoryMap,
+} from '@/components/features/bmo/projets/command-center';
+
+// Workspace Components
+import {
   ProjetsCommandPalette,
 } from '@/components/features/bmo/workspace/projets';
 
-import { cn } from '@/lib/utils';
 import {
-  Building2,
-  Search,
-  LayoutDashboard,
-  FolderOpen,
-  Settings,
-  History,
-  Star,
-  ChevronRight,
-  Clock,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+// Pattern Modal Overlay
+import { GenericDetailModal } from '@/components/ui/GenericDetailModal';
+import { 
+  Building2, 
+  Calendar, 
+  Users, 
+  DollarSign,
   AlertCircle,
-  CheckCircle,
-  XCircle,
-  TrendingUp,
-  Shield,
-  Users,
-  Calendar,
-  Brain,
-  Workflow,
-  FileText,
-  BarChart3,
-  Download,
-  RefreshCw,
-  Plus,
-  Target,
-  Briefcase,
-  MapPin,
-  Wallet,
-  PauseCircle,
-  PlayCircle,
-  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 
 // ================================
 // Types
 // ================================
-type ViewMode = 'dashboard' | 'workspace';
-type DashboardTab = 'overview' | 'services' | 'settings' | 'history' | 'favorites';
-type LoadReason = 'init' | 'manual' | 'auto';
 
-interface UIState {
-  viewMode: ViewMode;
-  dashboardTab: DashboardTab;
-  autoRefresh: boolean;
+interface Notification {
+  id: string;
+  type: 'critical' | 'warning' | 'info' | 'success';
+  title: string;
+  time: string;
+  read: boolean;
 }
 
-const UI_PREF_KEY = 'bmo.projets.ui.v2';
-
 // ================================
-// Semantic colors
+// Mock Data
 // ================================
-const STATUS_ICON_COLORS = {
-  blocked: 'text-rose-500',
-  urgent: 'text-amber-500',
-  pending: 'text-slate-400',
-  active: 'text-emerald-500',
-  completed: 'text-blue-500',
-} as const;
 
-const BG_STATUS = {
-  blocked: 'bg-rose-500/10 border-rose-500/30',
-  urgent: 'bg-amber-500/10 border-amber-500/30',
-  pending: 'bg-slate-800/30 border-slate-700/50',
-  active: 'bg-emerald-500/10 border-emerald-500/30',
-  completed: 'bg-blue-500/10 border-blue-500/30',
-} as const;
+const mockKPIData: ProjetsKPIData = {
+  totalProjects: 58,
+  activeProjects: 28,
+  completedThisMonth: 4,
+  delayedProjects: 5,
+  budgetHealth: 82,
+  teamUtilization: 78,
+  avgCompletionRate: 67,
+  onTimeDelivery: 85,
+  trends: {
+    totalProjects: 'up',
+    activeProjects: 'stable',
+    delayedProjects: 'down',
+    budgetHealth: 'up',
+  },
+};
 
-// ================================
-// Helpers
-// ================================
-function readUIState(): UIState | null {
-  try {
-    const raw = localStorage.getItem(UI_PREF_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<UIState>;
-    return {
-      viewMode: p.viewMode === 'workspace' ? 'workspace' : 'dashboard',
-      dashboardTab: ['services', 'settings', 'history', 'favorites'].includes(p.dashboardTab as string)
-        ? p.dashboardTab as DashboardTab
-        : 'overview',
-      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeUIState(s: UIState) {
-  try {
-    localStorage.setItem(UI_PREF_KEY, JSON.stringify(s));
-  } catch {
-    // no-op
-  }
-}
-
-function useInterval(fn: () => void, delay: number | null): void {
-  const ref = useRef(fn);
-  useEffect(() => { ref.current = fn; }, [fn]);
-  useEffect(() => {
-    if (delay === null) return;
-    const id = window.setInterval(() => ref.current(), delay);
-    return () => window.clearInterval(id);
-  }, [delay]);
-}
+const mockNotifications: Notification[] = [
+  { id: '1', type: 'critical', title: 'Projet PRJ-002 - Dépassement délai critique', time: 'il y a 15 min', read: false },
+  { id: '2', type: 'warning', title: 'Budget à 85% pour Route RN7', time: 'il y a 1h', read: false },
+  { id: '3', type: 'success', title: 'Projet Hôpital Sikasso terminé', time: 'il y a 3h', read: true },
+  { id: '4', type: 'warning', title: 'Ressources insuffisantes équipe BF', time: 'il y a 5h', read: true },
+  { id: '5', type: 'info', title: 'Nouveau projet en planification', time: 'hier', read: true },
+];
 
 // ================================
 // Main Component
 // ================================
+
 export default function ProjetsEnCoursPage() {
-  const { tabs, openTab, commandPaletteOpen, setCommandPaletteOpen } = useProjetsWorkspaceStore();
+  // Store state
+  const {
+    navigation,
+    sidebarCollapsed,
+    fullscreen,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    stats,
+    liveStats,
+    viewMode,
+    navigate,
+    goBack,
+    toggleSidebar,
+    setSidebarCollapsed,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleKPIBar,
+    openModal,
+    setStats,
+    startRefresh,
+    endRefresh,
+    setViewMode,
+  } = useProjetsCommandCenterStore();
 
-  // UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Local UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  
+  // Pattern Modal Overlay - Détails projet
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<any>(null);
 
-  // Stats state
-  const [statsData, setStatsData] = useState<ProjetsStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-
-  // Modals state
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const [delegationsOpen, setDelegationsOpen] = useState(false);
-  const [remindersOpen, setRemindersOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-
-  const abortStatsRef = useRef<AbortController | null>(null);
-
-  // Load UI State
+  // ================================
+  // Initialize stats
+  // ================================
   useEffect(() => {
-    const st = readUIState();
-    if (st) {
-      setViewMode(st.viewMode);
-      setDashboardTab(st.dashboardTab);
-      setAutoRefresh(st.autoRefresh);
+    if (!stats) {
+      // Simulate loading stats
+      setStats({
+        total: 58,
+        active: 28,
+        planning: 8,
+        delayed: 5,
+        completed: 15,
+        onHold: 2,
+        cancelled: 0,
+        avgProgress: 52,
+        avgBudgetUsage: 67,
+        totalBudget: 45000000000,
+        budgetConsumed: 30150000000,
+        overdueCount: 5,
+        atRiskCount: 8,
+        completedThisMonth: 3,
+        teamSize: 156,
+        onTimeDelivery: 85,
+        byBureau: [
+          { bureau: 'BF', count: 22, active: 12, delayed: 2 },
+          { bureau: 'BM', count: 18, active: 9, delayed: 2 },
+          { bureau: 'BJ', count: 12, active: 5, delayed: 1 },
+          { bureau: 'BCT', count: 6, active: 2, delayed: 0 },
+        ],
+        byType: [
+          { type: 'Infrastructure', count: 24 },
+          { type: 'Bâtiment', count: 18 },
+          { type: 'Ouvrage d\'art', count: 8 },
+          { type: 'Aménagement', count: 8 },
+        ],
+        byPriority: [
+          { priority: 'high', count: 22 },
+          { priority: 'medium', count: 28 },
+          { priority: 'low', count: 8 },
+        ],
+        ts: new Date().toISOString(),
+      });
     }
-  }, []);
-
-  useEffect(() => {
-    writeUIState({ viewMode, dashboardTab, autoRefresh });
-  }, [viewMode, dashboardTab, autoRefresh]);
+  }, [stats, setStats]);
 
   // ================================
   // Computed values
   // ================================
-  const showDashboard = useMemo(() => viewMode === 'dashboard' || tabs.length === 0, [viewMode, tabs.length]);
 
-  const hasUrgentItems = useMemo(() =>
-    statsData && (statsData.blocked > 0),
-    [statsData]
-  );
+  const currentCategoryLabel = useMemo(() => {
+    return projetsCategories.find((c) => c.id === navigation.mainCategory)?.label || 'Projets';
+  }, [navigation.mainCategory]);
 
-  const statsLastUpdate = useMemo(() => {
-    if (!statsData) return null;
-    return new Date().toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }, [statsData]);
+  const currentSubCategories = useMemo(() => {
+    return projetsSubCategoriesMap[navigation.mainCategory] || [];
+  }, [navigation.mainCategory]);
+
+  const currentFilters = useMemo(() => {
+    const key = `${navigation.mainCategory}:${navigation.subCategory}`;
+    return projetsFiltersMap[key] || [];
+  }, [navigation.mainCategory, navigation.subCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  const sidebarStats = useMemo(() => ({
+    active: stats?.active ?? 0,
+    planning: stats?.planning ?? 0,
+    delayed: stats?.delayed ?? 0,
+    completed: stats?.completed ?? 0,
+    byBureau: stats?.byBureau.length ?? 0,
+    byTeam: 5,
+    highPriority: stats?.byPriority.find(p => p.priority === 'high')?.count ?? 0,
+  }), [stats]);
+
+  // ================================
+  // Pattern Modal Overlay Handlers
+  // ================================
+  
+  const handleViewProject = useCallback((project: any) => {
+    setSelectedProject(project);
+    setSelectedProjectId(project.id);
+  }, []);
+
+  const handleEditProject = useCallback((project: any) => {
+    console.log('Edit project:', project);
+    // Logique d'édition
+    setSelectedProjectId(null);
+  }, []);
+
+  const handleDeleteProject = useCallback((id: string) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')) {
+      console.log('Delete project:', id);
+      setSelectedProjectId(null);
+    }
+  }, []);
 
   // ================================
   // Callbacks
   // ================================
-  const openQueue = useCallback(
-    (queue: string) => {
-      const titles: Record<string, string> = {
-        active: 'En cours',
-        blocked: 'Bloqués',
-        completed: 'Terminés',
-        pending: 'En attente',
-        infrastructure: 'Infrastructure',
-        immobilier: 'Immobilier',
-        it: 'IT & Digital',
-        rh: 'RH & Formation',
-      };
-      openTab({
-        type: 'inbox',
-        id: `inbox:${queue}`,
-        title: titles[queue] || queue,
-        icon: '📋',
-        data: { queue },
-      });
-      if (viewMode === 'dashboard') setViewMode('workspace');
-    },
-    [openTab, viewMode]
-  );
 
-  const openProject = useCallback(
-    (id: string) => {
-      openTab({
-        type: 'project',
-        id: `project:${id}`,
-        title: id,
-        icon: '📁',
-        data: { projectId: id },
-      });
-      if (viewMode === 'dashboard') setViewMode('workspace');
-    },
-    [openTab, viewMode]
-  );
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    startRefresh();
+    setTimeout(() => {
+      setIsRefreshing(false);
+      endRefresh();
+      setLastUpdate(new Date());
+    }, 1500);
+  }, [startRefresh, endRefresh]);
 
-  const closeAllOverlays = useCallback(() => {
-    setCommandPaletteOpen(false);
-    setStatsModalOpen(false);
-    setExportOpen(false);
-    setWorkflowOpen(false);
-    setAnalyticsOpen(false);
-    setDelegationsOpen(false);
-    setRemindersOpen(false);
-    setHelpOpen(false);
-  }, [setCommandPaletteOpen]);
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as ProjetsMainCategory, 'all' as any);
+  }, [navigate]);
 
-  // Load Stats
-  const loadStats = useCallback(
-    async (reason: LoadReason = 'manual') => {
-      abortStatsRef.current?.abort();
-      const ac = new AbortController();
-      abortStatsRef.current = ac;
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(navigation.mainCategory, subCategory as any);
+  }, [navigate, navigation.mainCategory]);
 
-      setStatsLoading(true);
+  const handleNewProject = useCallback(() => {
+    openModal('new-project');
+  }, [openModal]);
 
-      try {
-        const data = await projetsApiService.getStats();
-        if (ac.signal.aborted) return;
-        setStatsData(data);
-      } catch (error) {
-        if (ac.signal.aborted) return;
-        console.error('Erreur chargement stats:', error);
-      } finally {
-        setStatsLoading(false);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    loadStats('init');
-    return () => { abortStatsRef.current?.abort(); };
-  }, [loadStats]);
-
-  useInterval(
-    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
-    autoRefresh ? 60_000 : null
-  );
-
+  // ================================
   // Keyboard shortcuts
+  // ================================
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.isContentEditable) return;
-      if (['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() || '')) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
       const isMod = e.metaKey || e.ctrlKey;
 
-      if (isMod && e.key.toLowerCase() === 'k') {
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen(true);
+        toggleCommandPalette();
         return;
       }
 
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Escape : Close panels
       if (e.key === 'Escape') {
-        e.preventDefault();
-        closeAllOverlays();
-        return;
+        if (commandPaletteOpen) toggleCommandPalette();
+        if (notificationsPanelOpen) toggleNotificationsPanel();
       }
-
-      if (isMod && e.key === 'n') {
-        e.preventDefault();
-        openTab({
-          type: 'wizard',
-          id: `wizard:create:${Date.now()}`,
-          title: 'Nouveau projet',
-          icon: '➕',
-          data: { action: 'create' },
-        });
-        setViewMode('workspace');
-        return;
-      }
-
-      if (isMod && e.key === '1') { e.preventDefault(); openQueue('active'); }
-      if (isMod && e.key === '2') { e.preventDefault(); openQueue('blocked'); }
-      if (isMod && e.key === '3') { e.preventDefault(); openQueue('completed'); }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeAllOverlays, openQueue, setCommandPaletteOpen, openTab]);
+  }, [toggleCommandPalette, toggleSidebar, toggleFullscreen, goBack, commandPaletteOpen, notificationsPanelOpen, toggleNotificationsPanel]);
 
-  // Dashboard tabs
-  const dashboardTabs = useMemo(() => [
-    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'services' as DashboardTab, label: 'Par domaine', icon: FolderOpen },
-    { id: 'settings' as DashboardTab, label: 'Paramètres', icon: Settings },
-    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
-    { id: 'favorites' as DashboardTab, label: 'Suivis', icon: Star },
-  ], []);
+  // Custom events
+  useEffect(() => {
+    const handleOpenCommandPalette = () => toggleCommandPalette();
 
-  // Mock data for services
-  const serviceStats = useMemo(() => [
-    { id: 'infrastructure', name: 'Infrastructure', count: 23, color: 'blue', icon: Building2 },
-    { id: 'immobilier', name: 'Immobilier', count: 18, color: 'emerald', icon: MapPin },
-    { id: 'it', name: 'IT & Digital', count: 31, color: 'purple', icon: Briefcase },
-    { id: 'rh', name: 'RH & Formation', count: 12, color: 'orange', icon: Users },
-  ], []);
+    window.addEventListener('projets:open-command-palette', handleOpenCommandPalette);
 
-  // Mock data for project types
-  const projectTypes = useMemo(() => [
-    { type: 'Construction', count: 34 },
-    { type: 'Rénovation', count: 28 },
-    { type: 'Migration IT', count: 19 },
-    { type: 'Formation', count: 12 },
-    { type: 'Autres', count: 7 },
-  ], []);
+    return () => {
+      window.removeEventListener('projets:open-command-palette', handleOpenCommandPalette);
+    };
+  }, [toggleCommandPalette]);
 
   // ================================
   // Render
   // ================================
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <ProjetsCommandSidebar
+        activeCategory={navigation.mainCategory}
+        onCategoryChange={handleCategoryChange}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+        stats={sidebarStats}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <Building2 className="w-5 h-5 text-orange-400" />
-            <h1 className="font-semibold text-slate-200">Projets en cours</h1>
-            {statsData && (
-              <span className="text-sm text-slate-400">
-                {statsData.active} actif{statsData.active > 1 ? 's' : ''}
-              </span>
-            )}
-            {hasUrgentItems && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                {statsData?.blocked} bloqué{(statsData?.blocked ?? 0) > 1 ? 's' : ''}
-              </span>
-            )}
-            {statsLastUpdate && (
-              <span className="text-xs text-slate-500">
-                MAJ: {statsLastUpdate}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCommandPaletteOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
-              type="button"
+            {/* Back Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goBack}
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              title="Retour (Alt+←)"
             >
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:inline">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
-            </button>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
 
-            <button
-              onClick={() => {
-                openTab({
-                  type: 'wizard',
-                  id: `wizard:create:${Date.now()}`,
-                  title: 'Nouveau projet',
-                  icon: '➕',
-                  data: { action: 'create' },
-                });
-                setViewMode('workspace');
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors"
-              type="button"
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-emerald-400" />
+              <h1 className="text-base font-semibold text-slate-200">
+                Projets en cours
+              </h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v3.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Nouveau projet</span>
-            </button>
-          </div>
-        </div>
-      </header>
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-      <main className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Workspace tabs */}
-        {(viewMode === 'workspace' || tabs.length > 0) && (
-          <div className="mb-6">
-            <ProjetsWorkspaceTabs />
-          </div>
-        )}
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-        {showDashboard ? (
-          <div className="space-y-8">
-            {/* Navigation dashboard */}
-            <nav className="flex items-center gap-1 border-b border-slate-700/50 overflow-x-auto">
-              {dashboardTabs.map((t) => {
-                const Icon = t.icon;
-                const isActive = dashboardTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setDashboardTab(t.id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-                      isActive
-                        ? 'border-orange-500 text-orange-400'
-                        : 'border-transparent text-slate-500 hover:text-slate-300'
-                    )}
-                    type="button"
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Dashboard content */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-8">
-                {/* Alertes critiques */}
-                {statsData && statsData.blocked > 0 && (
-                  <div className={cn('p-4 rounded-lg border', BG_STATUS.blocked)}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className={cn('w-5 h-5', STATUS_ICON_COLORS.blocked)} />
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {statsData.blocked} projet{statsData.blocked > 1 ? 's' : ''} bloqué{statsData.blocked > 1 ? 's' : ''}
-                          </p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            Nécessitent une intervention urgente pour débloquer l'avancement
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => openQueue('blocked')}
-                        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                        type="button"
-                      >
-                        Traiter
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-slate-800/50 rounded-lg p-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  'h-7 w-7 p-0',
+                  viewMode === 'grid' ? 'bg-slate-700/50 text-slate-200' : 'text-slate-500 hover:text-slate-300'
                 )}
+                title="Vue grille"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  'h-7 w-7 p-0',
+                  viewMode === 'list' ? 'bg-slate-700/50 text-slate-200' : 'text-slate-500 hover:text-slate-300'
+                )}
+                title="Vue liste"
+              >
+                <List className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('kanban')}
+                className={cn(
+                  'h-7 w-7 p-0',
+                  viewMode === 'kanban' ? 'bg-slate-700/50 text-slate-200' : 'text-slate-500 hover:text-slate-300'
+                )}
+                title="Vue Kanban"
+              >
+                <Columns className="h-3.5 w-3.5" />
+              </Button>
+            </div>
 
-                {/* KPIs principaux */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <button
-                    onClick={() => openQueue('active')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.active > 0 ? BG_STATUS.active : BG_STATUS.pending
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <PlayCircle className="w-4 h-4 text-emerald-500" />
-                      <span className="text-sm text-slate-500">En cours</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.active ?? '—'}
-                    </p>
-                  </button>
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-                  <button
-                    onClick={() => openQueue('blocked')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.blocked > 0 ? BG_STATUS.blocked : BG_STATUS.pending
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <PauseCircle className={cn('w-4 h-4', statsData && statsData.blocked > 0 ? 'text-rose-500' : 'text-slate-400')} />
-                      <span className="text-sm text-slate-500">Bloqués</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.blocked ?? '—'}
-                    </p>
-                  </button>
+            {/* New Project */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNewProject}
+              className="h-8 px-3 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="text-xs hidden sm:inline">Nouveau</span>
+            </Button>
 
-                  <button
-                    onClick={() => openQueue('completed')}
-                    className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/30 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm text-slate-500">Terminés</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.completed ?? '—'}
-                    </p>
-                  </button>
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full text-xs text-white flex items-center justify-center">
+                2
+              </span>
+            </Button>
 
-                  <div className="p-4 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200/50 dark:border-purple-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="w-4 h-4 text-purple-500" />
-                      <span className="text-sm text-slate-500">Avancement</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.avgProgress ?? '—'}%
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Wallet className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm text-slate-500">Budget</span>
-                    </div>
-                    <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData ? projetsApiService.formatMontant(statsData.totalBudget) : '—'}
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg border bg-slate-800/30 border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Building2 className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-500">Total</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-200">
-                      {statsData?.total ?? '—'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Par domaine/service */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Par domaine
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {serviceStats.map((service) => {
-                      const Icon = service.icon;
-                      return (
-                        <button
-                          key={service.id}
-                          onClick={() => openQueue(service.id)}
-                          className={cn(
-                            'p-4 rounded-lg border text-left hover:shadow-sm transition-all',
-                            `border-${service.color}-200/50 dark:border-${service.color}-800/30`,
-                            `bg-${service.color}-50/30 dark:bg-${service.color}-950/20`
-                          )}
-                          type="button"
-                        >
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', `bg-${service.color}-500/20`)}>
-                              <Icon className={cn('w-5 h-5', `text-${service.color}-600`)} />
-                            </div>
-                            <div>
-                              <p className="font-medium">{service.name}</p>
-                              <p className="text-xs text-slate-500">Projets actifs</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-lg font-semibold">{service.count}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* Par type de projet */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Par type de projet
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                    {projectTypes.map((item) => (
-                      <div
-                        key={item.type}
-                        className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left"
-                      >
-                        <p className="text-sm text-slate-500 mb-1">{item.type}</p>
-                        <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                          {item.count}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Outils avancés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Outils avancés
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <button
-                      onClick={() => setWorkflowOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Workflow className="w-5 h-5 text-purple-500 mb-2" />
-                      <p className="font-medium text-sm">Workflow</p>
-                      <p className="text-xs text-slate-500">Suivi étapes</p>
-                    </button>
-                    <button
-                      onClick={() => setAnalyticsOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Brain className="w-5 h-5 text-pink-500 mb-2" />
-                      <p className="font-medium text-sm">Analytics IA</p>
-                      <p className="text-xs text-slate-500">Prédictions</p>
-                    </button>
-                    <button
-                      onClick={() => setDelegationsOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Users className="w-5 h-5 text-blue-500 mb-2" />
-                      <p className="font-medium text-sm">Équipes</p>
-                      <p className="text-xs text-slate-500">Affectations</p>
-                    </button>
-                    <button
-                      onClick={() => setRemindersOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Calendar className="w-5 h-5 text-emerald-500 mb-2" />
-                      <p className="font-medium text-sm">Jalons</p>
-                      <p className="text-xs text-slate-500">Échéances</p>
-                    </button>
-                    <button
-                      onClick={() => setStatsModalOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <BarChart3 className="w-5 h-5 text-orange-500 mb-2" />
-                      <p className="font-medium text-sm">Statistiques</p>
-                      <p className="text-xs text-slate-500">Tableaux de bord</p>
-                    </button>
-                    <button
-                      onClick={() => setExportOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Download className="w-5 h-5 text-slate-500 mb-2" />
-                      <p className="font-medium text-sm">Export</p>
-                      <p className="text-xs text-slate-500">Rapports</p>
-                    </button>
-                  </div>
-                </section>
-
-                {/* Compteurs détaillés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Files de traitement
-                  </h2>
-                  <ProjetsLiveCounters onOpenQueue={(queue, title, icon) => openQueue(queue)} />
-                </section>
-
-                {/* Bloc gouvernance */}
-                <div className={cn('p-4 rounded-lg border', BG_STATUS.completed)}>
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-6 h-6 text-blue-500 flex-none" />
-                    <div className="flex-1">
-                      <h3 className="font-bold text-blue-700 dark:text-blue-300">
-                        Gouvernance Projets
-                      </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        Suivi budgétaire, jalons et risques pour chaque projet. Traçabilité complète des décisions et validations.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {dashboardTab === 'services' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {serviceStats.map((service) => {
-                    const Icon = service.icon;
-                    return (
-                      <div
-                        key={service.id}
-                        className="p-6 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50"
-                      >
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', `bg-${service.color}-500/20`)}>
-                            <Icon className={cn('w-6 h-6', `text-${service.color}-600`)} />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-lg">{service.name}</h3>
-                            <p className="text-sm text-slate-500">{service.count} projets</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => openQueue(service.id)}
-                          className="w-full py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                          type="button"
-                        >
-                          Voir les projets
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {dashboardTab === 'settings' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Paramètres des projets</h3>
-                <p className="text-slate-500">Configuration des workflows, notifications et règles métier.</p>
-              </div>
-            )}
-
-            {dashboardTab === 'history' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Historique des actions</h3>
-                <p className="text-slate-500">Journal des modifications et validations sur les projets.</p>
-              </div>
-            )}
-
-            {dashboardTab === 'favorites' && (
-              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                <h3 className="text-lg font-semibold mb-4">Projets suivis</h3>
-                <p className="text-slate-500">Vos projets épinglés et favoris.</p>
-              </div>
-            )}
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleRefresh}>
+                  <RefreshCw className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleFullscreen}>
+                  {fullscreen ? (
+                    <>
+                      <Minimize2 className="h-4 w-4 mr-2" />
+                      Quitter plein écran
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="h-4 w-4 mr-2" />
+                      Plein écran
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => openModal('export')}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('stats')}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Statistiques
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        ) : (
-          <ProjetsWorkspaceContent />
-        )}
-      </main>
+        </header>
+
+        {/* Sub Navigation */}
+        <ProjetsSubNavigation
+          mainCategory={navigation.mainCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={navigation.subCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+          filters={currentFilters}
+          activeFilter={null}
+          onFilterChange={() => {}}
+        />
+
+        {/* KPI Bar */}
+        <ProjetsKPIBar
+          data={mockKPIData}
+          collapsed={kpiConfig.collapsed}
+          onToggleCollapse={toggleKPIBar}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <ProjetsContentRouter
+              onViewProject={handleViewProject}
+              onEditProject={handleEditProject}
+              onDeleteProject={handleDeleteProject}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats?.total ?? 0} projets • {stats?.delayed ?? 0} en retard • {stats?.active ?? 0} actifs
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing ? 'Synchronisation...' : liveStats.connectionStatus === 'connected' ? 'Connecté' : 'Déconnecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Modals */}
+      <ProjetsModals />
 
       {/* Command Palette */}
       <ProjetsCommandPalette
         open={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        onOpenStats={() => setStatsModalOpen(true)}
-        onRefresh={() => loadStats('manual')}
+        onClose={toggleCommandPalette}
+        onOpenStats={() => openModal('stats')}
+        onRefresh={handleRefresh}
       />
 
-      {/* Stats Modal */}
-      {statsModalOpen && statsData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setStatsModalOpen(false)}>
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Statistiques Projets</h2>
-              <button onClick={() => setStatsModalOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 grid grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800">
-                <p className="text-xs text-slate-500 mb-1">Total</p>
-                <p className="text-2xl font-bold">{statsData.total}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-emerald-500/10">
-                <p className="text-xs text-slate-500 mb-1">En cours</p>
-                <p className="text-2xl font-bold text-emerald-600">{statsData.active}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-rose-500/10">
-                <p className="text-xs text-slate-500 mb-1">Bloqués</p>
-                <p className="text-2xl font-bold text-rose-600">{statsData.blocked}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-blue-500/10">
-                <p className="text-xs text-slate-500 mb-1">Terminés</p>
-                <p className="text-2xl font-bold text-blue-600">{statsData.completed}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-purple-500/10">
-                <p className="text-xs text-slate-500 mb-1">Avancement moy.</p>
-                <p className="text-2xl font-bold text-purple-600">{statsData.avgProgress}%</p>
-              </div>
-              <div className="p-4 rounded-xl bg-orange-500/10">
-                <p className="text-xs text-slate-500 mb-1">Budget total</p>
-                <p className="text-lg font-bold text-orange-600">{projetsApiService.formatMontant(statsData.totalBudget)} FCFA</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel
+          notifications={mockNotifications}
+          onClose={toggleNotificationsPanel}
+        />
       )}
 
-      {/* Help Modal */}
-      {helpOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setHelpOpen(false)}>
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
-              <h2 className="text-lg font-bold">Raccourcis clavier</h2>
-              <button onClick={() => setHelpOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-3">
-              {[
-                { key: '⌘K', action: 'Palette de commandes' },
-                { key: '⌘N', action: 'Nouveau projet' },
-                { key: '⌘1', action: 'Projets en cours' },
-                { key: '⌘2', action: 'Projets bloqués' },
-                { key: '⌘3', action: 'Projets terminés' },
-                { key: 'Esc', action: 'Fermer' },
-              ].map(({ key, action }) => (
-                <div key={key} className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">{action}</span>
-                  <kbd className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-sm font-mono">{key}</kbd>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Pattern Modal Overlay - Détails Projet */}
+      {selectedProject && (
+        <GenericDetailModal
+          isOpen={!!selectedProjectId}
+          onClose={() => {
+            setSelectedProjectId(null);
+            setSelectedProject(null);
+          }}
+          title={selectedProject.name || selectedProject.title || 'Détails du projet'}
+          subtitle={selectedProject.id}
+          icon={Briefcase}
+          iconClassName="bg-blue-500/10 text-blue-400"
+          badge={selectedProject.status ? {
+            label: selectedProject.status,
+            className: cn(
+              'text-xs',
+              selectedProject.status === 'En cours' && 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+              selectedProject.status === 'Terminé' && 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+              selectedProject.status === 'En retard' && 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+            )
+          } : undefined}
+          sections={[
+            {
+              title: 'Informations générales',
+              icon: Building2,
+              fields: [
+                { label: 'Code projet', value: selectedProject.id, icon: Briefcase },
+                { label: 'Type', value: selectedProject.type || 'Infrastructure', icon: Building2 },
+                { label: 'Bureau', value: selectedProject.bureau || 'BTP', icon: Building2 },
+                { label: 'Priorité', value: selectedProject.priority || 'Haute', icon: AlertCircle },
+              ]
+            },
+            {
+              title: 'Planning',
+              icon: Calendar,
+              fields: [
+                { 
+                  label: 'Date de début', 
+                  value: selectedProject.startDate ? new Date(selectedProject.startDate).toLocaleDateString('fr-FR') : 'N/A',
+                  icon: Calendar 
+                },
+                { 
+                  label: 'Date de fin prévue', 
+                  value: selectedProject.endDate ? new Date(selectedProject.endDate).toLocaleDateString('fr-FR') : 'N/A',
+                  icon: Calendar 
+                },
+                { 
+                  label: 'Progression', 
+                  value: selectedProject.progress ? `${selectedProject.progress}%` : '0%',
+                  icon: CheckCircle2 
+                },
+                { label: 'Jours restants', value: selectedProject.daysLeft || 'N/A', icon: Calendar },
+              ]
+            },
+            {
+              title: 'Budget',
+              icon: DollarSign,
+              fields: [
+                { 
+                  label: 'Budget total', 
+                  value: selectedProject.budget ? `${(selectedProject.budget / 1000000).toFixed(1)}M XOF` : 'N/A',
+                  icon: DollarSign 
+                },
+                { 
+                  label: 'Budget consommé', 
+                  value: selectedProject.budgetUsed ? `${(selectedProject.budgetUsed / 1000000).toFixed(1)}M XOF` : 'N/A',
+                  icon: DollarSign 
+                },
+                { 
+                  label: 'Taux d\'utilisation', 
+                  value: selectedProject.budgetUsage ? `${selectedProject.budgetUsage}%` : 'N/A',
+                  icon: DollarSign 
+                },
+                { label: 'Budget restant', value: selectedProject.budgetRemaining ? `${(selectedProject.budgetRemaining / 1000000).toFixed(1)}M XOF` : 'N/A', icon: DollarSign },
+              ]
+            },
+            {
+              title: 'Équipe',
+              icon: Users,
+              fields: [
+                { label: 'Chef de projet', value: selectedProject.manager || 'Non assigné', icon: Users },
+                { label: 'Équipe', value: selectedProject.teamSize ? `${selectedProject.teamSize} personnes` : 'N/A', icon: Users },
+              ]
+            },
+            ...(selectedProject.description ? [{
+              fields: [
+                { 
+                  label: 'Description', 
+                  value: selectedProject.description, 
+                  fullWidth: true,
+                  className: 'col-span-2'
+                }
+              ]
+            }] : [])
+          ]}
+          actions={{
+            onEdit: () => handleEditProject(selectedProject),
+            onDelete: () => handleDeleteProject(selectedProject.id),
+            onDownload: () => console.log('Download project report'),
+            customActions: [
+              {
+                label: 'Voir la timeline',
+                icon: GanttChart,
+                onClick: () => console.log('View timeline'),
+              },
+              {
+                label: 'Rapports',
+                icon: Download,
+                onClick: () => console.log('View reports'),
+              },
+            ]
+          }}
+        />
       )}
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+
+function NotificationsPanel({
+  notifications,
+  onClose,
+}: {
+  notifications: Notification[];
+  onClose: () => void;
+}) {
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-emerald-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            {unreadCount > 0 && (
+              <Badge className="bg-rose-500/20 text-rose-400 border-rose-500/30 text-xs">
+                {unreadCount} nouvelles
+              </Badge>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-rose-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : notif.type === 'success'
+                      ? 'bg-emerald-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

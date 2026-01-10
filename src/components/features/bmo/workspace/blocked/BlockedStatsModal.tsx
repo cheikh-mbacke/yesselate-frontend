@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
-import { X, TrendingUp, TrendingDown, AlertCircle, Building2, Clock, Wallet, BarChart3, Target } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { X, TrendingUp, TrendingDown, AlertCircle, Building2, Clock, Wallet, BarChart3, Target, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { blockedDossiers } from '@/lib/data';
+import { blockedApi } from '@/lib/services/blockedApiService';
 import type { BlockedDossier } from '@/lib/types/bmo.types';
 
 type Props = {
@@ -28,7 +28,32 @@ function computePriority(d: BlockedDossier): number {
 }
 
 export function BlockedStatsModal({ open, onClose }: Props) {
-  const data = blockedDossiers as unknown as BlockedDossier[];
+  const [data, setData] = useState<BlockedDossier[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    
+    let cancelled = false;
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const result = await blockedApi.getAll(undefined, undefined, 1, 500);
+        if (!cancelled) {
+          setData(result.data);
+        }
+      } catch (error) {
+        console.error('Failed to load data:', error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    
+    loadData();
+    return () => { cancelled = true; };
+  }, [open]);
 
   const stats = useMemo(() => {
     const total = data.length;
@@ -140,6 +165,13 @@ export function BlockedStatsModal({ open, onClose }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+              <span className="ml-3 text-slate-500">Chargement des statistiques...</span>
+            </div>
+          ) : (
+          <>
           {/* Score de risque */}
           <div className={cn(
             "p-6 rounded-xl border text-center",
@@ -303,6 +335,8 @@ export function BlockedStatsModal({ open, onClose }: Props) {
               ))}
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}

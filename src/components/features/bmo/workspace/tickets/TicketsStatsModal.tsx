@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ticketsApiService, type TicketsStats } from '@/lib/services/ticketsApiService';
+import { ticketsApi, type TicketsStats } from '@/lib/services/ticketsApiService';
 import { BarChart3, X, Ticket, Zap, Clock, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,7 +16,7 @@ export function TicketsStatsModal({ open, onClose }: Props) {
     if (!open) return;
     const load = async () => {
       setLoading(true);
-      try { const data = await ticketsApiService.getStats(); setStats(data); }
+      try { const data = await ticketsApi.getStats(); setStats(data); }
       catch (error) { console.error('Failed:', error); }
       finally { setLoading(false); }
     };
@@ -82,7 +82,7 @@ export function TicketsStatsModal({ open, onClose }: Props) {
                 <div className="space-y-3">
                   {Object.entries(stats.byCategory).map(([cat, count]) => (
                     <div key={cat} className="flex items-center gap-3">
-                      <span className="text-sm text-slate-600 w-24">{ticketsApiService.getCategoryLabel(cat)}</span>
+                      <span className="text-sm text-slate-600 w-24">{ticketsApi.getCategoryLabel(cat)}</span>
                       <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                         <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(count / stats.total) * 100}%` }} />
                       </div>

@@ -4,16 +4,25 @@ import { NextRequest, NextResponse } from 'next/server';
  * GET /api/analytics/alerts
  * 
  * Récupère les alertes actives du système
+ * Query params: status, severity, bureauId, limit, offset
  */
 export async function GET(request: NextRequest) {
   try {
-    const alerts = [
+    const { searchParams } = new URL(request.url);
+    const statusFilter = searchParams.get('status')?.split(',');
+    const severityFilter = searchParams.get('severity')?.split(',');
+    const bureauId = searchParams.get('bureauId');
+    const limit = parseInt(searchParams.get('limit') || '50');
+    const offset = parseInt(searchParams.get('offset') || '0');
+
+    const allAlerts = [
       {
         id: 'alert-1',
         type: 'critical',
         category: 'performance',
         title: 'Taux de validation sous objectif',
-        description: 'Le taux de validation (85%) est inférieur à l\'objectif (90%)',
+        message: 'Le taux de validation (85%) est inférieur à l\'objectif (90%)',
+        severity: 'critical',
         metric: 'Taux de validation',
         currentValue: 85,
         targetValue: 90,
@@ -23,6 +32,9 @@ export async function GET(request: NextRequest) {
         recommendation: 'Analyser les causes de rejet et former les équipes',
         createdAt: new Date(Date.now() - 3600000).toISOString(),
         status: 'active',
+        assignedTo: null,
+        kpiId: 'kpi-1',
+        bureauId: 'bj',
       },
       {
         id: 'alert-2',
@@ -90,31 +102,55 @@ export async function GET(request: NextRequest) {
       },
     ];
 
+    // Appliquer les filtres
+    let alerts = allAlerts;
+    if (statusFilter && statusFilter.length > 0) {
+      alerts = alerts.filter(a => statusFilter.includes(a.status));
+    }
+    if (severityFilter && severityFilter.length > 0) {
+      alerts = alerts.filter(a => severityFilter.includes(a.severity));
+    }
+    if (bureauId) {
+      alerts = alerts.filter(a => a.bureauId === bureauId || a.affectedBureaux.includes(bureauId));
+    }
+
+    // Pagination
+    const paginatedAlerts = alerts.slice(offset, offset + limit);
+
     const summary = {
       total: alerts.length,
-      critical: alerts.filter(a => a.type === 'critical').length,
-      warning: alerts.filter(a => a.type === 'warning').length,
-      info: alerts.filter(a => a.type === 'info').length,
+      unreadCount: alerts.filter(a => a.status === 'active').length,
+      critical: alerts.filter(a => a.severity === 'critical').length,
+      high: alerts.filter(a => a.severity === 'high').length,
+      medium: alerts.filter(a => a.severity === 'medium').length,
+      low: alerts.filter(a => a.severity === 'low').length,
       byCategory: {
         performance: alerts.filter(a => a.category === 'performance').length,
-        financier: alerts.filter(a => a.category === 'financier').length,
-        operationnel: alerts.filter(a => a.category === 'operationnel').length,
+        financial: alerts.filter(a => a.category === 'financial').length,
+        operational: alerts.filter(a => a.category === 'operational').length,
       },
-      byPriority: {
-        high: alerts.filter(a => a.priority === 'high').length,
-        medium: alerts.filter(a => a.priority === 'medium').length,
-        low: alerts.filter(a => a.priority === 'low').length,
+      byStatus: {
+        active: alerts.filter(a => a.status === 'active').length,
+        resolved: alerts.filter(a => a.status === 'resolved').length,
+        snoozed: alerts.filter(a => a.status === 'snoozed').length,
       },
     };
 
     return NextResponse.json({
-      alerts,
+      alerts: paginatedAlerts,
       summary,
+      filters: { status: statusFilter, severity: severityFilter, bureauId },
+      pagination: {
+        total: alerts.length,
+        limit,
+        offset,
+        hasMore: offset + limit < alerts.length,
+      },
       ts: new Date().toISOString(),
     }, {
       status: 200,
       headers: {
-        'Cache-Control': 'no-store, max-age=0',
+        'Cache-Control': 'no-cache',
       },
     });
   } catch (error) {

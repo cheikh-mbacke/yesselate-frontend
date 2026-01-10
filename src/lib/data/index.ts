@@ -145,3 +145,23 @@ export {
   getAlertById,
   searchAlerts,
 } from './alerts';
+
+// Dossiers Bloqués - Mock Data Complet
+export {
+  type MockBlockedDossier,
+  type MockAuditEntry,
+  type MockResolutionTemplate,
+  type MockAnalyticsData,
+  mockBlockedDossiers,
+  mockBlockedStats,
+  mockAuditLog,
+  mockResolutionTemplates,
+  mockAnalyticsData,
+  mockBureaux,
+  mockBlockageTypes,
+  getBlockedById,
+  getBlockedByImpact,
+  getBlockedByBureau,
+  getOverdueSLA,
+  searchBlocked,
+} from './blocked-mock-data';

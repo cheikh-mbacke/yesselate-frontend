@@ -664,7 +664,7 @@ function DemandesRHPageContent() {
                         <button
                           key={item.type}
                           onClick={() => openQueue(item.type)}
-                          className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                          className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 text-left hover:border-slate-600 hover:bg-slate-800/50 transition-colors"
                           type="button"
                         >
                           <p className="text-sm text-slate-500 mb-1">{item.type}</p>

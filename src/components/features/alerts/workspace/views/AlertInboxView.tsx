@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { filterAlertsByQueue, searchAlerts, type Alert } from '@/lib/data/alerts';
 import { useAlertToast } from '@/components/ui/toast';
 import { AlertInboxSkeleton } from '@/components/ui/alert-skeletons';
+import { useAlertQueue } from '@/lib/api/hooks';
 
 const QUEUE_CONFIG: Record<string, { label: string; icon: typeof AlertCircle; color: string }> = {
   all: { label: 'Toutes', icon: AlertCircle, color: 'text-slate-500' },
@@ -68,8 +69,15 @@ export function AlertInboxView({ tab }: { tab: AlertTab }) {
   const { openTab, updateTab } = useAlertWorkspaceStore();
   const toast = useAlertToast();
   
-  const [items, setItems] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Utiliser React Query pour charger les alertes
+  const {
+    data: alertsData,
+    isLoading: loading,
+    refetch,
+  } = useAlertQueue(queue as any, { page: 1, limit: 100 });
+
+  const items = alertsData?.alerts || [];
+  
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -85,30 +93,14 @@ export function AlertInboxView({ tab }: { tab: AlertTab }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkActions, setShowBulkActions] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      // En production, ce serait un appel API
-      // const res = await fetch(`/api/alerts?queue=${queue}&...`);
-      // const data = await res.json();
-      
-      // Pour le dev, on utilise les données mock
-      await new Promise(resolve => setTimeout(resolve, 300)); // Simuler latence
-      const loadedItems = filterAlertsByQueue(queue);
-      setItems(loadedItems);
-      
+  // Mettre à jour le titre de l'onglet avec le nombre d'alertes
+  useEffect(() => {
+    if (items.length > 0) {
       updateTab(tab.id, { 
-        title: `${queueConfig.label} (${loadedItems.length})` 
+        title: `${queueConfig.label} (${items.length})` 
       });
-    } catch (e) {
-      console.error('Erreur chargement alertes:', e);
-      setItems([]);
-    } finally {
-      setLoading(false);
     }
-  }, [queue, tab.id, queueConfig.label, updateTab]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [items.length, tab.id, queueConfig.label, updateTab]);
 
   // Filtrage et tri
   const filteredItems = useMemo(() => {
@@ -265,7 +257,7 @@ export function AlertInboxView({ tab }: { tab: AlertTab }) {
       }
       
       clearSelection();
-      load(); // Recharger les données
+      refetch(); // Utiliser refetch de React Query au lieu de load()
     } catch (error) {
       console.error('Erreur action bulk:', error);
       toast.actionError(action);
@@ -293,7 +285,7 @@ export function AlertInboxView({ tab }: { tab: AlertTab }) {
             
             <button 
               className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 text-slate-500" 
-              onClick={load}
+              onClick={() => refetch()}
               disabled={loading}
               title="Rafraîchir"
             >

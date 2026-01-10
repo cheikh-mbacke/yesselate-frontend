@@ -6,3 +6,8 @@ export { EmployesCommandPalette } from './EmployesCommandPalette';
 export { EmployesStatsModal } from './EmployesStatsModal';
 export { EmployesDirectionPanel } from './EmployesDirectionPanel';
 
+// Modals (new)
+export { EmployesModals } from './EmployesModals';
+export type { EmployeModalType } from './EmployesModals';
+export { EmployesNotificationPanel } from './EmployesNotificationPanel';
+

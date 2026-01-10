@@ -8,6 +8,7 @@
  */
 
 import type { BlockedDossier } from '@/lib/types/bmo.types';
+import type { BlockedActiveFilters } from '@/components/features/bmo/workspace/blocked/command-center';
 
 // ================================
 // Types
@@ -232,9 +233,9 @@ class BlockedApiService {
     // const response = await fetch(`${this.baseUrl}?${params}`);
     // return response.json();
 
-    // Mock data for now
-    const { blockedDossiers } = await import('@/lib/data');
-    let data = [...(blockedDossiers as unknown as BlockedDossier[])];
+    // Mock data - Remplacer par API réelle en production
+    const { mockBlockedDossiers } = await import('@/lib/data/blocked-mock-data');
+    let data = [...(mockBlockedDossiers as unknown as BlockedDossier[])];
 
     // Apply filters
     if (filter) {
@@ -292,6 +293,120 @@ class BlockedApiService {
     };
   }
 
+  /**
+   * Nouvelle méthode: Applique les filtres avancés (BlockedActiveFilters)
+   */
+  async getAllWithAdvancedFilters(
+    filters: BlockedActiveFilters,
+    sort?: BlockedSort,
+    page = 1,
+    pageSize = 20
+  ): Promise<PaginatedResponse<BlockedDossier>> {
+    await this.delay(300);
+    
+    const { blockedDossiers } = await import('@/lib/data');
+    let data = [...(blockedDossiers as unknown as BlockedDossier[])];
+
+    // Impact (multi-sélection)
+    if (filters.impact && filters.impact.length > 0) {
+      data = data.filter(d => filters.impact.includes(d.impact as any));
+    }
+
+    // Bureaux (multi-sélection)
+    if (filters.bureaux && filters.bureaux.length > 0) {
+      data = data.filter(d => d.bureau && filters.bureaux.includes(d.bureau));
+    }
+
+    // Types (multi-sélection)
+    if (filters.types && filters.types.length > 0) {
+      data = data.filter(d => filters.types.includes(d.type));
+    }
+
+    // Status (multi-sélection)
+    if (filters.status && filters.status.length > 0) {
+      data = data.filter(d => filters.status.includes(d.status as any));
+    }
+
+    // Délai (range)
+    if (filters.delayRange?.min !== undefined) {
+      data = data.filter(d => (d.delay ?? 0) >= filters.delayRange.min!);
+    }
+    if (filters.delayRange?.max !== undefined) {
+      data = data.filter(d => (d.delay ?? 0) <= filters.delayRange.max!);
+    }
+
+    // Montant (range)
+    if (filters.amountRange?.min !== undefined) {
+      const parseAmount = (amount: unknown): number => {
+        const s = String(amount ?? '').replace(/[^\d]/g, '');
+        return Number(s) || 0;
+      };
+      data = data.filter(d => parseAmount(d.amount) >= filters.amountRange!.min!);
+    }
+    if (filters.amountRange?.max !== undefined) {
+      const parseAmount = (amount: unknown): number => {
+        const s = String(amount ?? '').replace(/[^\d]/g, '');
+        return Number(s) || 0;
+      };
+      data = data.filter(d => parseAmount(d.amount) <= filters.amountRange!.max!);
+    }
+
+    // Date range
+    if (filters.dateRange?.start) {
+      data = data.filter(d => new Date(d.blockedSince) >= new Date(filters.dateRange!.start));
+    }
+    if (filters.dateRange?.end) {
+      data = data.filter(d => new Date(d.blockedSince) <= new Date(filters.dateRange!.end));
+    }
+
+    // SLA breached
+    if (filters.slaBreached) {
+      data = data.filter(d => (d.delay ?? 0) > (d.sla ?? 30));
+    }
+
+    // Recherche textuelle
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      data = data.filter(d =>
+        d.subject.toLowerCase().includes(q) ||
+        d.id.toLowerCase().includes(q) ||
+        d.bureau?.toLowerCase().includes(q) ||
+        d.description?.toLowerCase().includes(q)
+      );
+    }
+
+    // Apply sort
+    if (sort) {
+      data.sort((a, b) => {
+        let cmp = 0;
+        switch (sort.field) {
+          case 'delay':
+            cmp = (a.delay ?? 0) - (b.delay ?? 0);
+            break;
+          case 'impact':
+            const impactOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+            cmp = impactOrder[a.impact as keyof typeof impactOrder] - impactOrder[b.impact as keyof typeof impactOrder];
+            break;
+          default:
+            cmp = 0;
+        }
+        return sort.order === 'desc' ? -cmp : cmp;
+      });
+    }
+
+    const total = data.length;
+    const start = (page - 1) * pageSize;
+    const paginatedData = data.slice(start, start + pageSize);
+
+    return {
+      data: paginatedData,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
   async getById(id: string): Promise<BlockedDossier | null> {
     await this.delay(200);
     const { blockedDossiers } = await import('@/lib/data');
@@ -300,8 +415,10 @@ class BlockedApiService {
 
   async getStats(): Promise<BlockedStats> {
     await this.delay(200);
-    const { blockedDossiers } = await import('@/lib/data');
-    const data = blockedDossiers as unknown as BlockedDossier[];
+    
+    // Utiliser les stats pré-calculées du mock data
+    const { mockBlockedStats, mockBlockedDossiers } = await import('@/lib/data/blocked-mock-data');
+    const data = mockBlockedDossiers as unknown as BlockedDossier[];
 
     const byBureau: Record<string, { count: number; critical: number }> = {};
     const byType: Record<string, number> = {};
@@ -506,33 +623,10 @@ class BlockedApiService {
 
   async getAuditLog(dossierId?: string, limit = 50): Promise<AuditEntry[]> {
     await this.delay(300);
-    // Mock audit entries
-    const entries: AuditEntry[] = [
-      {
-        id: 'AUD-001',
-        at: new Date(Date.now() - 3600000).toISOString(),
-        action: 'escalated',
-        dossierId: 'BLK-001',
-        dossierSubject: 'Validation budget travaux Phase 2',
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        details: 'Escalade au CODIR - Dépassement SLA critique',
-        hash: 'SHA-256:abc123...',
-      },
-      {
-        id: 'AUD-002',
-        at: new Date(Date.now() - 7200000).toISOString(),
-        action: 'substituted',
-        dossierId: 'BLK-002',
-        dossierSubject: 'Contrat entreprise Lot 3',
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        details: 'Substitution BMO - Bureau DT absent depuis 21 jours',
-        hash: 'SHA-256:def456...',
-      },
-    ];
+    
+    // Utiliser le mock audit log centralisé
+    const { mockAuditLog } = await import('@/lib/data/blocked-mock-data');
+    const entries = mockAuditLog as unknown as AuditEntry[];
     
     if (dossierId) {
       return entries.filter(e => e.dossierId === dossierId);

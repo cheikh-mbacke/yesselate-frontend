@@ -1342,7 +1342,7 @@ function DelegationsPageContent() {
                 <button
                   key={id}
                   type="button"
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-[#141414]/50 hover:bg-white dark:hover:bg-[#141414]/80 transition-colors"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800 transition-colors text-slate-300"
                   onClick={() => openDelegation(id)}
                   title="Ouvrir"
                 >
@@ -1521,7 +1521,7 @@ function DelegationsPageContent() {
                   <button
                     key={it.id}
                     type="button"
-                    className="text-left p-3 rounded-xl border border-amber-500/20 bg-white/60 dark:bg-[#141414]/40 hover:bg-white dark:hover:bg-[#141414]/70 transition-colors"
+                    className="text-left p-3 rounded-xl border border-amber-500/20 bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
                     onClick={() => openDelegation(it.id)}
                   >
                     <div className="flex items-center justify-between gap-2">

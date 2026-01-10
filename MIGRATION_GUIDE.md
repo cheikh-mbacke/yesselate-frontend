@@ -1,376 +1,492 @@
-# 🔄 Guide de Migration - Nouvelle API Actions
+# 🔄 Guide de Migration
 
-## Vue d'ensemble
-
-Passage de **routes multiples** → **endpoint unique** `/api/demands/[id]/actions`
-
-### ❌ Ancienne architecture
-```
-POST /api/demands/[id]/validate
-POST /api/demands/[id]/reject
-POST /api/demands/[id]/assign
-POST /api/demands/[id]/request-complement
-```
-
-### ✅ Nouvelle architecture
-```
-POST /api/demands/[id]/actions
-```
-
-**Avantage** : Toutes les actions passent par un seul endpoint avec un payload `action`.
+Ce guide vous aide à migrer votre code existant pour utiliser les nouvelles fonctionnalités.
 
 ---
 
-## 🔄 Migration du code
+## 📋 Checklist de Migration
 
-### Exemple 1 : Validation
+### Phase 1: Préparation (30 min)
+- [ ] Lire `IMPLEMENTATION_COMPLETE_FINAL.md`
+- [ ] Lire `GUIDE_UTILISATION.md`
+- [ ] Installer la dépendance recharts: `npm install recharts`
+- [ ] Vérifier que Zustand est installé: `npm install zustand`
 
-#### ❌ Avant (anciennes routes)
+### Phase 2: Migration Backend (Priorité Haute)
+- [ ] Remplacer les mocks dans les services API
+- [ ] Configurer les endpoints dans les services
+- [ ] Tester les appels API
+- [ ] Gérer l'authentification/tokens
 
+### Phase 3: Intégration UI (Priorité Moyenne)
+- [ ] Ajouter `NotificationCenter` dans le layout principal
+- [ ] Intégrer `CommentSection` dans les pages de détail
+- [ ] Ajouter `AlertsPanel` dans les dashboards
+- [ ] Utiliser `WorkflowViewer` pour les validations
+
+### Phase 4: Optimisations (Priorité Basse)
+- [ ] Configurer WebSocket pour notifications temps réel
+- [ ] Ajouter tests unitaires
+- [ ] Optimiser le chargement des graphiques
+- [ ] Ajouter pagination pour grandes listes
+
+---
+
+## 🔧 Migrations Spécifiques
+
+### 1. Migration des Notifications
+
+#### Avant
 ```typescript
-// Ancien hook useDemandsAPI
-const { validateDemand } = useDemandsAPI();
-
-await validateDemand(
-  'REQ-2024-001',
-  'Demande approuvée'
-);
+// Code ancien
+alert('Opération réussie !');
 ```
 
+#### Après
 ```typescript
-// Ou directement avec fetch
-await fetch('/api/demands/REQ-2024-001/validate', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    actorId: 'USR-001',
-    actorName: 'A. DIALLO',
-    comment: 'Approuvé'
-  })
+// Code nouveau
+import { notificationService } from '@/lib/services';
+
+await notificationService.sendNotification({
+  type: 'success',
+  priority: 'high',
+  titre: 'Opération réussie',
+  message: 'Votre action a été effectuée avec succès',
+  module: 'projets'
 });
 ```
 
-#### ✅ Après (nouveau hook)
+### 2. Migration des Exports
 
+#### Avant
 ```typescript
-// Nouveau hook useDemandActions
-import { useDemandActions } from '@/hooks';
+// Code ancien - export manuel
+const csvContent = data.map(row => row.join(',')).join('\n');
+const blob = new Blob([csvContent], { type: 'text/csv' });
+// ... téléchargement manuel
+```
 
-const { validate } = useDemandActions();
+#### Après
+```typescript
+// Code nouveau - service centralisé
+import { exportService } from '@/lib/services';
 
-const updated = await validate(
-  'REQ-2024-001',
-  'USR-001',
-  'A. DIALLO',
-  'Demande approuvée'
+await exportService.exportToExcel(
+  data,
+  ['nom', 'prenom', 'email'],
+  'employes-2026'
+);
+```
+
+### 3. Migration des Workflows
+
+#### Avant
+```typescript
+// Code ancien - validation manuelle
+const [etape, setEtape] = useState(1);
+
+const handleValidate = async () => {
+  if (etape === 1) {
+    // Validation technique
+    setEtape(2);
+  } else if (etape === 2) {
+    // Validation budgétaire
+    setEtape(3);
+  }
+  // ... logique complexe
+};
+```
+
+#### Après
+```typescript
+// Code nouveau - workflow service
+import { workflowService } from '@/lib/services';
+import { WorkflowViewer } from '@/src/components/features/bmo';
+
+// Démarrer le workflow
+const instance = await workflowService.startWorkflow(
+  'bc',
+  bcId,
+  bcData,
+  userId
 );
 
-if (updated) {
-  console.log('Validée !', updated);
+// Utiliser le composant UI
+<WorkflowViewer instanceId={instance.id} />
+```
+
+### 4. Migration des Commentaires
+
+#### Avant
+```typescript
+// Code ancien - commentaires intégrés dans la base
+const [comments, setComments] = useState([]);
+
+const addComment = async (text) => {
+  const response = await fetch('/api/comments', {
+    method: 'POST',
+    body: JSON.stringify({ text, entityId })
+  });
+  // ... gestion manuelle
+};
+```
+
+#### Après
+```typescript
+// Code nouveau - service centralisé
+import { CommentSection } from '@/src/components/features/bmo';
+
+// Un seul composant gère tout
+<CommentSection 
+  entityType="projet"
+  entityId={projetId}
+/>
+```
+
+### 5. Migration des Analytics
+
+#### Avant
+```typescript
+// Code ancien - graphiques manuels
+const [data, setData] = useState([]);
+
+useEffect(() => {
+  fetch('/api/stats')
+    .then(res => res.json())
+    .then(setData);
+}, []);
+
+// Rendu manuel avec chart.js ou autre
+<canvas ref={chartRef} />
+```
+
+#### Après
+```typescript
+// Code nouveau - dashboard tout-en-un
+import { AnalyticsDashboard } from '@/src/components/features/bmo';
+
+<AnalyticsDashboard type="projets" />
+```
+
+### 6. Migration des Permissions
+
+#### Avant
+```typescript
+// Code ancien - vérifications dispersées
+if (user.role === 'admin' || user.role === 'manager') {
+  // Autoriser
 }
 ```
 
+#### Après
 ```typescript
-// Ou directement avec fetch
-await fetch('/api/demands/REQ-2024-001/actions', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'validate',
-    actorId: 'USR-001',
-    actorName: 'A. DIALLO',
-    details: 'Approuvé'
-  })
-});
+// Code nouveau - hook centralisé
+import { usePermissions } from '@/lib/hooks/usePermissions';
+
+const { hasPermission, hasRole } = usePermissions();
+
+if (hasPermission({ module: 'projets', action: 'write', scope: 'own' })) {
+  // Autoriser
+}
+
+// Ou plus simple
+{hasRole('admin') && <AdminPanel />}
 ```
 
 ---
 
-### Exemple 2 : Rejet
+## 🔄 Migration Page par Page
 
-#### ❌ Avant
+### Exemple: Migration d'une Page de Liste
 
+#### Avant
 ```typescript
-const { rejectDemand } = useDemandsAPI();
+// app/projets/page.tsx (ancien)
+'use client';
+import { useState, useEffect } from 'react';
 
-await rejectDemand(
-  'REQ-2024-001',
-  'Budget insuffisant'
-);
-```
-
-#### ✅ Après
-
-```typescript
-const { reject } = useDemandActions();
-
-const updated = await reject(
-  'REQ-2024-001',
-  'USR-001',
-  'A. DIALLO',
-  'Budget insuffisant'
-);
-```
-
----
-
-### Exemple 3 : Assignation (nouvelle fonctionnalité !)
-
-#### ✅ Nouveau
-
-```typescript
-const { assign } = useDemandActions();
-
-const updated = await assign(
-  'REQ-2024-001',
-  'USR-001',           // Acteur qui assigne
-  'A. DIALLO',
-  'EMP-042',           // Employé assigné
-  'Jean MARTIN'
-);
-```
-
----
-
-### Exemple 4 : Demande de complément (nouvelle fonctionnalité !)
-
-#### ✅ Nouveau
-
-```typescript
-const { requestComplement } = useDemandActions();
-
-const updated = await requestComplement(
-  'REQ-2024-001',
-  'USR-001',
-  'A. DIALLO',
-  'Merci de fournir les pièces justificatives manquantes'
-);
-```
-
----
-
-## 🎯 Migration d'un composant complet
-
-### ❌ Avant : DemandTab.tsx
-
-```typescript
-import { useDemandsAPI } from '@/hooks';
-
-export function DemandTab({ tab }: { tab: WorkspaceTab }) {
-  const { validateDemand, rejectDemand, loading } = useDemandsAPI();
+export default function ProjetsPage() {
+  const [projets, setProjets] = useState([]);
+  const [loading, setLoading] = useState(true);
   
-  const handleValidate = async () => {
-    const success = await validateDemand(d.id, comment);
-    if (success) {
-      addToast('Validée !', 'success');
-    }
-  };
+  useEffect(() => {
+    fetch('/api/projets')
+      .then(res => res.json())
+      .then(data => {
+        setProjets(data);
+        setLoading(false);
+      });
+  }, []);
   
-  const handleReject = async () => {
-    const success = await rejectDemand(d.id, reason);
-    if (success) {
-      addToast('Rejetée !', 'warning');
-    }
-  };
-  
-  // ...
+  return (
+    <div>
+      {loading ? 'Chargement...' : (
+        <ul>
+          {projets.map(p => <li key={p.id}>{p.titre}</li>)}
+        </ul>
+      )}
+    </div>
+  );
 }
 ```
 
-### ✅ Après : DemandTab.tsx
-
+#### Après
 ```typescript
-import { useDemandActions } from '@/hooks';
+// app/projets/page.tsx (nouveau)
+'use client';
+import { useState, useEffect } from 'react';
+import { projetsApiService } from '@/lib/services';
+import { useProjetsWorkspaceStore } from '@/lib/stores';
+import { NotificationCenter, AlertsPanel } from '@/src/components/features/bmo';
 
-export function DemandTab({ tab }: { tab: WorkspaceTab }) {
-  const { validate, reject, assign, requestComplement, loading } = useDemandActions();
+export default function ProjetsPage() {
+  const [projets, setProjets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { openTab } = useProjetsWorkspaceStore();
   
-  const handleValidate = async () => {
-    const updated = await validate(d.id, 'USR-001', 'A. DIALLO', comment);
-    if (updated) {
-      addToast('Validée !', 'success');
-      // Rafraîchir la liste si besoin
+  useEffect(() => {
+    loadProjets();
+  }, []);
+  
+  const loadProjets = async () => {
+    try {
+      setLoading(true);
+      const data = await projetsApiService.getQueue();
+      setProjets(data);
+    } catch (e) {
+      console.error('Erreur:', e);
+    } finally {
+      setLoading(false);
     }
   };
   
-  const handleReject = async () => {
-    const updated = await reject(d.id, 'USR-001', 'A. DIALLO', reason);
-    if (updated) {
-      addToast('Rejetée !', 'warning');
-    }
+  const handleOpenDetail = (projet) => {
+    openTab({
+      id: `detail-${projet.id}`,
+      type: 'detail',
+      title: projet.titre,
+      icon: '📊',
+      data: { projetId: projet.id },
+      closable: true
+    });
   };
   
-  const handleAssign = async (employeeId: string, employeeName: string) => {
-    const updated = await assign(d.id, 'USR-001', 'A. DIALLO', employeeId, employeeName);
-    if (updated) {
-      addToast(`Assignée à ${employeeName}`, 'info');
-    }
-  };
-  
-  const handleRequestComplement = async (message: string) => {
-    const updated = await requestComplement(d.id, 'USR-001', 'A. DIALLO', message);
-    if (updated) {
-      addToast('Complément demandé', 'info');
-    }
-  };
-  
-  // ...
+  return (
+    <div className="space-y-6 p-6">
+      {/* Notifications */}
+      <NotificationCenter userId="current-user-id" />
+      
+      {/* Alertes */}
+      <AlertsPanel module="projets" showStats={true} />
+      
+      {/* Liste des projets */}
+      {loading ? (
+        <div className="animate-pulse">Chargement...</div>
+      ) : (
+        <div className="grid gap-4">
+          {projets.map(p => (
+            <div 
+              key={p.id} 
+              onClick={() => handleOpenDetail(p)}
+              className="p-4 rounded-xl bg-slate-800/30 cursor-pointer hover:bg-slate-800/50"
+            >
+              <h3 className="font-semibold">{p.titre}</h3>
+              <p className="text-sm text-slate-400">{p.client}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 ```
 
 ---
 
-## 🔧 Compatibilité
+## 🎯 Points d'Attention
 
-### Les anciennes routes restent fonctionnelles !
-
-✅ **`/api/demands/[id]/validate`** → Toujours disponible  
-✅ **`/api/demands/[id]/reject`** → Toujours disponible  
-
-**Migration progressive** :
-1. Les nouvelles features utilisent `/actions`
-2. L'ancien code continue de fonctionner
-3. Migration au rythme souhaité
-
----
-
-## 🆕 Nouvelles fonctionnalités
-
-### 1. Assignation de demandes
-
+### 1. Imports
+Utilisez les imports centralisés :
 ```typescript
-const { assign } = useDemandActions();
+// ✅ BON
+import { notificationService, workflowService } from '@/lib/services';
 
-await assign(
-  demandId,
-  actorId,
-  actorName,
-  employeeId,
-  employeeName
-);
+// ❌ ÉVITER
+import { notificationService } from '@/lib/services/notificationService';
 ```
 
-### 2. Demande de complément
-
+### 2. Types TypeScript
+Importez les types pour bénéficier de l'autocomplétion :
 ```typescript
-const { requestComplement } = useDemandActions();
-
-await requestComplement(
-  demandId,
-  actorId,
-  actorName,
-  'Message du complément demandé'
-);
+import { 
+  type Notification, 
+  type WorkflowInstance 
+} from '@/lib/services';
 ```
 
-### 3. Action personnalisée
-
+### 3. Mock Data
+En développement, les services retournent des mocks. En production :
 ```typescript
-const { executeAction } = useDemandActions();
+// Configurer l'URL de base
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
-await executeAction(demandId, {
-  action: 'custom_action',
-  actorId: 'USR-001',
-  actorName: 'A. DIALLO',
-  customField: 'value'
-});
+class MyService {
+  private baseUrl = `${API_BASE_URL}/my-endpoint`;
+  
+  async getData() {
+    // En dev: return mock
+    if (process.env.NODE_ENV === 'development') {
+      return mockData;
+    }
+    
+    // En prod: vraie API
+    const response = await fetch(this.baseUrl);
+    return response.json();
+  }
+}
+```
+
+### 4. Gestion d'Erreurs
+Ajoutez toujours un try/catch :
+```typescript
+try {
+  await notificationService.sendNotification({...});
+} catch (error) {
+  console.error('Erreur notification:', error);
+  // Fallback ou message d'erreur
+}
 ```
 
 ---
 
-## 📊 Tableau de correspondance
+## 🚀 Déploiement
 
-| Ancienne méthode | Nouvelle méthode | Endpoint |
-|------------------|------------------|----------|
-| `validateDemand(id, comment)` | `validate(id, actorId, actorName, details)` | `POST /actions` |
-| `rejectDemand(id, reason)` | `reject(id, actorId, actorName, details)` | `POST /actions` |
-| ❌ Non disponible | `assign(id, actorId, actorName, empId, empName)` | `POST /actions` |
-| ❌ Non disponible | `requestComplement(id, actorId, actorName, msg)` | `POST /actions` |
+### Variables d'Environnement à Ajouter
 
----
+```env
+# .env.local ou .env.production
 
-## ⚡ Checklist de migration
+# API Backend
+NEXT_PUBLIC_API_URL=https://api.yesselate.com
 
-### Pour chaque composant utilisant les actions :
+# WebSocket (pour notifications temps réel)
+NEXT_PUBLIC_WS_URL=wss://ws.yesselate.com
 
-- [ ] Remplacer `useDemandsAPI` par `useDemandActions`
-- [ ] Mettre à jour les appels `validateDemand` → `validate`
-- [ ] Mettre à jour les appels `rejectDemand` → `reject`
-- [ ] Ajouter `actorId` et `actorName` aux appels
-- [ ] Profiter des nouvelles fonctionnalités (`assign`, `requestComplement`)
-- [ ] Tester les règles métier (validation des statuts)
-- [ ] Vérifier les événements créés dans la DB
+# Upload de fichiers
+NEXT_PUBLIC_UPLOAD_MAX_SIZE=10485760 # 10MB
 
-### Fichiers à migrer :
+# Features flags (optionnel)
+NEXT_PUBLIC_ENABLE_NOTIFICATIONS=true
+NEXT_PUBLIC_ENABLE_WORKFLOWS=true
+NEXT_PUBLIC_ENABLE_ANALYTICS=true
+```
 
-- [ ] `src/components/features/bmo/workspace/tabs/DemandTab.tsx`
-- [ ] `src/components/features/bmo/workspace/tabs/InboxTab.tsx`
-- [ ] `src/components/features/bmo/modals/DemandDetailsModal.tsx`
-- [ ] Tout autre composant utilisant `validateDemand` / `rejectDemand`
-
----
-
-## 🎯 Avantages de la migration
-
-✅ **Architecture plus propre** : Un seul endpoint pour toutes les actions  
-✅ **Règles métier centralisées** : Validation dans un seul fichier  
-✅ **Nouvelles fonctionnalités** : Assignation, demande de complément  
-✅ **Extensibilité** : Facile d'ajouter de nouvelles actions  
-✅ **Type-safe** : Types TypeScript stricts  
-✅ **Traçabilité** : Chaque action crée un événement  
-
----
-
-## 🚀 Prochaines étapes
-
-1. ✅ **Tester la nouvelle API** : Utilisez Postman ou le navigateur
-2. ✅ **Migrer un composant** : Commencez par `DemandTab`
-3. ✅ **Vérifier les événements** : Consultez la DB avec Prisma Studio
-4. ✅ **Profiter des nouvelles features** : Assignation, compléments
-5. ✅ **Documenter** : Ajoutez des commentaires dans le code
-
----
-
-## 📚 Documentation complète
-
-- **`API_ACTIONS.md`** : Documentation complète de l'endpoint `/actions`
-- **`API_REFERENCE.md`** : Référence de toute l'API
-- **`INSTALLATION.md`** : Installation de la DB
-
----
-
-## ❓ FAQ
-
-### Les anciennes routes `/validate` et `/reject` fonctionnent-elles encore ?
-
-✅ **Oui !** Elles restent fonctionnelles pour la compatibilité.
-
-### Dois-je tout migrer d'un coup ?
-
-❌ **Non.** Migration progressive possible.
-
-### Comment tester la nouvelle API ?
+### Build et Déploiement
 
 ```bash
-curl -X POST http://localhost:3000/api/demands/REQ-2024-001/actions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "validate",
-    "actorId": "USR-001",
-    "actorName": "A. DIALLO",
-    "details": "Test"
-  }'
-```
+# 1. Installer les dépendances
+npm install
 
-### Comment voir les événements créés ?
+# 2. Build production
+npm run build
 
-```bash
-npm run db:studio
-# → Ouvre Prisma Studio
-# → Table DemandEvent
+# 3. Vérifier qu'il n'y a pas d'erreurs
+npm run lint
+
+# 4. Lancer en production
+npm start
 ```
 
 ---
 
-**Bonne migration ! 🎉**
+## 📊 Monitoring Post-Migration
 
+### Vérifier que tout fonctionne
+
+1. **Notifications**
+   ```typescript
+   // Tester dans la console
+   import { notificationService } from '@/lib/services';
+   await notificationService.sendNotification({
+     type: 'info',
+     titre: 'Test',
+     message: 'Notification de test'
+   });
+   ```
+
+2. **Workflow**
+   - Créer un BC de test
+   - Démarrer un workflow
+   - Vérifier les étapes de validation
+
+3. **Analytics**
+   - Ouvrir un dashboard
+   - Vérifier que les graphiques s'affichent
+   - Tester l'export PDF/CSV
+
+4. **Alertes**
+   - Vérifier le monitoring automatique
+   - Créer une alerte de test
+   - Tester l'accusé de réception
+
+5. **Commentaires**
+   - Ajouter un commentaire sur une entité
+   - Tester les mentions
+   - Tester les réactions
+
+---
+
+## 🆘 Résolution de Problèmes
+
+### Problème: "Module not found"
+```bash
+# Solution: Vérifier les imports
+npm install zustand recharts
+```
+
+### Problème: "Type error in ..."
+```typescript
+// Solution: Importer les types
+import { type MyType } from '@/lib/services';
+```
+
+### Problème: "Les graphiques ne s'affichent pas"
+```bash
+# Solution: Vérifier Recharts
+npm install recharts
+# Redémarrer le serveur
+npm run dev
+```
+
+### Problème: "Les stores ne persistent pas"
+```typescript
+// Solution: Vérifier que le middleware persist est bien configuré
+// Dans le store
+export const useMyStore = create<State>()(
+  persist(
+    (set, get) => ({...}),
+    { name: 'my-store' } // ← Important
+  )
+);
+```
+
+---
+
+## ✅ Validation de la Migration
+
+- [ ] Toutes les pages compilent sans erreur
+- [ ] Les notifications s'affichent correctement
+- [ ] Les workflows fonctionnent end-to-end
+- [ ] Les exports génèrent des fichiers valides
+- [ ] Les graphiques affichent des données
+- [ ] Les commentaires peuvent être ajoutés/modifiés
+- [ ] Les alertes sont détectées et affichées
+- [ ] Les permissions limitent correctement l'accès
+- [ ] Les stores persistent entre les rechargements
+- [ ] La recherche globale retourne des résultats
+
+---
+
+**Bonne migration ! 🚀**
+
+En cas de problème, consultez `GUIDE_UTILISATION.md` ou `IMPLEMENTATION_COMPLETE_FINAL.md`.

@@ -637,3 +637,200 @@ model ConflictResolution {
   
   @@index([conflictId])
 }
+
+// ============================================
+// DOSSIERS BLOQUÉS — GESTION DES BLOCAGES BMO
+// ============================================
+
+// Statuts possibles: "pending" | "escalated" | "resolved" | "substituted"
+// Impact: "critical" | "high" | "medium" | "low"
+
+model BlockedDossier {
+  id          String   @id @default(cuid())
+  refNumber   String?  @unique // Référence unique (e.g. "BLOCK-2024-001")
+  subject     String   // Objet/Sujet du blocage
+  description String?  // Description détaillée
+  
+  // Classification
+  impact      String   // "critical" | "high" | "medium" | "low"
+  type        String   // Type de blocage (juridique, administratif, technique, financier...)
+  category    String?  // Catégorie (contrat, paiement, décision, validation...)
+  status      String   @default("pending") // "pending" | "escalated" | "resolved" | "substituted"
+  
+  // Priorité (calculée automatiquement)
+  priority    Float    @default(0) // Score de priorité (impact x urgence)
+  delay       Int?     // Délai en jours depuis création
+  
+  // Montant (si applicable)
+  amount      Int?     // Montant concerné (XOF)
+  currency    String   @default("XOF")
+  
+  // Dates
+  dueDate       DateTime? // Date limite de résolution
+  blockedSince  DateTime  @default(now()) // Date du blocage
+  
+  // Bureau et attribution
+  bureauCode    String   // Code du bureau concerné
+  assignedToId  String?  // ID de la personne assignée
+  assignedToName String? // Nom de la personne assignée
+  
+  // Origine du blocage
+  reportedById   String?  // Qui a signalé
+  reportedByName String?  // Nom du rapporteur
+  affectedEntity String?  // Entité affectée (projet, fournisseur, contrat...)
+  
+  // Résolution
+  resolvedAt        DateTime?
+  resolvedById      String?
+  resolvedByName    String?
+  resolutionMethod  String?  // "direct" | "escalation" | "substitution" | "delegation"
+  resolutionComment String?  // Commentaire de résolution
+  resolutionDocs    String?  // JSON array de documents
+  
+  // Escalade
+  escalatedAt      DateTime?
+  escalatedToId    String?
+  escalatedToName  String?
+  escalationReason String?
+  escalationLevel  Int       @default(0) // Niveau d'escalade (0, 1, 2...)
+  
+  // Substitution (si décision par substitution de pouvoir)
+  substitutedAt     DateTime?
+  substitutedById   String?
+  substitutedByName String?
+  substitutionHash  String?  // Hash SHA256 de la décision de substitution
+  substitutionRef   String?  // Référence de l'acte de substitution
+  
+  // SLA
+  slaTarget    Int?      // SLA cible en heures
+  slaBreached  Int       @default(0) // 0 = false, 1 = true
+  slaBreachAt  DateTime? // Date de dépassement SLA
+  
+  // Indicateurs
+  isUrgent      Int @default(0) // 0 = false, 1 = true
+  isCritical    Int @default(0) // 0 = false, 1 = true
+  requiresApproval Int @default(0) // Nécessite approbation hiérarchique
+  
+  // Documents liés
+  attachments String? // JSON array [{name, url, type, uploadedAt}]
+  
+  // Entité liée (si applicable)
+  linkedEntityType String? // "demand" | "delegation" | "bc" | "contract" | "payment"
+  linkedEntityId   String? // ID de l'entité liée
+  linkedEntityRef  String? // Référence de l'entité
+  
+  // Audit trail cryptographique (hash chaîné anti-contestation)
+  hash         String? // Hash de la chaîne d'audit
+  previousHash String? // Hash de l'événement précédent
+  
+  // Tags et métadonnées
+  tags      String? // JSON array de tags
+  metadata  String? // JSON pour données additionnelles
+  
+  // Notes internes
+  internalNotes String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  auditLog BlockedAuditLog[]
+  comments BlockedComment[]
+  
+  @@index([status, impact])
+  @@index([bureauCode])
+  @@index([priority])
+  @@index([delay])
+  @@index([dueDate])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@index([slaBreached])
+}
+
+// === AUDIT LOG (Traçabilité complète avec hash chaîné) ===
+model BlockedAuditLog {
+  id        String   @id @default(cuid())
+  dossierId String
+  
+  // Type d'action
+  action String // "created" | "updated" | "assigned" | "escalated" | "resolved" | "substituted" | "commented" | "status_changed" | "sla_breach"
+  
+  // Acteur
+  actorId    String
+  actorName  String
+  actorRole  String?  // Fonction/rôle de l'acteur
+  actorEmail String?
+  
+  // Détails
+  summary String?  // Résumé court
+  details String?  // Détails complets (JSON ou texte)
+  
+  // Changements (avant/après)
+  changes String? // JSON {field: {from, to}}
+  
+  // Contexte
+  context String? // JSON avec contexte additionnel
+  
+  // Hash chaîné pour audit trail incontestable
+  hash         String  // SHA256(previousHash + payload)
+  previousHash String? // Hash de l'événement précédent
+  
+  // IP et device (sécurité)
+  ipAddress String?
+  userAgent String?
+  
+  createdAt DateTime @default(now())
+  
+  dossier BlockedDossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  
+  @@index([dossierId, createdAt])
+  @@index([action])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+// === COMMENTAIRES ===
+model BlockedComment {
+  id        String   @id @default(cuid())
+  dossierId String
+  
+  content String // Contenu du commentaire (Markdown supporté)
+  
+  // Auteur
+  authorId    String
+  authorName  String
+  authorRole  String?
+  authorEmail String?
+  
+  // Visibilité
+  visibility String @default("internal") // "internal" | "shared" | "public"
+  
+  // Mentions (@utilisateur)
+  mentionedUsers String? // JSON array [{id, name}]
+  
+  // Type de commentaire
+  commentType String @default("general") // "general" | "question" | "solution" | "escalation_note" | "approval"
+  
+  // Pièces jointes
+  attachments String? // JSON array [{name, url, type}]
+  
+  // Réactions (optionnel)
+  reactions String? // JSON {emoji: count}
+  
+  // Édition
+  edited   Int       @default(0) // 0 = false, 1 = true
+  editedAt DateTime?
+  
+  // Parent (pour thread de réponses)
+  parentId String? // ID du commentaire parent
+  
+  createdAt DateTime @default(now())
+  
+  dossier BlockedDossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  
+  @@index([dossierId, createdAt])
+  @@index([authorId])
+  @@index([visibility])
+  @@index([commentType])
+}

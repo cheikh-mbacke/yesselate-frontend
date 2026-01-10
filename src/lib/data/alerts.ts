@@ -571,3 +571,117 @@ export function searchAlerts(query: string): Alert[] {
   );
 }
 
+/**
+ * Générer des alertes mockées pour les APIs
+ * Compatible avec la structure AlertItem de l'API
+ */
+export function generateMockAlerts(count: number = 100) {
+  const mockAlerts = [];
+  const severities: ('critical' | 'warning' | 'info' | 'success')[] = ['critical', 'warning', 'info', 'success'];
+  const statuses: ('open' | 'acknowledged' | 'resolved' | 'escalated')[] = ['open', 'acknowledged', 'resolved', 'escalated'];
+  const queues: ('critical' | 'warning' | 'sla' | 'blocked' | 'acknowledged' | 'resolved' | 'info')[] = 
+    ['critical', 'warning', 'sla', 'blocked', 'acknowledged', 'resolved', 'info'];
+  
+  const sources = ['System', 'Validation BC', 'Paiements', 'Contrats', 'Budget', 'RH', 'Projets'];
+  const tags = ['urgent', 'finance', 'contrat', 'validation', 'sla', 'blocage', 'rh', 'projet'];
+
+  for (let i = 0; i < count; i++) {
+    const type = severities[Math.floor(Math.random() * severities.length)];
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const createdAt = new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000); // Derniers 30 jours
+    
+    mockAlerts.push({
+      id: `alert-${i + 1}`,
+      type,
+      title: generateAlertTitle(type),
+      description: generateAlertDescription(type),
+      source: sources[Math.floor(Math.random() * sources.length)],
+      createdAt: createdAt.toISOString(),
+      updatedAt: new Date(createdAt.getTime() + Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+      status,
+      priority: Math.floor(Math.random() * 10) + 1,
+      assignedTo: Math.random() > 0.5 ? `user-${Math.floor(Math.random() * 10) + 1}` : null,
+      queue: type as any,
+      tags: [tags[Math.floor(Math.random() * tags.length)], tags[Math.floor(Math.random() * tags.length)]],
+      metadata: {
+        blocked: Math.random() > 0.9,
+        slaReason: Math.random() > 0.8 ? 'Délai de traitement dépassé' : undefined,
+      },
+    });
+  }
+
+  return mockAlerts;
+}
+
+function generateAlertTitle(severity: string): string {
+  const titles: Record<string, string[]> = {
+    critical: [
+      'Dépassement budget lot 4',
+      'Paiement bloqué - montant critique',
+      'Contrat non signé - échéance dépassée',
+      'Validation urgente requise',
+      'Ressource critique non disponible',
+    ],
+    warning: [
+      'Retard validation BC',
+      'Seuil budget atteint à 80%',
+      'Document manquant pour validation',
+      'Délai de livraison serré',
+      'Ressource bientôt indisponible',
+    ],
+    info: [
+      'Jalon J5 atteint',
+      'Nouveau document ajouté',
+      'Mise à jour planning',
+      'Nouvelle demande reçue',
+      'Rapport disponible',
+    ],
+    success: [
+      'Validation complétée',
+      'Paiement effectué',
+      'Contrat signé',
+      'Jalon franchi',
+      'Livraison confirmée',
+    ],
+  };
+  
+  const list = titles[severity] || titles.info;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function generateAlertDescription(severity: string): string {
+  const descriptions: Record<string, string[]> = {
+    critical: [
+      'Action immédiate requise pour éviter un blocage opérationnel',
+      'Impact financier significatif si non traité rapidement',
+      'Risque de pénalités contractuelles',
+      'Blocage de processus critique identifié',
+      'Escalade nécessaire au niveau direction',
+    ],
+    warning: [
+      'Attention requise dans les prochaines 48h',
+      'Risque de dépassement si non surveillé',
+      'Information manquante pour continuer',
+      'Vérification supplémentaire nécessaire',
+      'Suivi rapproché recommandé',
+    ],
+    info: [
+      'Information à des fins de suivi',
+      'Notification de mise à jour',
+      'Progression normale du dossier',
+      'Événement planifié réalisé',
+      'Mise à jour de statut',
+    ],
+    success: [
+      'Opération terminée avec succès',
+      'Objectif atteint',
+      'Validation obtenue',
+      'Processus complété',
+      'Résolution confirmée',
+    ],
+  };
+  
+  const list = descriptions[severity] || descriptions.info;
+  return list[Math.floor(Math.random() * list.length)];
+}
+

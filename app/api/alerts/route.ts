@@ -1,129 +1,162 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { generateMockAlerts } from '@/lib/data/alerts';
+
+// Types
+interface AlertFilters {
+  status?: string | string[];
+  severity?: string | string[];
+  queue?: string;
+  assignedTo?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
 
 /**
  * GET /api/alerts
- * Retourne la liste des alertes avec filtres optionnels
+ * Récupérer la liste des alertes avec filtres et pagination
  */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const queue = searchParams.get('queue') || 'all';
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
-
-    // Simuler un délai réseau
-    await new Promise(resolve => setTimeout(resolve, 400));
-
-    // Générer des alertes réalistes
-    const allAlerts = generateAlerts(100);
+    const { searchParams } = request.nextUrl;
     
-    // Filtrer par queue
-    let filtered = allAlerts;
-    if (queue !== 'all') {
-      filtered = allAlerts.filter(alert => {
-        switch (queue) {
-          case 'critical':
-            return alert.severity === 'critical';
-          case 'high':
-            return alert.severity === 'high';
-          case 'resolved':
-            return alert.status === 'resolved';
-          case 'pending':
-            return alert.status === 'pending' || alert.status === 'in_progress';
-          default:
-            return true;
-        }
-      });
+    // Extraire les filtres
+    const filters: AlertFilters = {
+      status: searchParams.get('status') || undefined,
+      severity: searchParams.get('severity') || undefined,
+      queue: searchParams.get('queue') || undefined,
+      assignedTo: searchParams.get('assignedTo') || undefined,
+      dateFrom: searchParams.get('dateFrom') || undefined,
+      dateTo: searchParams.get('dateTo') || undefined,
+      search: searchParams.get('search') || undefined,
+      page: searchParams.get('page') || '1',
+      limit: searchParams.get('limit') || '25',
+      sortBy: searchParams.get('sortBy') || 'createdAt',
+      sortOrder: (searchParams.get('sortOrder') as 'asc' | 'desc') || 'desc',
+    };
+
+    const page = parseInt(filters.page);
+    const limit = parseInt(filters.limit);
+
+    // Générer ou récupérer les alertes mockées
+    let alerts = generateMockAlerts(100);
+
+    // Appliquer les filtres
+    if (filters.status) {
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      alerts = alerts.filter(a => statuses.includes(a.status));
     }
 
+    if (filters.severity) {
+      const severities = Array.isArray(filters.severity) ? filters.severity : [filters.severity];
+      alerts = alerts.filter(a => severities.includes(a.type));
+    }
+
+    if (filters.queue) {
+      alerts = alerts.filter(a => a.queue === filters.queue);
+    }
+
+    if (filters.assignedTo) {
+      alerts = alerts.filter(a => a.assignedTo === filters.assignedTo);
+    }
+
+    if (filters.search) {
+      const search = filters.search.toLowerCase();
+      alerts = alerts.filter(a => 
+        a.title.toLowerCase().includes(search) ||
+        a.description?.toLowerCase().includes(search)
+      );
+    }
+
+    if (filters.dateFrom) {
+      alerts = alerts.filter(a => new Date(a.createdAt) >= new Date(filters.dateFrom!));
+    }
+
+    if (filters.dateTo) {
+      alerts = alerts.filter(a => new Date(a.createdAt) <= new Date(filters.dateTo!));
+    }
+
+    // Tri
+    alerts.sort((a, b) => {
+      const aVal = a[filters.sortBy as keyof typeof a];
+      const bVal = b[filters.sortBy as keyof typeof b];
+      
+      if (filters.sortOrder === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      } else {
+        return aVal < bVal ? 1 : -1;
+      }
+    });
+
     // Pagination
-    const paginated = filtered.slice(offset, offset + limit);
+    const total = alerts.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedAlerts = alerts.slice(startIndex, endIndex);
 
     return NextResponse.json({
-      alerts: paginated,
-      total: filtered.length,
+      alerts: paginatedAlerts,
+      total,
+      page,
       limit,
-      offset,
-      hasMore: offset + limit < filtered.length,
-    }, {
-      headers: {
-        'Cache-Control': 'no-store, max-age=0',
-      },
+      hasMore: endIndex < total,
     });
   } catch (error) {
     console.error('Error fetching alerts:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch alerts' },
+      { error: 'Failed to fetch alerts', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
 
-function generateAlerts(count: number) {
-  const types = ['technical', 'administrative', 'financial', 'quality'];
-  const severities = ['critical', 'high', 'medium', 'low'];
-  const statuses = ['pending', 'in_progress', 'resolved', 'escalated'];
-  const bureaus = ['Dakar Centre', 'Dakar Plateau', 'Pikine', 'Guédiawaye', 'Rufisque'];
-  const responsibles = ['Marie Diop', 'Amadou Seck', 'Fatou Ndiaye', 'Omar Ba', 'Aïssatou Fall'];
+/**
+ * POST /api/alerts
+ * Créer une nouvelle alerte
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
 
-  const alerts = [];
-  for (let i = 0; i < count; i++) {
-    const severity = severities[Math.floor(Math.random() * severities.length)];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const createdDaysAgo = Math.floor(Math.random() * 30);
-    const createdAt = new Date();
-    createdAt.setDate(createdAt.getDate() - createdDaysAgo);
+    // Validation basique
+    if (!body.title || !body.type) {
+      return NextResponse.json(
+        { error: 'Missing required fields: title, type' },
+        { status: 400 }
+      );
+    }
 
-    alerts.push({
-      id: `ALT-2026-${String(count - i).padStart(3, '0')}`,
-      title: generateAlertTitle(types[Math.floor(Math.random() * types.length)]),
-      type: types[Math.floor(Math.random() * types.length)],
-      severity,
-      status,
-      bureau: bureaus[Math.floor(Math.random() * bureaus.length)],
-      responsible: responsibles[Math.floor(Math.random() * responsibles.length)],
-      createdAt: createdAt.toISOString(),
-      updatedAt: new Date(createdAt.getTime() + Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-      daysBlocked: status === 'pending' ? Math.floor(Math.random() * 10) : 0,
-      context: 'Contexte de l\'alerte...',
-      priority: severity === 'critical' || severity === 'high' ? 'high' : 'normal',
-    });
+    // Créer la nouvelle alerte
+    const newAlert = {
+      id: `alert-${Date.now()}`,
+      type: body.type,
+      title: body.title,
+      description: body.description || '',
+      source: body.source || 'system',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'open' as const,
+      priority: body.priority || 5,
+      assignedTo: body.assignedTo || null,
+      queue: body.queue || body.type,
+      tags: body.tags || [],
+      metadata: body.metadata || {},
+    };
+
+    return NextResponse.json({
+      success: true,
+      alert: newAlert,
+      message: 'Alert created successfully',
+    }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating alert:', error);
+    return NextResponse.json(
+      { error: 'Failed to create alert', message: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
   }
-
-  return alerts.sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
 }
-
-function generateAlertTitle(type: string): string {
-  const titles = {
-    technical: [
-      'Retard livraison matériaux',
-      'Problème qualité béton',
-      'Panne équipement chantier',
-      'Non-conformité technique',
-    ],
-    administrative: [
-      'Document manquant dossier',
-      'Retard validation administrative',
-      'Conflit planning équipes',
-      'Absence responsable chantier',
-    ],
-    financial: [
-      'Dépassement budget prévisionnel',
-      'Retard paiement fournisseur',
-      'Écart coûts réels/prévisionnels',
-      'Facture non conforme',
-    ],
-    quality: [
-      'Non-conformité contrôle qualité',
-      'Réclamation client qualité',
-      'Défaut finitions',
-      'Problème sécurité chantier',
-    ],
-  };
-
-  const list = titles[type as keyof typeof titles] || titles.technical;
-  return list[Math.floor(Math.random() * list.length)];
-}
-

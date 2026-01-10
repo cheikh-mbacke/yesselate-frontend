@@ -2,144 +2,99 @@
 
 /**
  * ====================================================================
- * PAGE: Dossiers Bloqués (Blocked Dossiers)
+ * PAGE: Dossiers Bloqués - Command Center v2.0
  * ====================================================================
  * 
  * Interface de gestion des blocages pour le Bureau Maître d'Ouvrage (BMO).
+ * Architecture harmonisée avec Analytics Command Center.
  * Instance suprême avec pouvoir de substitution et d'arbitrage.
- * 
- * ====================================================================
- * APIs REQUISES (À implémenter côté backend)
- * ====================================================================
- * 
- * 1. GET /api/bmo/blocked
- *    - Récupérer tous les dossiers bloqués avec filtres
- *    - Query: ?impact=critical|high|medium|low&bureau=X&type=Y&page=N&limit=N
- *    - Response: { data: BlockedDossier[], total: number, pages: number }
- * 
- * 2. GET /api/bmo/blocked/:id
- *    - Détail complet d'un dossier bloqué
- *    - Inclut historique, documents, commentaires
- * 
- * 3. POST /api/bmo/blocked/:id/resolve
- *    - Marquer un dossier comme résolu
- *    - Body: { resolution: string, notes: string }
- * 
- * 4. POST /api/bmo/blocked/:id/escalate
- *    - Escalader vers hiérarchie supérieure
- *    - Body: { reason: string, urgency: 'high' | 'critical', targetRole: string }
- * 
- * 5. POST /api/bmo/blocked/:id/substitute
- *    - Action de substitution BMO (pouvoir suprême)
- *    - Body: { action: string, justification: string, sha256Hash: string }
- *    - Audit trail obligatoire
- * 
- * 6. POST /api/bmo/blocked/:id/reassign
- *    - Réassigner à un autre bureau/responsable
- *    - Body: { targetBureau: string, targetUser?: string, notes: string }
- * 
- * 7. POST /api/bmo/blocked/:id/comment
- *    - Ajouter un commentaire/note
- *    - Body: { content: string, visibility: 'internal' | 'shared' }
- * 
- * 8. POST /api/bmo/blocked/:id/documents
- *    - Uploader des documents justificatifs
- *    - FormData avec fichiers
- * 
- * 9. GET /api/bmo/blocked/stats
- *    - Statistiques agrégées temps réel
- *    - Response: { total, byImpact, byBureau, byType, avgDelay, slaBreaches }
- * 
- * 10. POST /api/bmo/blocked/bulk
- *     - Actions en lot (résoudre, escalader, réassigner)
- *     - Body: { ids: string[], action: string, params: object }
- * 
- * 11. GET /api/bmo/blocked/export
- *     - Exporter les données (JSON, Excel, PDF)
- *     - Query: ?format=json|xlsx|pdf&filters=...
- * 
- * 12. WebSocket /ws/bmo/blocked
- *     - Notifications temps réel (nouveau blocage, SLA breach, résolution)
- *     - Events: 'new_blocking', 'sla_alert', 'resolved', 'escalated'
- * 
- * ====================================================================
- * FONCTIONNALITÉS UX RECOMMANDÉES
- * ====================================================================
- * 
- * - [ ] Notifications push navigateur pour SLA critiques
- * - [ ] Intégration calendrier pour deadlines
- * - [ ] Rapport automatique quotidien/hebdomadaire par email
- * - [ ] Templates de résolution prédéfinis
- * - [ ] Workflow de validation multi-niveaux
- * - [ ] Historique complet avec diff des modifications
- * - [ ] Favoris/Watch list pour dossiers suivis
- * - [ ] Filtres sauvegardés personnalisés
- * - [ ] Mode hors-ligne avec sync
  * 
  * ====================================================================
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useBlockedWorkspaceStore } from '@/lib/stores/blockedWorkspaceStore';
-
-import { BlockedWorkspaceTabs } from '@/components/features/bmo/workspace/blocked/BlockedWorkspaceTabs';
-import { BlockedWorkspaceContent } from '@/components/features/bmo/workspace/blocked/BlockedWorkspaceContent';
-import { BlockedLiveCounters } from '@/components/features/bmo/workspace/blocked/BlockedLiveCounters';
-import { BlockedCommandPalette } from '@/components/features/bmo/workspace/blocked/BlockedCommandPalette';
-import { BlockedStatsModal } from '@/components/features/bmo/workspace/blocked/BlockedStatsModal';
-import { BlockedDecisionCenter } from '@/components/features/bmo/workspace/blocked/BlockedDecisionCenter';
-import { BlockedToastProvider, useBlockedToast } from '@/components/features/bmo/workspace/blocked/BlockedToast';
-
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { blockedDossiers } from '@/lib/data';
-import type { BlockedDossier } from '@/lib/types/bmo.types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
-  AlertCircle,
-  Search,
-  LayoutDashboard,
-  Clock,
-  Zap,
-  TrendingUp,
-  BarChart3,
-  Download,
-  RefreshCw,
-  HelpCircle,
-  Building2,
-  Shield,
-  ArrowUpRight,
-  LayoutGrid,
-  History,
-  Eye,
-  FileText,
-  ChevronRight,
-  ToggleLeft,
-  ToggleRight,
-  MoreVertical,
-  X,
+  ChevronLeft,
   Bell,
+  AlertCircle,
+  MoreHorizontal,
+  RefreshCw,
+  Download,
+  Search,
+  Zap,
+  BarChart3,
+  Settings,
+  Filter,
+  HelpCircle,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
+import {
+  BlockedCommandSidebar,
+  BlockedKPIBar,
+  BlockedSubNavigation,
+  BlockedContentRouter,
+  BlockedModals,
+  BlockedFiltersPanel,
+  countActiveFiltersUtil,
+  blockedCategories,
+  type BlockedActiveFilters,
+} from '@/components/features/bmo/workspace/blocked/command-center';
+import { BlockedCommandPalette } from '@/components/features/bmo/workspace/blocked/BlockedCommandPalette';
+import { BlockedToastProvider, useBlockedToast } from '@/components/features/bmo/workspace/blocked/BlockedToast';
+import { BlockedHelpModal } from '@/components/features/bmo/workspace/blocked/modals/BlockedHelpModal';
+import { blockedApi, type BlockedFilter } from '@/lib/services/blockedApiService';
+import type { BlockedDossier } from '@/lib/types/bmo.types';
+import { useRealtimeBlocked } from '@/lib/hooks/useRealtimeBlocked';
 
 // ================================
-// Types
+// Utility: Convert UI Filters to API Filters
 // ================================
-type DashboardTab = 'overview' | 'matrix' | 'bureaux' | 'timeline';
-type LoadReason = 'init' | 'manual' | 'auto';
+function convertToApiFilter(filters: BlockedActiveFilters): BlockedFilter {
+  const apiFilter: BlockedFilter = {};
 
-interface BlockedStats {
-  total: number;
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  avgDelay: number;
-  avgPriority: number;
-  totalAmount: number;
-  overdueSLA: number;
-  resolvedToday: number;
-  escalatedToday: number;
-  byBureau: Array<{ bureau: string; count: number }>;
-  byType: Array<{ type: string; count: number }>;
-  ts: string;
+  // Impact - prend le premier si plusieurs (API ne supporte qu'un seul)
+  if (filters.impact.length === 1) {
+    apiFilter.impact = filters.impact[0];
+  }
+
+  // Bureau - prend le premier si plusieurs
+  if (filters.bureaux.length === 1) {
+    apiFilter.bureau = filters.bureaux[0];
+  }
+
+  // Status - prend le premier si plusieurs
+  if (filters.status.length === 1) {
+    apiFilter.status = filters.status[0];
+  }
+
+  // Delay range
+  if (filters.delayRange.min !== undefined) {
+    apiFilter.minDelay = filters.delayRange.min;
+  }
+  if (filters.delayRange.max !== undefined) {
+    apiFilter.maxDelay = filters.delayRange.max;
+  }
+
+  // Date range
+  if (filters.dateRange?.start) {
+    apiFilter.dateFrom = filters.dateRange.start;
+  }
+  if (filters.dateRange?.end) {
+    apiFilter.dateTo = filters.dateRange.end;
+  }
+
+  return apiFilter;
 }
 
 // ================================
@@ -161,106 +116,265 @@ function computePriority(d: BlockedDossier): number {
   return Math.round(w * delay * factor);
 }
 
-function formatAmount(amount: number): string {
-  if (amount >= 1_000_000_000) return `${(amount / 1_000_000_000).toFixed(1)} Md`;
-  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(1)} M`;
-  if (amount >= 1_000) return `${(amount / 1_000).toFixed(0)} K`;
-  return amount.toLocaleString('fr-FR');
-}
+// Mapping des catégories vers labels
+const mainCategoryLabels = {
+  overview: 'Vue d\'ensemble',
+  queue: 'Files d\'attente',
+  critical: 'Critiques',
+  matrix: 'Matrice urgence',
+  bureaux: 'Par bureau',
+  timeline: 'Timeline',
+  decisions: 'Décisions',
+  audit: 'Audit',
+} as const;
 
-function useInterval(fn: () => void, delay: number | null): void {
-  const ref = useRef(fn);
-  useEffect(() => { ref.current = fn; }, [fn]);
-  useEffect(() => {
-    if (delay === null) return;
-    const id = window.setInterval(() => ref.current(), delay);
-    return () => window.clearInterval(id);
-  }, [delay]);
-}
+// Sous-catégories par catégorie principale
+const subCategoriesMap = {
+  overview: [
+    { id: 'summary', label: 'Synthèse' },
+    { id: 'kpis', label: 'KPIs' },
+    { id: 'trends', label: 'Tendances' },
+    { id: 'alerts', label: 'Alertes' },
+  ],
+  queue: [
+    { id: 'all', label: 'Tous' },
+    { id: 'critical', label: 'Critiques' },
+    { id: 'high', label: 'Priorité haute' },
+    { id: 'medium', label: 'Priorité moyenne' },
+    { id: 'low', label: 'Priorité basse' },
+  ],
+  critical: [
+    { id: 'urgent', label: 'Urgents' },
+    { id: 'sla', label: 'SLA dépassés' },
+    { id: 'escalated', label: 'Escaladés' },
+  ],
+  matrix: [
+    { id: 'impact', label: 'Par impact' },
+    { id: 'delay', label: 'Par délai' },
+    { id: 'amount', label: 'Par montant' },
+    { id: 'combined', label: 'Combiné' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous les bureaux' },
+    { id: 'most', label: 'Plus impactés' },
+    { id: 'comparison', label: 'Comparaison' },
+  ],
+  timeline: [
+    { id: 'recent', label: 'Récents' },
+    { id: 'week', label: 'Cette semaine' },
+    { id: 'month', label: 'Ce mois' },
+    { id: 'history', label: 'Historique' },
+  ],
+  decisions: [
+    { id: 'pending', label: 'En attente' },
+    { id: 'resolved', label: 'Résolus' },
+    { id: 'escalated', label: 'Escaladés' },
+    { id: 'substituted', label: 'Substitués' },
+  ],
+  audit: [
+    { id: 'trail', label: 'Trace audit' },
+    { id: 'chain', label: 'Chaîne de hash' },
+    { id: 'reports', label: 'Rapports' },
+    { id: 'export', label: 'Export' },
+  ],
+} as const;
 
 // ================================
-// Main Component (Inner)
+// Inner Content Component
 // ================================
 function BlockedPageContent() {
-  const { tabs, openTab, stats, setStats, setStatsLoading, statsLoading, autoRefresh, setAutoRefresh } = useBlockedWorkspaceStore();
+  const {
+    navigation,
+    fullscreen,
+    notificationsPanelOpen,
+    liveStats,
+    stats,
+    commandPaletteOpen,
+    sidebarCollapsed,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    navigationHistory,
+    openModal,
+    setStats,
+    setStatsLoading,
+    startRefresh,
+    endRefresh,
+    navigate,
+  } = useBlockedCommandCenterStore();
+
   const toast = useBlockedToast();
-
-  const showDashboard = tabs.length === 0;
-
-  // UI State
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [commandOpen, setCommandOpen] = useState(false);
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
-  const [decisionCenterOpen, setDecisionCenterOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const abortRef = useRef<AbortController | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const data = blockedDossiers as unknown as BlockedDossier[];
+  // WebSocket temps réel
+  const { isConnected: wsConnected, subscriptionsCount } = useRealtimeBlocked({
+    autoConnect: true,
+    showToasts: true,
+    autoInvalidateQueries: true,
+  });
 
-  // Load stats
-  const loadStats = useCallback(async (reason: LoadReason = 'manual') => {
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState(navigation.mainCategory);
+  const [activeSubCategory, setActiveSubCategory] = useState(navigation.subCategory);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Filters state
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<BlockedActiveFilters>({
+    impact: [],
+    bureaux: [],
+    types: [],
+    status: [],
+    delayRange: {},
+    amountRange: {},
+  });
+
+  // Computed values
+  const currentCategoryLabel = useMemo(() => {
+    return blockedCategories.find((c) => c.id === activeCategory)?.label || 'Blocages';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return (subCategoriesMap as any)[activeCategory] || [];
+  }, [activeCategory]);
+
+  // Load stats from API
+  const loadStats = useCallback(async (showToast = false) => {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
 
+    startRefresh();
     setStatsLoading(true);
+    setIsRefreshing(true);
 
     try {
-      await new Promise(r => setTimeout(r, reason === 'init' ? 200 : 100));
+      // Fetch stats from API
+      const apiStats = await blockedApi.getStats();
+      
       if (ac.signal.aborted) return;
 
-      const total = data.length;
-      const critical = data.filter(d => d.impact === 'critical').length;
-      const high = data.filter(d => d.impact === 'high').length;
-      const medium = data.filter(d => d.impact === 'medium').length;
-      const low = data.filter(d => d.impact === 'low').length;
-      const avgDelay = total === 0 ? 0 : Math.round(data.reduce((acc, d) => acc + (d.delay ?? 0), 0) / total);
-      const avgPriority = total === 0 ? 0 : Math.round(data.reduce((acc, d) => acc + computePriority(d), 0) / total);
-      const totalAmount = data.reduce((acc, d) => acc + parseAmountFCFA(d.amount), 0);
+      setStats(apiStats);
+      setLastUpdate(new Date());
 
-      setStats({
-        total,
-        critical,
-        high,
-        medium,
-        low,
-        avgDelay,
-        avgPriority,
-        totalAmount,
-        overdueSLA: data.filter(d => (d.delay ?? 0) > 14).length,
-        resolvedToday: 0,
-        escalatedToday: 0,
-        byBureau: [],
-        byType: [],
-        ts: new Date().toISOString(),
-      });
-
-      if (reason === 'manual') {
-        toast.success('Données actualisées', `${total} dossiers bloqués`);
+      if (showToast) {
+        toast.success('Données actualisées', `${apiStats.total} dossiers bloqués`);
       }
-    } catch {
-      if (reason === 'manual') {
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+      if (showToast) {
         toast.error('Erreur', 'Impossible de charger les statistiques');
       }
     } finally {
       setStatsLoading(false);
+      endRefresh();
+      setIsRefreshing(false);
     }
-  }, [data, setStats, setStatsLoading, toast]);
+  }, [setStats, setStatsLoading, startRefresh, endRefresh, toast]);
 
-  // Initial load
+  // Initial load + auto-refresh polling
   useEffect(() => {
-    loadStats('init');
-    return () => { abortRef.current?.abort(); };
+    loadStats(false);
+    
+    // Setup polling for auto-refresh (every 30 seconds)
+    const setupPolling = () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+      pollingRef.current = setInterval(() => {
+        loadStats(false);
+      }, 30000);
+    };
+    
+    setupPolling();
+    
+    return () => { 
+      abortRef.current?.abort();
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
   }, [loadStats]);
 
-  // Auto-refresh
-  useInterval(
-    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
-    autoRefresh ? 60_000 : null
-  );
+  // Handle category change
+  const handleCategoryChange = useCallback((category: typeof activeCategory) => {
+    setActiveCategory(category);
+    navigate(category);
+    const defaultSub = (subCategoriesMap as any)[category]?.[0]?.id || null;
+    setActiveSubCategory(defaultSub);
+  }, [navigate]);
+
+  // Handle sub-category change
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    navigate(activeCategory, subCategory as any);
+  }, [activeCategory, navigate]);
+
+  // Handle refresh
+  const handleRefresh = useCallback(async () => {
+    await loadStats(true);
+  }, [loadStats]);
+
+  // Récupérer les setters de filtres du store
+  const { resetFilters: resetStoreFilters } = useBlockedCommandCenterStore();
+
+  // Handle apply filters - sync with local state AND store
+  const handleApplyFilters = useCallback(async (filters: BlockedActiveFilters) => {
+    setActiveFilters(filters);
+    
+    // Mettre à jour le store pour que BlockedContentRouter récupère les filtres
+    const store = useBlockedCommandCenterStore.getState();
+    
+    // Mettre à jour chaque filtre dans le store
+    store.setFilter('impact', filters.impact);
+    store.setFilter('bureaux', filters.bureaux);
+    store.setFilter('types', filters.types);
+    store.setFilter('status', filters.status);
+    store.setFilter('delayRange', filters.delayRange);
+    store.setFilter('amountRange', filters.amountRange || { min: undefined, max: undefined });
+    if (filters.dateRange) {
+      store.setFilter('dateRange', filters.dateRange);
+    }
+
+    // Appliquer les filtres aux données
+    try {
+      const hasActiveFilters = countActiveFiltersUtil(filters) > 0;
+      
+      if (hasActiveFilters) {
+        // Utiliser la nouvelle méthode avec filtres avancés
+        const result = await blockedApi.getAllWithAdvancedFilters(filters);
+        console.log(`Filtres appliqués: ${result.total} résultats trouvés`);
+      }
+      
+      // Recharger les stats
+      await loadStats(false);
+      
+      toast.success('Filtres appliqués', `${countActiveFiltersUtil(filters)} filtre(s) actif(s)`);
+    } catch (error) {
+      console.error('Erreur lors de l\'application des filtres:', error);
+      toast.error('Erreur', 'Impossible d\'appliquer les filtres');
+    };
+  }, [loadStats, toast]);
+
+  // Helper pour compter les filtres
+  // Removed: countFilters - now using countActiveFiltersUtil from command-center
+
+  // Count active filters
+  const activeFiltersCount = useMemo(() => {
+    return countActiveFiltersUtil(activeFilters);
+  }, [activeFilters]);
+
+  // Handle go back
+  const handleGoBack = useCallback(() => {
+    goBack();
+    setActiveCategory(navigation.mainCategory);
+    setActiveSubCategory(navigation.subCategory);
+  }, [goBack, navigation]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -274,697 +388,471 @@ function BlockedPageContent() {
       // ⌘K - Command palette
       if (isMod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setCommandOpen(true);
+        toggleCommandPalette();
+        return;
+      }
+
+      // ⌘B - Toggle sidebar
+      if (isMod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
         return;
       }
 
       // ⌘D - Decision center
       if (isMod && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        setDecisionCenterOpen(true);
+        openModal('decision-center');
         return;
       }
 
       // ⌘I - Stats
       if (isMod && e.key.toLowerCase() === 'i') {
         e.preventDefault();
-        setStatsModalOpen(true);
+        openModal('stats');
         return;
       }
 
-      // Escape
-      if (e.key === 'Escape') {
-        setCommandOpen(false);
-        setStatsModalOpen(false);
-        setDecisionCenterOpen(false);
-        setHelpOpen(false);
+      // F1 - Help
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+        return;
+      }
+
+      // ⌘E - Export
+      if (isMod && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // ⌘F - Filters
+      if (isMod && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFiltersPanelOpen((prev) => !prev);
+        return;
+      }
+
+      // F11 - Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt + Left - Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
         return;
       }
 
       // ? - Help
       if (e.key === '?' && !isMod) {
-        setHelpOpen(prev => !prev);
+        e.preventDefault();
+        openModal('shortcuts');
+      }
+
+      // Escape
+      if (e.key === 'Escape') {
+        if (commandPaletteOpen) toggleCommandPalette();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [toggleCommandPalette, toggleFullscreen, handleGoBack, openModal, commandPaletteOpen, toggleSidebar]);
 
-  // Listen for custom events
-  useEffect(() => {
-    const handleOpenDecision = () => setDecisionCenterOpen(true);
-    window.addEventListener('blocked:open-decision-center', handleOpenDecision);
-    return () => window.removeEventListener('blocked:open-decision-center', handleOpenDecision);
-  }, []);
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
-  // WebSocket & Notifications initialization
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    // Import dynamically to avoid SSR issues
-    const initRealtime = async () => {
-      const { blockedWebSocket } = await import('@/lib/services/blockedWebSocket');
-      const { blockedNotifications } = await import('@/lib/services/blockedNotifications');
-
-      // Connect WebSocket
-      blockedWebSocket.connect();
-
-      // Listen to events
-      const unsubscribers = [
-        blockedWebSocket.onSLABreach((alert) => {
-          toast.error(`Alerte SLA - ${alert.dossierId}`, `Retard de ${alert.daysOverdue} jours`);
-          if (blockedNotifications.isEnabled()) {
-            blockedNotifications.notifySLABreach(alert);
-          }
-          // Refresh stats
-          loadStats('auto');
-        }),
-
-        blockedWebSocket.onNewBlocking((event) => {
-          toast.info('Nouveau blocage', event.dossier.subject);
-          if (blockedNotifications.isEnabled()) {
-            blockedNotifications.notifyNewBlocking(event);
-          }
-          // Refresh stats
-          loadStats('auto');
-        }),
-
-        blockedWebSocket.onResolution((event) => {
-          toast.success('Résolution', event.dossierSubject);
-          // Refresh stats
-          loadStats('auto');
-        }),
-
-        blockedWebSocket.onEscalation((event) => {
-          toast.warning('Escalade', `${event.dossierSubject} → ${event.escalatedTo}`);
-          // Refresh stats
-          loadStats('auto');
-        }),
-      ];
-
-      // Cleanup
-      return () => {
-        unsubscribers.forEach(unsub => unsub());
-        blockedWebSocket.disconnect();
-      };
-    };
-
-    const cleanup = initRealtime();
-    
-    return () => {
-      cleanup.then(fn => fn?.());
-    };
-  }, [loadStats, toast]);
-
-  // Open queue
-  const openQueue = useCallback((queue: string, title: string, icon: string) => {
-    openTab({
-      id: `inbox:${queue}`,
-      type: 'inbox',
-      title,
-      icon,
-      data: { queue },
-    });
-  }, [openTab]);
-
-  // Dashboard tabs
-  const dashboardTabs = useMemo(() => [
-    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'matrix' as DashboardTab, label: 'Matrice urgence', icon: LayoutGrid },
-    { id: 'bureaux' as DashboardTab, label: 'Par bureau', icon: Building2 },
-    { id: 'timeline' as DashboardTab, label: 'Timeline', icon: History },
-  ], []);
-
-  // Computed stats
-  const displayStats = useMemo(() => {
-    if (stats) return stats;
-    return {
-      total: data.length,
-      critical: data.filter(d => d.impact === 'critical').length,
-      high: data.filter(d => d.impact === 'high').length,
-      medium: data.filter(d => d.impact === 'medium').length,
-      low: data.filter(d => d.impact === 'low').length,
-      avgDelay: 0,
-      avgPriority: 0,
-      totalAmount: 0,
-    };
-  }, [stats, data]);
-
-  // ================================
-  // Render
-  // ================================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <BlockedCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-red-500/20">
-              <AlertCircle className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <h1 className="font-semibold text-slate-200">Dossiers bloqués</h1>
-              {displayStats.critical > 0 && (
-                <span className="text-xs text-red-400 font-medium">
-                  {displayStats.critical} critique(s)
-                </span>
-              )}
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+              <h1 className="text-base font-semibold text-slate-200">Dossiers bloqués</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
 
-          {/* Actions header */}
-          <div className="flex items-center gap-2">
+          {/* Actions */}
+          <div className="flex items-center gap-1">
             {/* Search */}
-            <button
-              onClick={() => setCommandOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 gap-1.5 text-slate-400 hover:text-slate-200"
+              title="Rechercher (⌘K)"
             >
-              <Search className="w-4 h-4 text-slate-500" />
-              <span className="hidden sm:inline">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
-            </button>
+              <Search className="h-4 w-4" />
+            </Button>
 
-            {/* Decision center - Bouton principal */}
-            <button
-              onClick={() => setDecisionCenterOpen(true)}
+            {/* Filters */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFiltersPanelOpen(true)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                displayStats.critical > 0
-                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90"
-                  : "border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                'h-8 gap-1.5 text-slate-400 hover:text-slate-200',
+                activeFiltersCount > 0 && 'text-blue-400 hover:text-blue-300'
+              )}
+              title="Filtres avancés (⌘F)"
+            >
+              <Filter className="h-4 w-4" />
+              {activeFiltersCount > 0 && (
+                <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </Button>
+
+            {/* Decision Center */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openModal('decision-center')}
+              className={cn(
+                'h-8 gap-1.5 text-slate-400 hover:text-slate-200',
+                stats?.critical && stats.critical > 0 && 'text-orange-400 hover:text-orange-300'
               )}
               title="Centre de décision (⌘D)"
             >
-              <Zap className={cn("w-4 h-4", displayStats.critical > 0 ? "text-orange-400" : "text-orange-500")} />
-              <span className="hidden sm:inline">Décider</span>
-              {displayStats.critical > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-xs">
-                  {displayStats.critical}
+              <Zap className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">Décider</span>
+            </Button>
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-blue-400 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {stats?.overdueSLA && stats.overdueSLA > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {stats.overdueSLA}
                 </span>
               )}
-            </button>
+            </Button>
 
-            {/* Notifications button */}
-            <button
-              onClick={async () => {
-                const { blockedNotifications } = await import('@/lib/services/blockedNotifications');
-                if (!blockedNotifications.isEnabled()) {
-                  const granted = await blockedNotifications.requestPermission();
-                  if (granted) {
-                    toast.success('Notifications activées', 'Vous recevrez des alertes pour les SLA critiques');
-                  }
-                } else {
-                  await blockedNotifications.sendTestNotification();
-                }
-              }}
-              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-              title="Activer les notifications"
-            >
-              <Bell className="w-4 h-4 text-slate-500" />
-            </button>
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                  title="Actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleRefresh} disabled={isRefreshing}>
+                  <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('export')}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Exporter
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘E
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setFiltersPanelOpen(true)}>
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filtres avancés
+                  {activeFiltersCount > 0 && (
+                    <span className="ml-1 text-xs text-blue-400">({activeFiltersCount})</span>
+                  )}
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘F
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('stats')}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Statistiques
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘I
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHelpModalOpen(true)}>
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  Aide
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    F1
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleFullscreen}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Plein écran
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    F11
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('shortcuts')}>
+                  <span className="mr-2">⌨️</span>
+                  Raccourcis
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ?
+                  </kbd>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
 
-            {/* Menu déroulant pour les autres actions */}
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                title="Plus d'options"
-              >
-                <MoreVertical className="w-4 h-4 text-slate-500" />
-              </button>
+        {/* Sub Navigation */}
+        <BlockedSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory as any}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
 
-              {menuOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setMenuOpen(false)} 
-                  />
-                  <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg z-50 overflow-hidden">
-                    <div className="py-1">
-                      {/* Rafraîchir */}
-                      <button
-                        onClick={() => { loadStats('manual'); setMenuOpen(false); }}
-                        disabled={statsLoading}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
-                      >
-                        <RefreshCw className={cn("w-4 h-4 text-slate-400", statsLoading && "animate-spin")} />
-                        Rafraîchir les données
-                      </button>
+        {/* KPI Bar */}
+        <BlockedKPIBar 
+          onRefresh={handleRefresh} 
+          isRefreshing={isRefreshing} 
+        />
 
-                      {/* Auto-refresh */}
-                      <button
-                        onClick={() => { setAutoRefresh(!autoRefresh); setMenuOpen(false); }}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <span className="flex items-center gap-3">
-                          {autoRefresh ? (
-                            <ToggleRight className="w-4 h-4 text-emerald-500" />
-                          ) : (
-                            <ToggleLeft className="w-4 h-4 text-slate-400" />
-                          )}
-                          Auto-refresh
-                        </span>
-                        <span className={cn(
-                          "text-xs px-1.5 py-0.5 rounded",
-                          autoRefresh ? "bg-emerald-500/10 text-emerald-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                        )}>
-                          {autoRefresh ? 'ON' : 'OFF'}
-                        </span>
-                      </button>
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <BlockedContentRouter />
+          </div>
+        </main>
 
-                      <div className="h-px bg-slate-200 dark:bg-slate-700 my-1" />
-
-                      {/* Statistiques */}
-                      <button
-                        onClick={() => { setStatsModalOpen(true); setMenuOpen(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <BarChart3 className="w-4 h-4 text-blue-500" />
-                        Statistiques
-                        <kbd className="ml-auto px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs text-slate-500">⌘I</kbd>
-                      </button>
-
-                      {/* Export */}
-                      <button
-                        onClick={() => { setExportModalOpen(true); setMenuOpen(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <Download className="w-4 h-4 text-purple-500" />
-                        Exporter
-                      </button>
-
-                      <div className="h-px bg-slate-200 dark:bg-slate-700 my-1" />
-
-                      {/* Aide */}
-                      <button
-                        onClick={() => { setHelpOpen(true); setMenuOpen(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <HelpCircle className="w-4 h-4 text-slate-400" />
-                        Raccourcis clavier
-                        <kbd className="ml-auto px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs text-slate-500">?</kbd>
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats?.total ?? 0} blocages • {stats?.critical ?? 0} critiques • {stats?.resolvedToday ?? 0} résolus
+            </span>
+            {wsConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Temps réel ({subscriptionsCount} abonnements)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing 
+                    ? 'bg-amber-500 animate-pulse' 
+                    : wsConnected 
+                    ? 'bg-emerald-500 animate-pulse' 
+                    : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing 
+                  ? 'Synchronisation...' 
+                  : wsConnected 
+                  ? 'Temps réel' 
+                  : 'Connecté'}
+              </span>
             </div>
           </div>
-        </div>
-      </header>
+        </footer>
+      </div>
 
-      {/* Main content */}
-      <main className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Workspace tabs */}
-        {(tabs.length > 0) && (
-          <div className="mb-6">
-            <BlockedWorkspaceTabs />
-          </div>
-        )}
-
-        {showDashboard ? (
-          <div className="space-y-8">
-            {/* Alert banner for critical - Design épuré */}
-            {displayStats.critical > 0 && (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-red-500/10">
-                      <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">
-                        {displayStats.critical} blocage(s) critique(s)
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        Action immédiate requise — Impact critique sur les opérations
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => openQueue('critical', 'Critiques', '🚨')}
-                    className="flex items-center gap-1 px-4 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-medium hover:opacity-90 transition-opacity"
-                  >
-                    Traiter maintenant
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Dashboard navigation */}
-            <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800">
-              {dashboardTabs.map(t => {
-                const Icon = t.icon;
-                const isActive = dashboardTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setDashboardTab(t.id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                      isActive
-                        ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Dashboard content */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-8">
-                {/* KPIs - Couleurs neutres, seules les icônes sont colorées */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {/* Total */}
-                  <button
-                    onClick={() => openQueue('all', 'Tous les blocages', '🚧')}
-                    className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs text-slate-500">Total</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{displayStats.total}</p>
-                  </button>
-
-                  {/* Critical */}
-                  <button
-                    onClick={() => openQueue('critical', 'Critiques', '🚨')}
-                    className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className={cn(
-                        "w-4 h-4",
-                        displayStats.critical > 0 ? "text-red-500" : "text-slate-400"
-                      )} />
-                      <span className="text-xs text-slate-500">Critiques</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {displayStats.critical}
-                    </p>
-                    {displayStats.critical > 0 && (
-                      <p className="text-xs text-slate-500 mt-1">Action requise</p>
-                    )}
-                  </button>
-
-                  {/* High */}
-                  <button
-                    onClick={() => openQueue('high', 'Impact élevé', '⚠️')}
-                    className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className={cn(
-                        "w-4 h-4",
-                        displayStats.high > 0 ? "text-amber-500" : "text-slate-400"
-                      )} />
-                      <span className="text-xs text-slate-500">Élevé</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {displayStats.high}
-                    </p>
-                  </button>
-
-                  {/* Medium */}
-                  <button
-                    onClick={() => openQueue('medium', 'Impact moyen', '📊')}
-                    className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-blue-500" />
-                      <span className="text-xs text-slate-500">Moyen</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{displayStats.medium}</p>
-                  </button>
-
-                  {/* Delay avg */}
-                  <div className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-orange-500" />
-                      <span className="text-xs text-slate-500">Délai moy.</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {stats?.avgDelay ?? '—'}<span className="text-base font-normal text-slate-500">j</span>
-                    </p>
-                  </div>
-
-                  {/* Amount blocked */}
-                  <div className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-base">💰</span>
-                      <span className="text-xs text-slate-500">Montant bloqué</span>
-                    </div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {stats?.totalAmount ? formatAmount(stats.totalAmount) : '—'}
-                    </p>
-                    <p className="text-xs text-slate-500">FCFA</p>
-                  </div>
-                </div>
-
-                {/* Live counters */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Répartition détaillée
-                  </h2>
-                  <BlockedLiveCounters onOpenQueue={openQueue} />
-                </section>
-
-                {/* Quick actions - icônes colorées, texte neutre */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Actions rapides
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button
-                      onClick={() => setDecisionCenterOpen(true)}
-                      className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all text-left group bg-white dark:bg-slate-900/50"
-                    >
-                      <Zap className="w-8 h-8 text-orange-500 mb-3 group-hover:scale-110 transition-transform" />
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">Centre de décision</p>
-                      <p className="text-sm text-slate-500 mt-1">Escalader, substituer, résoudre</p>
-                    </button>
-
-                    <button
-                      onClick={() => openQueue('critical', 'Critiques', '🚨')}
-                      className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all text-left group bg-white dark:bg-slate-900/50"
-                    >
-                      <ArrowUpRight className="w-8 h-8 text-red-500 mb-3 group-hover:scale-110 transition-transform" />
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">Traiter les critiques</p>
-                      <p className="text-sm text-slate-500 mt-1">{displayStats.critical} dossiers en attente</p>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        openTab({
-                          type: 'matrix',
-                          id: 'matrix:main',
-                          title: 'Matrice d\'urgence',
-                          icon: '📐',
-                          data: {},
-                        });
-                      }}
-                      className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all text-left group bg-white dark:bg-slate-900/50"
-                    >
-                      <LayoutGrid className="w-8 h-8 text-purple-500 mb-3 group-hover:scale-110 transition-transform" />
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">Matrice d'urgence</p>
-                      <p className="text-sm text-slate-500 mt-1">Vue Impact × Délai</p>
-                    </button>
-                  </div>
-                </section>
-
-                {/* Governance message - Design épuré */}
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
-                  <div className="flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">
-                        Gouvernance BMO — Pouvoir de substitution
-                      </p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        En tant qu'instance suprême, le BMO dispose du pouvoir de substitution pour débloquer
-                        les situations critiques. Chaque décision est tracée et auditable.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {dashboardTab === 'matrix' && (
-              <div className="rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6">
-                <p className="text-center text-slate-500 py-8">
-                  <LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  Cliquez sur &quot;Matrice urgence&quot; dans les actions rapides ou utilisez ⌘K
-                </p>
-              </div>
-            )}
-
-            {dashboardTab === 'bureaux' && (
-              <div className="rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6">
-                <p className="text-center text-slate-500 py-8">
-                  <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  Vue par bureau en cours de développement
-                </p>
-              </div>
-            )}
-
-            {dashboardTab === 'timeline' && (
-              <div className="rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6">
-                <p className="text-center text-slate-500 py-8">
-                  <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  Timeline des blocages en cours de développement
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <BlockedWorkspaceContent />
-        )}
-      </main>
-
-      {/* ================================ */}
-      {/* Modals & Overlays */}
-      {/* ================================ */}
+      {/* Modals */}
+      <BlockedModals />
 
       {/* Command Palette */}
       <BlockedCommandPalette
-        open={commandOpen}
-        onClose={() => setCommandOpen(false)}
-        onOpenStats={() => setStatsModalOpen(true)}
-        onOpenDecisionCenter={() => setDecisionCenterOpen(true)}
-        onOpenMatrix={() => {
-          openTab({
-            type: 'matrix',
-            id: 'matrix:main',
-            title: 'Matrice d\'urgence',
-            icon: '📐',
-            data: {},
-          });
-        }}
-        onRefresh={() => loadStats('manual')}
+        open={commandPaletteOpen}
+        onClose={toggleCommandPalette}
+        onOpenStats={() => openModal('stats')}
+        onOpenDecisionCenter={() => openModal('decision-center')}
+        onOpenMatrix={() => {}}
+        onRefresh={handleRefresh}
       />
 
-      {/* Stats Modal */}
-      <BlockedStatsModal
-        open={statsModalOpen}
-        onClose={() => setStatsModalOpen(false)}
-      />
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
 
-      {/* Decision Center */}
-      <BlockedDecisionCenter
-        open={decisionCenterOpen}
-        onClose={() => setDecisionCenterOpen(false)}
+      {/* Filters Panel */}
+      <BlockedFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        currentFilters={activeFilters}
       />
 
       {/* Help Modal */}
-      {helpOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setHelpOpen(false)}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-6"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                <HelpCircle className="w-5 h-5 text-slate-500" />
-                Raccourcis clavier
-              </h2>
-              <button onClick={() => setHelpOpen(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              {[
-                { key: '⌘K', label: 'Palette de commandes' },
-                { key: '⌘D', label: 'Centre de décision' },
-                { key: '⌘I', label: 'Statistiques' },
-                { key: '⌘1', label: 'Tous les blocages' },
-                { key: '⌘2', label: 'Blocages critiques' },
-                { key: '⌘M', label: 'Matrice d\'urgence' },
-                { key: 'Ctrl+Tab', label: 'Onglet suivant' },
-                { key: 'Ctrl+W', label: 'Fermer l\'onglet' },
-                { key: 'Esc', label: 'Fermer les modales' },
-                { key: '?', label: 'Cette aide' },
-              ].map(({ key, label }) => (
-                <div key={key} className="flex items-center justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">{label}</span>
-                  <kbd className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-xs text-slate-500">
-                    {key}
-                  </kbd>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => setHelpOpen(false)}
-              className="w-full mt-6 px-4 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-medium hover:opacity-90 transition-opacity"
-            >
-              Fermer
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Export Modal */}
-      {exportModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setExportModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-6"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                <Download className="w-5 h-5 text-purple-500" />
-                Exporter les données
-              </h2>
-              <button onClick={() => setExportModalOpen(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {[
-                { format: 'JSON', desc: 'Données brutes structurées', icon: '📄' },
-                { format: 'Excel', desc: 'Fichier tableur (.xlsx)', icon: '📊' },
-                { format: 'PDF', desc: 'Rapport avec graphiques', icon: '📑' },
-                { format: 'CSV', desc: 'Données tabulées', icon: '📋' },
-              ].map(({ format, desc, icon }) => (
-                <button
-                  key={format}
-                  onClick={() => {
-                    toast.success('Export lancé', `Format ${format}`);
-                    setExportModalOpen(false);
-                  }}
-                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all text-left"
-                >
-                  <span className="text-2xl">{icon}</span>
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-slate-100">{format}</p>
-                    <p className="text-sm text-slate-500">{desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-            
-            <div className="mt-6 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-              <p className="text-xs text-slate-500">
-                💡 Les exports incluent tous les dossiers filtrés selon la vue active.
-                Pour un export spécifique, utilisez les filtres avant d'exporter.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <BlockedHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const { stats } = useBlockedCommandCenterStore();
+
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: `${stats?.critical ?? 0} blocages critiques en attente`,
+      time: 'maintenant',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: `${stats?.overdueSLA ?? 0} SLA dépassés`,
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Statistiques actualisées',
+      time: 'il y a 1h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-80 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
 

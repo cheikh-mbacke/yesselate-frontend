@@ -10,6 +10,8 @@ export { BlockedCommandPalette } from './BlockedCommandPalette';
 // Modals
 export { BlockedStatsModal } from './BlockedStatsModal';
 export { BlockedDecisionCenter } from './BlockedDecisionCenter';
+export { AlertDetailModal } from './AlertDetailModal';
+export { KPIDetailModal } from './KPIDetailModal';
 
 // Toast system
 export { BlockedToastProvider, useBlockedToast } from './BlockedToast';
@@ -22,4 +24,9 @@ export { BlockedAuditView } from './views/BlockedAuditView';
 export { BlockedTimelineView } from './views/BlockedTimelineView';
 export { BlockedResolutionWizard } from './views/BlockedResolutionWizard';
 export { BlockedBureauView } from './views/BlockedBureauView';
+export { BlockedKanbanView } from './views/BlockedKanbanView';
+
+// New enriched modals
+export { BlockedDossierDetailsModal } from './modals/BlockedDossierDetailsModal';
+export { BlockedResolutionModal } from './modals/BlockedResolutionModal';
 

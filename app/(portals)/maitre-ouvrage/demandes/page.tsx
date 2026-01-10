@@ -30,6 +30,8 @@ import {
   DemandesContentRouter,
   DemandesCommandPalette,
   DemandesModals,
+  demandesSubCategoriesMap,
+  demandesCategories,
 } from '@/components/features/bmo/demandes/command-center';
 
 export default function DemandesPage() {
@@ -37,6 +39,8 @@ export default function DemandesPage() {
     fullscreen,
     notificationsPanelOpen,
     liveStats,
+    navigation,
+    navigate,
     toggleFullscreen,
     toggleCommandPalette,
     toggleNotificationsPanel,
@@ -214,10 +218,35 @@ export default function DemandesPage() {
         </header>
 
         {/* Sub Navigation */}
-        <DemandesSubNavigation />
+        <DemandesSubNavigation
+          mainCategory={navigation.mainCategory}
+          mainCategoryLabel={
+            demandesCategories.find((c) => c.id === navigation.mainCategory)?.label || 'Demandes'
+          }
+          subCategory={navigation.subCategory}
+          subCategories={demandesSubCategoriesMap[navigation.mainCategory] ?? []}
+          onSubCategoryChange={(subCategory) => navigate(navigation.mainCategory, subCategory as any)}
+        />
 
         {/* KPI Bar */}
-        <DemandesKPIBar onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
+        <DemandesKPIBar
+          data={{
+            totalDemandes: liveStats.total || 0,
+            newToday: 0, // TODO: Calculate from liveStats or API
+            pendingCount: liveStats.pending || 0,
+            urgentCount: liveStats.urgent || 0,
+            avgResponseTime: liveStats.avgDelay || 0,
+            approvalRate: liveStats.total > 0 ? Math.round((liveStats.validated / liveStats.total) * 100) : 0,
+            completionRate: liveStats.total > 0 ? Math.round(((liveStats.validated + liveStats.rejected) / liveStats.total) * 100) : 0,
+            satisfactionScore: 4.2, // TODO: Get from API
+            trends: {
+              total: 'stable',
+              pending: 'stable',
+              urgent: 'stable',
+              satisfaction: 'stable',
+            },
+          }}
+        />
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ticketsApiService, type TicketsStats } from '@/lib/services/ticketsApiService';
+import { ticketsApi, type TicketsStats } from '@/lib/services/ticketsApiService';
 import { X, Zap, Clock, AlertTriangle, XCircle, ArrowRight, CheckCircle, Ticket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -13,7 +13,7 @@ export function TicketsDirectionPanel({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     const load = async () => {
-      try { const data = await ticketsApiService.getStats(); setStats(data); }
+      try { const data = await ticketsApi.getStats(); setStats(data); }
       catch (error) { console.error('Failed:', error); }
     };
     load();

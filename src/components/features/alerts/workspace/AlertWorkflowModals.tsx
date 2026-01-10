@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Upload,
 } from 'lucide-react';
+import { TemplatePicker } from '@/components/features/bmo/alerts/TemplatePicker';
 
 // ================================
 // TYPES
@@ -173,6 +174,7 @@ export function ResolveModal({ open, onClose, alert, onConfirm }: ResolveModalPr
   const [note, setNote] = useState('');
   const [proof, setProof] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   const resolutionTypes = [
     { id: 'fixed', label: 'Problème corrigé', icon: CheckCircle, color: 'emerald' },
@@ -246,11 +248,59 @@ export function ResolveModal({ open, onClose, alert, onConfirm }: ResolveModalPr
           </div>
         </div>
 
+        {/* Template Picker */}
+        {showTemplatePicker && alert && (
+          <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-medium text-blue-300">Templates de résolution</span>
+              </div>
+              <button
+                onClick={() => setShowTemplatePicker(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <TemplatePicker
+              alert={{
+                ...alert,
+                category: alert.type,
+                severity: alert.type === 'critical' ? 'critical' : 'warning',
+              }}
+              onSelect={(template, values) => {
+                // Appliquer le template
+                let content = template.content;
+                Object.entries(values).forEach(([key, value]) => {
+                  content = content.replace(new RegExp(`{{${key}}}`, 'g'), value);
+                });
+                setNote(content);
+                setShowTemplatePicker(false);
+              }}
+              onClose={() => setShowTemplatePicker(false)}
+            />
+          </div>
+        )}
+
         {/* Note */}
         <div>
-          <label className="text-sm font-medium text-slate-300 mb-2 block">
-            Description de la résolution *
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-slate-300">
+              Description de la résolution *
+            </label>
+            {!showTemplatePicker && (
+              <FluentButton
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTemplatePicker(true)}
+                className="text-xs"
+              >
+                <FileText className="w-3 h-3 mr-1" />
+                Utiliser un template
+              </FluentButton>
+            )}
+          </div>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -258,6 +308,9 @@ export function ResolveModal({ open, onClose, alert, onConfirm }: ResolveModalPr
             className="w-full h-24 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none"
             required
           />
+          <p className="text-xs text-slate-500 mt-1">
+            💡 Cliquez sur "Utiliser un template" pour gagner du temps avec des réponses prédéfinies
+          </p>
         </div>
 
         {/* Proof / Reference */}

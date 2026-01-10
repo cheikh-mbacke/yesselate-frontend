@@ -1,224 +1,216 @@
+/**
+ * POST /api/analytics/comparison
+ * Compare les performances entre bureaux ou périodes
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 
-/**
- * GET /api/analytics/comparison
- * 
- * Compare les données Analytics selon différents critères
- * Paramètres: compareBy (bureau, period, type), items (liste des éléments à comparer)
- */
-export async function GET(request: NextRequest) {
+interface ComparisonRequest {
+  type: 'bureaux' | 'periods';
+  entities: string[]; // IDs des bureaux ou périodes
+  metrics: string[]; // Métriques à comparer
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const compareBy = searchParams.get('compareBy') || 'bureau'; // bureau, period, type
-    const items = searchParams.get('items')?.split(',') || [];
-    const metric = searchParams.get('metric') || 'all';
+    const body: ComparisonRequest = await request.json();
+    const { type, entities, metrics, dateRange } = body;
 
-    // Données de comparaison par bureau
-    const bureauComparison = [
-      {
-        code: 'BTP',
-        name: 'Bureau des Travaux Publics',
-        metrics: {
-          totalDemands: 156,
-          validated: 132,
-          pending: 18,
-          overdue: 6,
-          validationRate: 85,
-          slaCompliance: 92,
-          avgDelay: 3.2,
-          score: 88,
+    // Validation
+    if (!type || !entities || entities.length === 0 || !metrics || metrics.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid request',
+          message: 'type, entities, and metrics are required',
         },
-        trend: 'up',
-        trendValue: 5,
-      },
-      {
-        code: 'DG',
-        name: 'Direction Générale',
-        metrics: {
-          totalDemands: 98,
-          validated: 78,
-          pending: 15,
-          overdue: 5,
-          validationRate: 80,
-          slaCompliance: 88,
-          avgDelay: 4.1,
-          score: 82,
-        },
-        trend: 'stable',
-        trendValue: 0,
-      },
-      {
-        code: 'DAF',
-        name: 'Direction Administrative et Financière',
-        metrics: {
-          totalDemands: 124,
-          validated: 99,
-          pending: 20,
-          overdue: 5,
-          validationRate: 80,
-          slaCompliance: 90,
-          avgDelay: 3.8,
-          score: 84,
-        },
-        trend: 'up',
-        trendValue: 3,
-      },
-      {
-        code: 'BJ',
-        name: 'Bureau Juridique',
-        metrics: {
-          totalDemands: 67,
-          validated: 52,
-          pending: 10,
-          overdue: 5,
-          validationRate: 78,
-          slaCompliance: 85,
-          avgDelay: 5.2,
-          score: 76,
-        },
-        trend: 'down',
-        trendValue: -4,
-      },
-      {
-        code: 'DSI',
-        name: 'Direction des Systèmes d\'Information',
-        metrics: {
-          totalDemands: 45,
-          validated: 32,
-          pending: 8,
-          overdue: 5,
-          validationRate: 71,
-          slaCompliance: 82,
-          avgDelay: 6.1,
-          score: 68,
-        },
-        trend: 'down',
-        trendValue: -7,
-      },
-    ];
-
-    // Données de comparaison par période
-    const periodComparison = [
-      {
-        period: 'Cette semaine',
-        code: 'current_week',
-        metrics: {
-          totalDemands: 89,
-          validated: 72,
-          pending: 12,
-          overdue: 5,
-          validationRate: 81,
-          slaCompliance: 88,
-          avgDelay: 3.5,
-        },
-      },
-      {
-        period: 'Semaine dernière',
-        code: 'last_week',
-        metrics: {
-          totalDemands: 95,
-          validated: 78,
-          pending: 14,
-          overdue: 3,
-          validationRate: 82,
-          slaCompliance: 91,
-          avgDelay: 3.2,
-        },
-      },
-      {
-        period: 'Ce mois',
-        code: 'current_month',
-        metrics: {
-          totalDemands: 342,
-          validated: 278,
-          pending: 45,
-          overdue: 19,
-          validationRate: 81,
-          slaCompliance: 87,
-          avgDelay: 3.8,
-        },
-      },
-      {
-        period: 'Mois dernier',
-        code: 'last_month',
-        metrics: {
-          totalDemands: 358,
-          validated: 286,
-          pending: 52,
-          overdue: 20,
-          validationRate: 80,
-          slaCompliance: 86,
-          avgDelay: 4.1,
-        },
-      },
-    ];
-
-    // Sélectionner les données selon le type de comparaison
-    let comparisonData;
-    if (compareBy === 'bureau') {
-      comparisonData = items.length > 0
-        ? bureauComparison.filter(b => items.includes(b.code))
-        : bureauComparison;
-    } else if (compareBy === 'period') {
-      comparisonData = items.length > 0
-        ? periodComparison.filter(p => items.includes(p.code))
-        : periodComparison;
-    } else {
-      comparisonData = bureauComparison;
+        { status: 400 }
+      );
     }
 
-    // Calculer les statistiques globales de comparaison
-    const stats = {
+    // Simuler une latence réseau
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Mock data pour les comparaisons
+    const comparisonData = entities.map((entityId) => {
+      const basePerformance = 70 + Math.random() * 25;
+      
+      return {
+        id: entityId,
+        name: type === 'bureaux' 
+          ? getBureauName(entityId)
+          : getPeriodName(entityId),
+        
+        metrics: metrics.reduce((acc, metricId) => {
+          acc[metricId] = generateMetricValue(metricId, basePerformance);
+          return acc;
+        }, {} as Record<string, number>),
+
+        // Données historiques (30 derniers jours)
+        history: Array.from({ length: 30 }, (_, i) => ({
+          date: new Date(Date.now() - (29 - i) * 86400000).toISOString(),
+          values: metrics.reduce((acc, metricId) => {
+            acc[metricId] = generateMetricValue(metricId, basePerformance + (Math.random() - 0.5) * 10);
+            return acc;
+          }, {} as Record<string, number>),
+        })),
+
+        // Statistiques
+        stats: {
+          trend: Math.random() > 0.5 ? 'up' : 'down',
+          changePercent: (Math.random() - 0.5) * 20,
+          rank: Math.floor(Math.random() * entities.length) + 1,
+        },
+
+        // Métadonnées
+        metadata: type === 'bureaux' ? {
+          manager: getRandomName(),
+          teamSize: Math.floor(Math.random() * 20) + 5,
+          budget: Math.floor(Math.random() * 500000) + 100000,
+        } : {
+          daysInPeriod: 30,
+          workingDays: 22,
+        },
+      };
+    });
+
+    // Calculer les statistiques globales
+    const globalStats = {
       best: comparisonData.reduce((best, current) => {
-        const currentScore = current.metrics.validationRate + current.metrics.slaCompliance;
-        const bestScore = best.metrics.validationRate + best.metrics.slaCompliance;
-        return currentScore > bestScore ? current : best;
+        const bestPerf = best.metrics['performance'] || 0;
+        const currentPerf = current.metrics['performance'] || 0;
+        return currentPerf > bestPerf ? current : best;
       }),
       worst: comparisonData.reduce((worst, current) => {
-        const currentScore = current.metrics.validationRate + current.metrics.slaCompliance;
-        const worstScore = worst.metrics.validationRate + worst.metrics.slaCompliance;
-        return currentScore < worstScore ? current : worst;
+        const worstPerf = worst.metrics['performance'] || Infinity;
+        const currentPerf = current.metrics['performance'] || Infinity;
+        return currentPerf < worstPerf ? current : worst;
       }),
-      average: {
-        validationRate: Math.round(comparisonData.reduce((sum, item) => sum + item.metrics.validationRate, 0) / comparisonData.length),
-        slaCompliance: Math.round(comparisonData.reduce((sum, item) => sum + item.metrics.slaCompliance, 0) / comparisonData.length),
-        avgDelay: Math.round(comparisonData.reduce((sum, item) => sum + item.metrics.avgDelay, 0) / comparisonData.length * 10) / 10,
-      },
+      average: metrics.reduce((acc, metricId) => {
+        const values = comparisonData.map(d => d.metrics[metricId] || 0);
+        acc[metricId] = values.reduce((sum, v) => sum + v, 0) / values.length;
+        return acc;
+      }, {} as Record<string, number>),
+      median: metrics.reduce((acc, metricId) => {
+        const values = comparisonData.map(d => d.metrics[metricId] || 0).sort((a, b) => a - b);
+        acc[metricId] = values[Math.floor(values.length / 2)];
+        return acc;
+      }, {} as Record<string, number>),
     };
 
-    // Insights de comparaison
+    // Insights automatiques
     const insights = [
       {
-        type: 'gap',
-        message: `Écart de ${stats.best.metrics.validationRate - stats.worst.metrics.validationRate}% entre le meilleur et le moins bon taux de validation`,
+        type: 'best_performer',
+        message: `${globalStats.best.name} est le meilleur performer avec ${globalStats.best.metrics['performance']?.toFixed(1)}%`,
+        priority: 'info',
       },
       {
-        type: 'improvement',
-        message: comparisonData.filter((d: any) => d.trend === 'up').length > comparisonData.length / 2
-          ? 'Majorité des éléments en progression'
-          : 'Des améliorations sont nécessaires',
+        type: 'improvement_needed',
+        message: `${globalStats.worst.name} nécessite une attention particulière`,
+        priority: 'warning',
+      },
+      {
+        type: 'trend',
+        message: comparisonData.filter(d => d.stats.trend === 'up').length > comparisonData.length / 2
+          ? 'Tendance générale positive'
+          : 'Tendance générale à surveiller',
+        priority: 'info',
       },
     ];
 
     return NextResponse.json({
-      compareBy,
-      metric,
-      data: comparisonData,
-      stats,
-      insights,
-      ts: new Date().toISOString(),
-    }, {
-      status: 200,
-      headers: {
-        'Cache-Control': 'no-store, max-age=0',
+      success: true,
+      data: {
+        type,
+        entities: comparisonData,
+        globalStats,
+        insights,
+        dateRange: dateRange || {
+          start: new Date(Date.now() - 30 * 86400000).toISOString(),
+          end: new Date().toISOString(),
+        },
       },
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Erreur GET /api/analytics/comparison:', error);
+    console.error('Error processing comparison:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur lors de la comparaison' },
+      {
+        success: false,
+        error: 'Failed to process comparison',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }
 }
 
+// Helper functions
+function getBureauName(id: string): string {
+  const bureaux: Record<string, string> = {
+    btp: 'Bureau Technique et Pilotage',
+    bj: 'Bureau Juridique',
+    bs: 'Bureau Social',
+    dg: 'Direction Générale',
+    daf: 'Direction Administrative et Financière',
+    dsi: 'Direction des Systèmes d\'Information',
+  };
+  return bureaux[id] || id.toUpperCase();
+}
+
+function getPeriodName(id: string): string {
+  const periods: Record<string, string> = {
+    'current-month': 'Mois en cours',
+    'last-month': 'Mois dernier',
+    'current-quarter': 'Trimestre en cours',
+    'last-quarter': 'Trimestre dernier',
+    'current-year': 'Année en cours',
+    'last-year': 'Année dernière',
+  };
+  return periods[id] || id;
+}
+
+function generateMetricValue(metricId: string, basePerformance: number): number {
+  const metricConfigs: Record<string, { min: number; max: number; decimals: number }> = {
+    performance: { min: 60, max: 100, decimals: 1 },
+    validation_rate: { min: 70, max: 95, decimals: 1 },
+    sla_compliance: { min: 75, max: 98, decimals: 1 },
+    avg_delay: { min: 1, max: 10, decimals: 1 },
+    productivity: { min: 60, max: 95, decimals: 1 },
+    quality_score: { min: 65, max: 100, decimals: 1 },
+    budget_usage: { min: 50, max: 95, decimals: 1 },
+    active_projects: { min: 5, max: 30, decimals: 0 },
+  };
+
+  const config = metricConfigs[metricId] || { min: 0, max: 100, decimals: 1 };
+  
+  // Pour avg_delay, inverser la logique (plus bas = mieux)
+  let value = metricId === 'avg_delay'
+    ? config.max - (basePerformance / 100) * (config.max - config.min)
+    : config.min + (basePerformance / 100) * (config.max - config.min);
+
+  // Ajouter une variation aléatoire
+  value += (Math.random() - 0.5) * (config.max - config.min) * 0.1;
+
+  // Contraindre dans les limites
+  value = Math.max(config.min, Math.min(config.max, value));
+
+  return parseFloat(value.toFixed(config.decimals));
+}
+
+function getRandomName(): string {
+  const names = [
+    'Jean Dupont',
+    'Marie Martin',
+    'Pierre Durand',
+    'Sophie Bernard',
+    'Luc Petit',
+    'Anne Dubois',
+  ];
+  return names[Math.floor(Math.random() * names.length)];
+}

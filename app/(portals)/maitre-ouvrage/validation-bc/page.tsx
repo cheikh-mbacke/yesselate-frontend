@@ -1,11 +1,25 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
+/**
+ * Centre de Commandement Validation-BC - Version 2.0
+ * Architecture cohérente avec Analytics et Gouvernance
+ * Navigation à 3 niveaux: Sidebar + SubNavigation + KPIBar
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useValidationBCWorkspaceStore, type ValidationTabType } from '@/lib/stores/validationBCWorkspaceStore';
 import { getValidationStats } from '@/lib/services/validation-bc-api';
 import { validationBCCache } from '@/lib/cache/validation-bc-cache';
 
-// Components workspace
+// Command Center Components
+import {
+  ValidationBCCommandSidebar,
+  ValidationBCSubNavigation,
+  ValidationBCKPIBar,
+  validationBCCategories,
+} from '@/components/features/validation-bc/command-center';
+
+// Workspace Components
 import {
   ValidationBCWorkspaceTabs,
   ValidationBCWorkspaceContent,
@@ -44,32 +58,57 @@ import {
   ValidationStatsBarChart,
 } from '@/components/features/validation-bc/charts';
 
+// Composants de contenu
+import {
+  BCListView,
+  FacturesListView,
+  AvenantsListView,
+  UrgentsListView,
+  TrendsView,
+  ValidatorsView,
+  AdvancedSearchPanel,
+  type SearchFilters,
+} from '@/components/features/validation-bc/content';
+
+// Vues avancées
+import {
+  Dashboard360,
+  KanbanView,
+  CalendarView,
+  BudgetsView,
+} from '@/components/features/validation-bc/views';
+
+// Composants communs
+import {
+  ValidationBCErrorBoundary,
+  ValidationBCKPIBarSkeleton,
+} from '@/components/features/validation-bc/common';
+
+// Hooks
+import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useValidationBCNotifications } from '@/hooks/useWebSocket';
+
 import { cn } from '@/lib/utils';
 import {
   FileCheck,
   Search,
-  LayoutDashboard,
-  FolderOpen,
-  Scale,
-  History,
-  Star,
-  ChevronRight,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-  ShoppingCart,
-  Building2,
-  Receipt,
-  FileEdit,
-  FileText,
-  TrendingUp,
-  Shield,
-  Users,
-  Calendar,
-  Brain,
-  Workflow,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  Plus,
+  Download,
+  Settings,
+  MoreHorizontal,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // ================================
 // Types
@@ -78,65 +117,72 @@ import type { ValidationStats as APIValidationStats } from '@/lib/services/valid
 
 type ValidationStats = APIValidationStats;
 
-type ViewMode = 'dashboard' | 'workspace';
-type DashboardTab = 'overview' | 'services' | 'rules' | 'history' | 'favorites';
-type LoadReason = 'init' | 'manual' | 'auto';
-
-interface UIState {
-  viewMode: ViewMode;
-  dashboardTab: DashboardTab;
-  autoRefresh: boolean;
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
 }
 
-const UI_PREF_KEY = 'bmo.validation-bc.ui.v4';
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tous' },
+    { id: 'dashboard', label: 'Dashboard 360°' },
+    { id: 'kanban', label: 'Vue Kanban' },
+    { id: 'calendar', label: 'Calendrier' },
+    { id: 'budgets', label: 'Budgets' },
+    { id: 'kpis', label: 'Indicateurs' },
+  ],
+  bc: [
+    { id: 'all', label: 'Tous', badge: 23 },
+    { id: 'pending', label: 'En attente', badge: 15, badgeType: 'warning' },
+    { id: 'validated', label: 'Validés', badge: 8 },
+  ],
+  factures: [
+    { id: 'all', label: 'Toutes', badge: 15 },
+    { id: 'pending', label: 'En attente', badge: 9, badgeType: 'warning' },
+    { id: 'validated', label: 'Validées', badge: 6 },
+  ],
+  avenants: [
+    { id: 'all', label: 'Tous', badge: 8 },
+    { id: 'pending', label: 'En attente', badge: 5, badgeType: 'warning' },
+    { id: 'validated', label: 'Validés', badge: 3 },
+  ],
+  urgents: [
+    { id: 'all', label: 'Tous', badge: 12, badgeType: 'critical' },
+    { id: 'sla', label: 'Dépassement SLA', badge: 5, badgeType: 'critical' },
+    { id: 'montant', label: 'Montant élevé', badge: 7, badgeType: 'warning' },
+  ],
+  historique: [
+    { id: 'all', label: 'Tout l\'historique' },
+    { id: 'recent', label: 'Récent (7j)' },
+    { id: 'month', label: 'Ce mois' },
+  ],
+  tendances: [
+    { id: 'performance', label: 'Performance' },
+    { id: 'volumes', label: 'Volumes' },
+    { id: 'delais', label: 'Délais' },
+  ],
+  validateurs: [
+    { id: 'all', label: 'Tous' },
+    { id: 'active', label: 'Actifs' },
+    { id: 'performance', label: 'Performance' },
+  ],
+  services: [
+    { id: 'all', label: 'Tous' },
+    { id: 'achats', label: 'Achats' },
+    { id: 'finance', label: 'Finance' },
+    { id: 'juridique', label: 'Juridique' },
+  ],
+  regles: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'validation', label: 'Validation' },
+    { id: 'escalade', label: 'Escalade' },
+  ],
+};
 
-// ================================
-// Semantic colors - UNIQUEMENT pour les icônes et graphiques
-// ================================
-const STATUS_ICON_COLORS = {
-  blocked: 'text-rose-500',
-  urgent: 'text-amber-500',
-  pending: 'text-slate-400',
-  validated: 'text-emerald-500',
-  info: 'text-blue-500',
-} as const;
-
-const BG_STATUS = {
-  blocked: 'bg-rose-50 dark:bg-rose-950/30 border-rose-200/50 dark:border-rose-800/30',
-  urgent: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200/50 dark:border-amber-800/30',
-  pending: 'bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50',
-  validated: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200/50 dark:border-emerald-800/30',
-  info: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200/50 dark:border-blue-800/30',
-} as const;
-
-// ================================
-// Helpers
-// ================================
-function readUIState(): UIState | null {
-  try {
-    const raw = localStorage.getItem(UI_PREF_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<UIState>;
-    return {
-      viewMode: p.viewMode === 'workspace' ? 'workspace' : 'dashboard',
-      dashboardTab: ['services', 'rules', 'history', 'favorites'].includes(p.dashboardTab as string) 
-        ? p.dashboardTab as DashboardTab 
-        : 'overview',
-      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeUIState(s: UIState) {
-  try {
-    localStorage.setItem(UI_PREF_KEY, JSON.stringify(s));
-  } catch {
-    // no-op
-  }
-}
-
+// Helper pour l'interval
 function useInterval(fn: () => void, delay: number | null): void {
   const ref = useRef(fn);
   useEffect(() => { ref.current = fn; }, [fn]);
@@ -154,17 +200,25 @@ function ValidationBCPageContent() {
   const { tabs, openTab } = useValidationBCWorkspaceStore();
   const toast = useValidationBCToast();
 
-  // UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   // Stats state
   const [statsData, setStatsData] = useState<ValidationStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  // Modals state (accessibles via ⌘K)
-  const [commandOpen, setCommandOpen] = useState(false);
+  // Modals state
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
@@ -173,8 +227,6 @@ function ValidationBCPageContent() {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [delegationsOpen, setDelegationsOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
-  
-  // Advanced modals (inspired by demandes page)
   const [multiLevelValidationOpen, setMultiLevelValidationOpen] = useState(false);
   const [requestJustificatifOpen, setRequestJustificatifOpen] = useState(false);
 
@@ -182,69 +234,193 @@ function ValidationBCPageContent() {
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ValidationDocument | null>(null);
 
+  // Navigation history for back button
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
+
   const abortStatsRef = useRef<AbortController | null>(null);
 
-  // Load UI State
-  useEffect(() => {
-    const st = readUIState();
-    if (st) {
-      setViewMode(st.viewMode);
-      setDashboardTab(st.dashboardTab);
-      setAutoRefresh(st.autoRefresh);
-    }
-  }, []);
-
-  useEffect(() => {
-    writeUIState({ viewMode, dashboardTab, autoRefresh });
-  }, [viewMode, dashboardTab, autoRefresh]);
-
   // ================================
-  // Computed values (memoized)
+  // Computed values
   // ================================
-  const showDashboard = useMemo(() => viewMode === 'dashboard' || tabs.length === 0, [viewMode, tabs.length]);
-  
-  const hasUrgentItems = useMemo(() => 
-    statsData && (statsData.urgent > 0 || statsData.anomalies > 0),
-    [statsData]
-  );
-  
-  const statsLastUpdate = useMemo(() => {
-    if (!statsData?.ts) return null;
-    return new Date(statsData.ts).toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit'
+  const currentCategoryLabel = useMemo(() => {
+    return validationBCCategories.find((c) => c.id === activeCategory)?.label || 'Validation-BC';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  // Calculer les catégories avec badges dynamiques
+  const categoriesWithBadges = useMemo(() => {
+    if (!statsData) return validationBCCategories;
+
+    return validationBCCategories.map((cat) => {
+      switch (cat.id) {
+        case 'bc':
+          const bcCount = statsData.byType.find(t => t.type === 'Bons de commande')?.count || 0;
+          return { ...cat, badge: bcCount, badgeType: bcCount > 20 ? 'warning' as const : 'default' as const };
+        case 'factures':
+          const facturesCount = statsData.byType.find(t => t.type === 'Factures')?.count || 0;
+          return { ...cat, badge: facturesCount, badgeType: facturesCount > 15 ? 'warning' as const : 'default' as const };
+        case 'avenants':
+          const avenantsCount = statsData.byType.find(t => t.type === 'Avenants')?.count || 0;
+          return { ...cat, badge: avenantsCount };
+        case 'urgents':
+          return { ...cat, badge: statsData.urgent, badgeType: statsData.urgent > 5 ? 'critical' as const : 'warning' as const };
+        default:
+          return cat;
+      }
     });
-  }, [statsData?.ts]);
+  }, [statsData]);
+
+  // Calculer les KPIs depuis statsData
+  const kpisData = useMemo(() => {
+    if (!statsData) return undefined;
+
+    return [
+      {
+        id: 'total-documents',
+        label: 'Documents Total',
+        value: statsData.total,
+        trend: 'up' as const,
+        trendValue: '+8',
+        status: 'neutral' as const,
+      },
+      {
+        id: 'en-attente',
+        label: 'En Attente',
+        value: statsData.pending,
+        trend: statsData.pending > 50 ? 'up' as const : 'down' as const,
+        trendValue: statsData.pending > 50 ? `+${statsData.pending - 50}` : `${statsData.pending - 50}`,
+        status: statsData.pending > 50 ? 'warning' as const : 'success' as const,
+        sparkline: [52, 50, 48, statsData.pending + 1, statsData.pending],
+      },
+      {
+        id: 'valides',
+        label: 'Validés',
+        value: statsData.validated,
+        trend: 'up' as const,
+        trendValue: '+12',
+        status: 'success' as const,
+        sparkline: [Math.max(0, statsData.validated - 17), Math.max(0, statsData.validated - 12), Math.max(0, statsData.validated - 9), Math.max(0, statsData.validated - 5), statsData.validated],
+      },
+      {
+        id: 'rejetes',
+        label: 'Rejetés',
+        value: statsData.rejected,
+        trend: 'stable' as const,
+        status: 'neutral' as const,
+      },
+      {
+        id: 'urgents',
+        label: 'Urgents',
+        value: statsData.urgent,
+        trend: statsData.urgent > 10 ? 'up' as const : 'down' as const,
+        trendValue: statsData.urgent > 10 ? `+${statsData.urgent - 10}` : `${statsData.urgent - 10}`,
+        status: statsData.urgent > 10 ? 'critical' as const : 'warning' as const,
+      },
+      {
+        id: 'taux-validation',
+        label: 'Taux Validation',
+        value: statsData.total > 0 ? `${Math.round((statsData.validated / statsData.total) * 100)}%` : '0%',
+        trend: statsData.total > 0 && (statsData.validated / statsData.total) > 0.8 ? 'up' as const : 'down' as const,
+        trendValue: '+3%',
+        status: statsData.total > 0 && (statsData.validated / statsData.total) > 0.8 ? 'success' as const : 'warning' as const,
+        sparkline: [85, 87, 89, 91, Math.round((statsData.validated / statsData.total) * 100)],
+      },
+      {
+        id: 'delai-moyen',
+        label: 'Délai Moyen',
+        value: '2.3j',
+        trend: 'down' as const,
+        trendValue: '-0.5j',
+        status: 'success' as const,
+      },
+      {
+        id: 'anomalies',
+        label: 'Anomalies',
+        value: statsData.anomalies,
+        trend: statsData.anomalies > 10 ? 'up' as const : 'stable' as const,
+        status: statsData.anomalies > 10 ? 'warning' as const : 'neutral' as const,
+      },
+    ];
+  }, [statsData]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
   // ================================
   // Callbacks
   // ================================
-  const openQueue = useCallback(
-    (queue: string) => {
-      const titles: Record<string, string> = {
-        pending: 'En attente',
-        validated: 'Validés',
-        rejected: 'Rejetés',
-        anomalies: 'Anomalies',
-        urgent: 'Urgents',
-        achats: 'Service Achats',
-        finance: 'Service Finance',
-        juridique: 'Service Juridique',
-        bc: 'Bons de commande',
-        facture: 'Factures',
-        avenant: 'Avenants',
-      };
-      openTab({
-        id: `inbox:${queue}`,
-        type: 'inbox' as ValidationTabType,
-        title: titles[queue] || queue,
-        icon: '📋',
-        data: { queue },
-      });
-      if (viewMode === 'dashboard') setViewMode('workspace');
-    },
-    [openTab, viewMode]
-  );
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadStats('manual');
+    setLastUpdate(new Date());
+    setTimeout(() => setIsRefreshing(false), 1000);
+  }, []);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    setNavigationHistory(prev => [...prev, activeCategory]);
+    setActiveCategory(category);
+    setActiveSubCategory('all');
+    setActiveFilter(null); // Reset filter
+  }, [activeCategory]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveFilter(null); // Reset filter when changing sub-category
+  }, []);
+
+  const handleFilterChange = useCallback((filter: string | null) => {
+    setActiveFilter(filter);
+  }, []);
+
+  const handleSearchFiltersChange = useCallback((filters: SearchFilters) => {
+    setSearchFilters(filters);
+  }, []);
+
+  const handleResetSearch = useCallback(() => {
+    setSearchFilters({});
+  }, []);
+
+  // WebSocket notifications
+  useValidationBCNotifications(useCallback((message) => {
+    switch (message.type) {
+      case 'new_document':
+        toast.info('Nouveau document', `Document ${message.data.id} créé`);
+        loadStats('auto');
+        break;
+      case 'document_validated':
+        toast.success('Document validé', `${message.data.id}`);
+        loadStats('auto');
+        break;
+      case 'document_rejected':
+        toast.error('Document rejeté', `${message.data.id}`);
+        loadStats('auto');
+        break;
+      case 'urgent_alert':
+        toast.error('Alerte urgente !', message.data.message);
+        break;
+      case 'stats_update':
+        // Mise à jour silencieuse des stats
+        loadStats('auto');
+        break;
+    }
+  }, [toast]));
+
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previous = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory(prev => prev.slice(0, -1));
+      setActiveCategory(previous);
+      setActiveSubCategory('all');
+    }
+  }, [navigationHistory]);
 
   const openDocument = useCallback(
     (id: string, type: DocumentType) => {
@@ -255,9 +431,8 @@ function ValidationBCPageContent() {
         icon: type === 'bc' ? '📄' : type === 'facture' ? '🧾' : '📝',
         data: { documentId: id, type },
       });
-      if (viewMode === 'dashboard') setViewMode('workspace');
     },
-    [openTab, viewMode]
+    [openTab]
   );
 
   const handleValidateDocument = useCallback((doc: ValidationDocument) => {
@@ -270,25 +445,9 @@ function ValidationBCPageContent() {
     setValidationModalOpen(true);
   }, []);
 
-  const closeAllOverlays = useCallback(() => {
-    setCommandOpen(false);
-    setStatsModalOpen(false);
-    setExportOpen(false);
-    setQuickCreateOpen(false);
-    setTimelineOpen(false);
-    setWorkflowOpen(false);
-    setAnalyticsOpen(false);
-    setDelegationsOpen(false);
-    setRemindersOpen(false);
-    setValidationModalOpen(false);
-    setMultiLevelValidationOpen(false);
-    setRequestJustificatifOpen(false);
-  }, []);
-
   // Load Stats
-  // Load Stats avec API réelle
   const loadStats = useCallback(
-    async (reason: LoadReason = 'manual') => {
+    async (reason: 'init' | 'manual' | 'auto' = 'manual') => {
       abortStatsRef.current?.abort();
       const ac = new AbortController();
       abortStatsRef.current = ac;
@@ -296,7 +455,6 @@ function ValidationBCPageContent() {
       setStatsLoading(true);
 
       try {
-        // Appel API réel
         const stats = await getValidationStats(reason, ac.signal);
         
         if (ac.signal.aborted) return;
@@ -310,23 +468,23 @@ function ValidationBCPageContent() {
         
         console.error('Erreur chargement stats:', error);
         
-        // Fallback sur données mockées si l'API échoue
+        // Fallback sur données mockées
         const mockStats: ValidationStats = {
-          total: 453,
-          pending: 45,
-          validated: 378,
-          rejected: 15,
-          anomalies: 8,
+          total: 156,
+          pending: 46,
+          validated: 87,
+          rejected: 8,
+          anomalies: 15,
           urgent: 12,
           byBureau: [
-            { bureau: 'Achats', count: 187 },
-            { bureau: 'Finance', count: 223 },
-            { bureau: 'Juridique', count: 43 },
+            { bureau: 'Achats', count: 65 },
+            { bureau: 'Finance', count: 72 },
+            { bureau: 'Juridique', count: 19 },
           ],
           byType: [
-            { type: 'Bons de commande', count: 234 },
-            { type: 'Factures', count: 189 },
-            { type: 'Avenants', count: 30 },
+            { type: 'Bons de commande', count: 89 },
+            { type: 'Factures', count: 54 },
+            { type: 'Avenants', count: 13 },
           ],
           recentActivity: [],
           ts: new Date().toISOString(),
@@ -350,8 +508,8 @@ function ValidationBCPageContent() {
   }, [loadStats]);
 
   useInterval(
-    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
-    autoRefresh ? 60_000 : null
+    () => { loadStats('auto'); },
+    60_000 // Refresh toutes les 60 secondes
   );
 
   // Keyboard shortcuts
@@ -363,476 +521,416 @@ function ValidationBCPageContent() {
 
       const isMod = e.metaKey || e.ctrlKey;
 
+      // ⌘K - Command Palette
       if (isMod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setCommandOpen(true);
+        setCommandPaletteOpen(true);
         return;
       }
 
+      // Escape - Close all overlays
       if (e.key === 'Escape') {
         e.preventDefault();
-        closeAllOverlays();
+        setCommandPaletteOpen(false);
+        setNotificationsPanelOpen(false);
         return;
       }
 
+      // ⌘B - Toggle Sidebar
+      if (isMod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+        return;
+      }
+
+      // F11 - Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullScreen(prev => !prev);
+        return;
+      }
+
+      // Alt+← - Go Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
+
+      // ⌘N - Quick Create
       if (isMod && e.key === 'n') {
         e.preventDefault();
         setQuickCreateOpen(true);
         return;
       }
-
-      // Quick navigation
-      if (isMod && e.key === '1') { e.preventDefault(); openQueue('pending'); }
-      if (isMod && e.key === '2') { e.preventDefault(); openQueue('validated'); }
-      if (isMod && e.key === '3') { e.preventDefault(); openQueue('rejected'); }
-
-      // Alt+Left ou Backspace - Retour au dashboard si en mode workspace
-      if ((e.altKey && e.key === 'ArrowLeft') || (e.key === 'Backspace' && !isMod)) {
-        if (viewMode === 'workspace' && tabs.length > 0) {
-          e.preventDefault();
-          setViewMode('dashboard');
-          return;
-        }
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeAllOverlays, openQueue, viewMode, tabs.length]);
+  }, [handleGoBack]);
 
-  // Dashboard tabs (optimized with memoization)
-  const dashboardTabs = useMemo(() => [
-    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
-    { id: 'services' as DashboardTab, label: 'Par service', icon: FolderOpen },
-    { id: 'rules' as DashboardTab, label: 'Règles métier', icon: Scale },
-    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
-    { id: 'favorites' as DashboardTab, label: 'Suivis', icon: Star },
-  ], []);
+  // Listen to custom events from command palette
+  useEffect(() => {
+    const handleOpenStats = () => setStatsModalOpen(true);
+    const handleOpenExport = () => setExportOpen(true);
+    const handleOpenTimeline = () => setTimelineOpen(true);
+    const handleOpenWorkflow = () => setWorkflowOpen(true);
+
+    window.addEventListener('validation-bc:open-stats', handleOpenStats);
+    window.addEventListener('validation-bc:open-export', handleOpenExport);
+    window.addEventListener('validation-bc:open-timeline', handleOpenTimeline);
+    window.addEventListener('validation-bc:open-workflow', handleOpenWorkflow);
+
+    return () => {
+      window.removeEventListener('validation-bc:open-stats', handleOpenStats);
+      window.removeEventListener('validation-bc:open-export', handleOpenExport);
+      window.removeEventListener('validation-bc:open-timeline', handleOpenTimeline);
+      window.removeEventListener('validation-bc:open-workflow', handleOpenWorkflow);
+    };
+  }, []);
 
   // ================================
   // Render
   // ================================
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+    <ValidationBCErrorBoundary>
+      <div
+        className={cn(
+          'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+          isFullScreen && 'fixed inset-0 z-50'
+        )}
+      >
+      {/* Sidebar Navigation */}
+      <ValidationBCCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        categories={categoriesWithBadges}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <FileCheck className="w-5 h-5 text-purple-400" />
-            <h1 className="font-semibold text-slate-200">Validation BC</h1>
-            {statsData && (
-              <span className="text-sm text-slate-400">
-                {statsData.pending} en attente
-              </span>
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
-            {hasUrgentItems && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                {statsData?.anomalies} anomalies
-              </span>
-            )}
-            {statsLastUpdate && (
-              <span className="text-xs text-slate-500">
-                MAJ: {statsLastUpdate}
-              </span>
-            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Validation-BC</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
           </div>
 
-          <button
-            onClick={() => setCommandOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
-            type="button"
-          >
-            <Search className="w-4 h-4" />
-            <span className="hidden sm:inline">Rechercher...</span>
-            <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
-          </button>
-        </div>
-      </header>
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-400 hover:text-slate-200"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-sm">Rechercher...</span>
+              <kbd className="ml-2 text-xs bg-slate-700/50 px-1.5 py-0.5 rounded">⌘K</kbd>
+            </Button>
 
-      <main className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Workspace tabs */}
-        {(viewMode === 'workspace' || tabs.length > 0) && (
-          <div className="mb-6">
-            <ValidationBCWorkspaceTabs 
-              onBackToDashboard={tabs.length > 0 ? () => {
-                setViewMode('dashboard');
-              } : undefined}
-            />
+            {/* Refresh */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
+              title="Actualiser"
+            >
+              <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+            </Button>
+
+            {/* Quick Create */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setQuickCreateOpen(true)}
+              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
+              title="Créer (⌘N)"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen(!notificationsPanelOpen)}
+              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200 relative"
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {statsData && statsData.urgent > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+                  {statsData.urgent}
+                </span>
+              )}
+            </Button>
+
+            {/* More Actions */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
+                  📊 Statistiques
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setExportOpen(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setTimelineOpen(true)}>
+                  📅 Timeline
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setWorkflowOpen(true)}>
+                  🔄 Workflow
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setAnalyticsOpen(true)}>
+                  📈 Analytics
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsFullScreen(!isFullScreen)}>
+                  {isFullScreen ? '⊗' : '⊕'} Plein écran
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
+        </header>
 
-        {showDashboard ? (
-          <div className="space-y-8">
-            {/* Navigation dashboard */}
-            <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-              {dashboardTabs.map((t) => {
-                const Icon = t.icon;
-                const isActive = dashboardTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setDashboardTab(t.id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-                      isActive
-                        ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                    )}
-                    type="button"
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </nav>
+        {/* Sub Navigation */}
+        <ValidationBCSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+        />
 
-            {/* Dashboard content */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-8">
-                {/* Alertes critiques */}
-                {statsData && statsData.anomalies > 0 && (
-                  <div className={cn('p-4 rounded-lg border', BG_STATUS.blocked)}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className={cn('w-5 h-5', STATUS_ICON_COLORS.blocked)} />
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {statsData.anomalies} anomalie{statsData.anomalies > 1 ? 's' : ''} détectée{statsData.anomalies > 1 ? 's' : ''}
-                          </p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            Écarts 3-way match, doublons ou fournisseurs non référencés
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => openQueue('anomalies')}
-                        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                        type="button"
-                      >
-                        Traiter
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
+        {/* KPI Bar */}
+        <ValidationBCKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed(!kpiBarCollapsed)}
+          onRefresh={handleRefresh}
+          kpisData={kpisData}
+        />
 
-                {/* KPIs principaux */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <button
-                    onClick={() => openQueue('pending')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.pending > 0 ? BG_STATUS.urgent : BG_STATUS.pending
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm text-slate-500">En attente</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.pending ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('urgent')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.urgent > 0 ? BG_STATUS.blocked : BG_STATUS.pending
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className={cn('w-4 h-4', statsData && statsData.urgent > 0 ? 'text-rose-500' : 'text-slate-400')} />
-                      <span className="text-sm text-slate-500">Urgents</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.urgent ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('validated')}
-                    className="p-4 rounded-lg border bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/30 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                      <span className="text-sm text-slate-500">Validés</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.validated ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('rejected')}
-                    className="p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50 text-left transition-all hover:shadow-sm"
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <XCircle className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-500">Rejetés</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.rejected ?? '—'}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => openQueue('anomalies')}
-                    className={cn(
-                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
-                      statsData && statsData.anomalies > 0 ? BG_STATUS.blocked : BG_STATUS.pending
-                    )}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Shield className="w-4 h-4 text-rose-500" />
-                      <span className="text-sm text-slate-500">Anomalies</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.anomalies ?? '—'}
-                    </p>
-                  </button>
-
-                  <div className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileCheck className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm text-slate-500">Total</span>
-                    </div>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                      {statsData?.total ?? '—'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Graphiques de visualisation */}
-                {statsData && (
-                  <section>
-                    <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                      📊 Visualisation des données
-                    </h2>
-                    <Suspense fallback={
-                      <div className="flex items-center justify-center h-64 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800">
-                        <div className="text-center">
-                          <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                          <p className="text-sm text-slate-500">Chargement des graphiques...</p>
-                        </div>
-                      </div>
-                    }>
-                      <ValidationDashboardCharts data={statsData} />
-                    </Suspense>
-                  </section>
-                )}
-
-                {/* Par service source */}
-                {statsData && (
-                  <section>
-                    <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                      Par service source
-                    </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <button
-                        onClick={() => openQueue('achats')}
-                        className="p-4 rounded-lg border border-blue-200/50 dark:border-blue-800/30 bg-blue-50/30 dark:bg-blue-950/20 text-left hover:shadow-sm transition-all"
-                        type="button"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                            <ShoppingCart className="w-5 h-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">Service Achats</p>
-                            <p className="text-xs text-slate-500">Bons de commande</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-semibold">{statsData.byBureau[0]?.count || 0}</span>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => openQueue('finance')}
-                        className="p-4 rounded-lg border border-emerald-200/50 dark:border-emerald-800/30 bg-emerald-50/30 dark:bg-emerald-950/20 text-left hover:shadow-sm transition-all"
-                        type="button"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                            <Building2 className="w-5 h-5 text-emerald-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">Service Finance</p>
-                            <p className="text-xs text-slate-500">Factures</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-semibold">{statsData.byBureau[1]?.count || 0}</span>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => openQueue('juridique')}
-                        className="p-4 rounded-lg border border-purple-200/50 dark:border-purple-800/30 bg-purple-50/30 dark:bg-purple-950/20 text-left hover:shadow-sm transition-all"
-                        type="button"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                            <Scale className="w-5 h-5 text-purple-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">Service Juridique</p>
-                            <p className="text-xs text-slate-500">Avenants</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-semibold">{statsData.byBureau[2]?.count || 0}</span>
-                        </div>
-                      </button>
-                    </div>
-                  </section>
-                )}
-
-                {/* Par type de document */}
-                {statsData && (
-                  <section>
-                    <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                      Par type de document
-                    </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {[
-                        { type: 'bc', label: 'Bons de commande', icon: FileText, color: 'blue' },
-                        { type: 'facture', label: 'Factures', icon: Receipt, color: 'emerald' },
-                        { type: 'avenant', label: 'Avenants', icon: FileEdit, color: 'purple' },
-                      ].map((item, i) => {
-                        const Icon = item.icon;
-                        return (
-                          <button
-                            key={item.type}
-                            onClick={() => openQueue(item.type)}
-                            className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
-                            type="button"
-                          >
-                            <div className="flex items-center gap-3">
-                              <Icon className={cn('w-5 h-5', `text-${item.color}-500`)} />
-                              <div>
-                                <p className="text-sm text-slate-500">{item.label}</p>
-                                <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                                  {statsData.byType[i]?.count || 0}
-                                </p>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
-
-                {/* Outils avancés */}
-                <section>
-                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
-                    Outils avancés
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <button
-                      onClick={() => setMultiLevelValidationOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Shield className="w-5 h-5 text-blue-500 mb-2" />
-                      <p className="font-medium text-sm">Multi-niveaux</p>
-                      <p className="text-xs text-slate-500">Chaîne validation</p>
-                    </button>
-                    <button
-                      onClick={() => setRequestJustificatifOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <FileText className="w-5 h-5 text-orange-500 mb-2" />
-                      <p className="font-medium text-sm">Justificatifs</p>
-                      <p className="text-xs text-slate-500">Demandes pièces</p>
-                    </button>
-                    <button
-                      onClick={() => setWorkflowOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Workflow className="w-5 h-5 text-purple-500 mb-2" />
-                      <p className="font-medium text-sm">Workflow</p>
-                      <p className="text-xs text-slate-500">Moteur validation</p>
-                    </button>
-                    <button
-                      onClick={() => setAnalyticsOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Brain className="w-5 h-5 text-pink-500 mb-2" />
-                      <p className="font-medium text-sm">Analytics IA</p>
-                      <p className="text-xs text-slate-500">Prédictions</p>
-                    </button>
-                    <button
-                      onClick={() => setDelegationsOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Users className="w-5 h-5 text-blue-500 mb-2" />
-                      <p className="font-medium text-sm">Délégations</p>
-                      <p className="text-xs text-slate-500">Pouvoirs</p>
-                    </button>
-                    <button
-                      onClick={() => setRemindersOpen(true)}
-                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
-                      type="button"
-                    >
-                      <Calendar className="w-5 h-5 text-emerald-500 mb-2" />
-                      <p className="font-medium text-sm">Rappels</p>
-                      <p className="text-xs text-slate-500">Échéances</p>
-                    </button>
-                  </div>
-                </section>
-
-                {/* Direction Panel */}
-                <ValidationBCDirectionPanel />
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden bg-slate-950/50">
+          {tabs.length > 0 ? (
+            <div className="h-full flex flex-col">
+              <ValidationBCWorkspaceTabs />
+              <div className="flex-1 overflow-hidden">
+                <ValidationBCWorkspaceContent />
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="h-full overflow-y-auto">
+              <div className="max-w-7xl mx-auto p-6">
+                {/* Advanced Search */}
+                {['bc', 'factures', 'avenants', 'urgents'].includes(activeCategory) && (
+                  <div className="mb-6">
+                    <AdvancedSearchPanel
+                      onSearch={handleSearchFiltersChange}
+                      onReset={handleResetSearch}
+                    />
+                  </div>
+                )}
 
-            {dashboardTab === 'services' && (
-              <ValidationBCServiceQueues
-                onOpenDocument={openDocument}
-                onValidate={handleValidateDocument}
-                onReject={handleRejectDocument}
-              />
-            )}
+                {/* Content based on category */}
+                {activeCategory === 'overview' && activeSubCategory === 'dashboard' && (
+                  <Dashboard360 />
+                )}
+                
+                {activeCategory === 'overview' && activeSubCategory === 'all' && (
+                  <ValidationDashboardCharts stats={statsData} />
+                )}
+                
+                {activeCategory === 'overview' && activeSubCategory === 'kanban' && (
+                  <KanbanView />
+                )}
+                
+                {activeCategory === 'overview' && activeSubCategory === 'calendar' && (
+                  <CalendarView />
+                )}
+                
+                {activeCategory === 'overview' && activeSubCategory === 'budgets' && (
+                  <BudgetsView />
+                )}
+                
+                {activeCategory === 'bc' && permissions.canView && (
+                  <BCListView
+                    subCategory={activeSubCategory}
+                    onDocumentClick={(doc) => openDocument(doc.id, 'bc')}
+                    onValidate={permissions.canValidate ? handleValidateDocument : undefined}
+                    onReject={permissions.canReject ? handleRejectDocument : undefined}
+                  />
+                )}
 
-            {dashboardTab === 'rules' && (
-              <ValidationBCBusinessRules />
-            )}
+                {activeCategory === 'factures' && permissions.canView && (
+                  <FacturesListView
+                    subCategory={activeSubCategory}
+                    onDocumentClick={(doc) => openDocument(doc.id, 'facture')}
+                    onValidate={permissions.canValidate ? handleValidateDocument : undefined}
+                    onReject={permissions.canReject ? handleRejectDocument : undefined}
+                  />
+                )}
 
-            {dashboardTab === 'history' && (
-              <ValidationBCActivityHistory onViewDocument={(id) => openDocument(id, 'bc')} />
-            )}
+                {activeCategory === 'avenants' && permissions.canView && (
+                  <AvenantsListView
+                    subCategory={activeSubCategory}
+                    onDocumentClick={(doc) => openDocument(doc.id, 'avenant')}
+                    onValidate={permissions.canValidate ? handleValidateDocument : undefined}
+                    onReject={permissions.canReject ? handleRejectDocument : undefined}
+                  />
+                )}
 
-            {dashboardTab === 'favorites' && (
-              <ValidationBCFavoritesPanel onOpenDocument={(id) => openDocument(id, 'bc')} />
+                {activeCategory === 'urgents' && permissions.canView && (
+                  <UrgentsListView
+                    subCategory={activeSubCategory}
+                    onDocumentClick={(doc) => openDocument(doc.id, doc.type)}
+                    onValidate={permissions.canValidate ? handleValidateDocument : undefined}
+                    onReject={permissions.canReject ? handleRejectDocument : undefined}
+                  />
+                )}
+
+                {activeCategory === 'tendances' && permissions.canViewAnalytics && (
+                  <TrendsView subCategory={activeSubCategory} />
+                )}
+
+                {activeCategory === 'validateurs' && permissions.canViewAnalytics && (
+                  <ValidatorsView subCategory={activeSubCategory} />
+                )}
+                
+                {activeCategory === 'services' && (
+                  <ValidationBCServiceQueues
+                    onOpenDocument={openDocument}
+                    onValidate={permissions.canValidate ? handleValidateDocument : undefined}
+                    onReject={permissions.canReject ? handleRejectDocument : undefined}
+                  />
+                )}
+
+                {activeCategory === 'regles' && permissions.canManageRules && (
+                  <ValidationBCBusinessRules />
+                )}
+
+                {activeCategory === 'historique' && permissions.canView && (
+                  <ValidationBCActivityHistory onViewDocument={(id) => openDocument(id, 'bc')} />
+                )}
+
+                {/* Permission Denied */}
+                {!permissions.canView && (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+                    <div className="text-center space-y-4">
+                      <div className="text-6xl mb-4">🔒</div>
+                      <h2 className="text-2xl font-bold text-slate-200">
+                        Accès Restreint
+                      </h2>
+                      <p className="text-slate-400 max-w-md">
+                        Vous n'avez pas les permissions nécessaires pour accéder à cette section.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Default message for other categories */}
+                {!['overview', 'bc', 'factures', 'avenants', 'urgents', 'tendances', 'validateurs', 'services', 'regles', 'historique'].includes(activeCategory) && permissions.canView && (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+                    <div className="text-center space-y-4">
+                      <div className="text-6xl mb-4">📋</div>
+                      <h2 className="text-2xl font-bold text-slate-200">
+                        {currentCategoryLabel}
+                      </h2>
+                      <p className="text-slate-400 max-w-md">
+                        Cette vue est en cours de développement.
+                        Utilisez ⌘K pour ouvrir la palette de commandes.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-700/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4 text-slate-500">
+            <span>Dernière MAJ: {formatLastUpdate()}</span>
+            {statsData && (
+              <>
+                <span>•</span>
+                <span>{statsData.total} documents</span>
+                <span>•</span>
+                <span className="text-amber-400">{statsData.pending} en attente</span>
+              </>
             )}
           </div>
-        ) : (
-          <ValidationBCWorkspaceContent />
-        )}
-      </main>
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-slate-500">Connecté</span>
+          </div>
+        </footer>
+      </div>
+
+      {/* Notifications Panel (Slide-in from right) */}
+      {notificationsPanelOpen && (
+        <div className="w-80 border-l border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <ValidationBCNotifications />
+        </div>
+      )}
 
       {/* ================================ */}
-      {/* Command Palette (⌘K) */}
+      {/* Modals */}
       {/* ================================ */}
       <ValidationBCCommandPalette />
-
-      {/* Modals */}
       <ValidationBCStatsModal />
-      <ValidationBCExportModal open={exportOpen} onClose={() => setExportOpen(false)} onExport={async () => { toast.success('Export', 'Téléchargement...'); }} />
+      
+      <ValidationBCExportModal 
+        open={exportOpen} 
+        onClose={() => setExportOpen(false)} 
+        onExport={async () => { 
+          toast.success('Export', 'Téléchargement...'); 
+        }} 
+      />
+      
       <ValidationBCQuickCreateModal
         open={quickCreateOpen}
         onClose={() => setQuickCreateOpen(false)}
@@ -841,51 +939,75 @@ function ValidationBCPageContent() {
           openDocument(doc.id, doc.type);
         }}
       />
-      <ValidationBCTimeline open={timelineOpen} onClose={() => setTimelineOpen(false)} />
-      <ValidationBCWorkflowEngine open={workflowOpen} onClose={() => setWorkflowOpen(false)} />
-      <ValidationBCPredictiveAnalytics open={analyticsOpen} onClose={() => setAnalyticsOpen(false)} />
-      <ValidationBCDelegationManager open={delegationsOpen} onClose={() => setDelegationsOpen(false)} />
-      <ValidationBCRemindersSystem open={remindersOpen} onClose={() => setRemindersOpen(false)} />
-      <ValidationBCNotifications />
       
-      {/* Advanced modals (inspired by demandes page) */}
-      <ValidationBCMultiLevelValidation 
-        open={multiLevelValidationOpen} 
+      <ValidationBCTimeline 
+        open={timelineOpen} 
+        onClose={() => setTimelineOpen(false)} 
+      />
+      
+      <ValidationBCWorkflowEngine 
+        open={workflowOpen} 
+        onClose={() => setWorkflowOpen(false)} 
+      />
+      
+      <ValidationBCPredictiveAnalytics 
+        open={analyticsOpen} 
+        onClose={() => setAnalyticsOpen(false)} 
+      />
+      
+      <ValidationBCDelegationManager 
+        open={delegationsOpen} 
+        onClose={() => setDelegationsOpen(false)} 
+      />
+      
+      <ValidationBCRemindersSystem 
+        open={remindersOpen} 
+        onClose={() => setRemindersOpen(false)} 
+      />
+      
+      <ValidationBCMultiLevelValidation
+        open={multiLevelValidationOpen}
         onClose={() => setMultiLevelValidationOpen(false)}
-        onOpenDocument={openDocument}
-      />
-      <ValidationBCRequestJustificatif 
-        open={requestJustificatifOpen} 
-        onClose={() => setRequestJustificatifOpen(false)} 
-      />
-
-      {/* Validation Modal */}
-      <ValidationBCValidationModal
-        open={validationModalOpen}
         document={selectedDocument}
-        onClose={() => { setValidationModalOpen(false); setSelectedDocument(null); }}
-        onValidate={(comment) => {
-          toast.success('Validation effectuée', selectedDocument?.reference || '');
-          loadStats('manual');
-        }}
-        onReject={(reason) => {
-          toast.info('Document rejeté', selectedDocument?.reference || '');
-          loadStats('manual');
-        }}
       />
+      
+      <ValidationBCRequestJustificatif
+        open={requestJustificatifOpen}
+        onClose={() => setRequestJustificatifOpen(false)}
+        document={selectedDocument}
+      />
+      
+      {selectedDocument && (
+        <ValidationBCValidationModal
+          open={validationModalOpen}
+          document={selectedDocument}
+          onClose={() => {
+            setValidationModalOpen(false);
+            setSelectedDocument(null);
+          }}
+          onValidate={async (doc) => {
+            toast.success('Document validé', doc.id);
+            setValidationModalOpen(false);
+            setSelectedDocument(null);
+            await loadStats('manual');
+          }}
+          onReject={async (doc) => {
+            toast.info('Document rejeté', doc.id);
+            setValidationModalOpen(false);
+            setSelectedDocument(null);
+            await loadStats('manual');
+          }}
+        />
+      )}
     </div>
+    </ValidationBCErrorBoundary>
   );
 }
 
-// ================================
-// Export
-// ================================
 export default function ValidationBCPage() {
   return (
     <ValidationBCToastProvider>
-      <ValidationBCFavoritesProvider>
-        <ValidationBCPageContent />
-      </ValidationBCFavoritesProvider>
+      <ValidationBCPageContent />
     </ValidationBCToastProvider>
   );
 }

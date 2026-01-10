@@ -1,22 +1,22 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { 
   AlertTriangle, 
   AlertCircle, 
   Clock, 
-  CheckCircle2, 
   Building2,
   TrendingUp,
   TrendingDown,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react';
-import { blockedDossiers } from '@/lib/data';
+import { blockedApi } from '@/lib/services/blockedApiService';
 import type { BlockedDossier } from '@/lib/types/bmo.types';
 
 type Props = {
-  onOpenQueue: (queue: string, title: string, icon: string) => void;
+  onOpenQueue: (queue: string) => void;
   compact?: boolean;
 };
 
@@ -37,7 +37,23 @@ function computePriority(d: BlockedDossier): number {
 }
 
 export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
-  const data = blockedDossiers as unknown as BlockedDossier[];
+  const [data, setData] = useState<BlockedDossier[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Charger les données depuis l'API
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const result = await blockedApi.getAll();
+        setData(result.data);
+      } catch (error) {
+        console.error('Failed to load blocked data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const stats = useMemo(() => {
     const critical = data.filter(d => d.impact === 'critical');
@@ -83,11 +99,19 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
     return amount.toString();
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
   if (compact) {
     return (
       <div className="flex items-center gap-3 text-sm">
         <button
-          onClick={() => onOpenQueue('critical', 'Critiques', '🚨')}
+          onClick={() => onOpenQueue('critical')}
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors",
             stats.critical > 0 
@@ -100,7 +124,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
         </button>
 
         <button
-          onClick={() => onOpenQueue('high', 'Urgents', '⚠️')}
+          onClick={() => onOpenQueue('high')}
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors",
             stats.high > 0 
@@ -113,7 +137,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
         </button>
 
         <button
-          onClick={() => onOpenQueue('all', 'Tous', '🚧')}
+          onClick={() => onOpenQueue('all')}
           className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
         >
           <span className="font-semibold">{stats.total}</span>
@@ -127,7 +151,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {/* Critiques - Design épuré, texte neutre */}
       <button
-        onClick={() => onOpenQueue('critical', 'Critiques', '🚨')}
+        onClick={() => onOpenQueue('critical')}
         className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left transition-all hover:border-slate-300 dark:hover:border-slate-700"
       >
         <div className="flex items-center gap-2 mb-2">
@@ -150,7 +174,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
 
       {/* Élevé */}
       <button
-        onClick={() => onOpenQueue('high', 'Élevé', '⚠️')}
+        onClick={() => onOpenQueue('high')}
         className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left transition-all hover:border-slate-300 dark:hover:border-slate-700"
       >
         <div className="flex items-center gap-2 mb-2">
@@ -167,7 +191,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
 
       {/* Moyen */}
       <button
-        onClick={() => onOpenQueue('medium', 'Moyen', '📊')}
+        onClick={() => onOpenQueue('medium')}
         className="p-4 rounded-xl border bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-left transition-all hover:border-slate-300 dark:hover:border-slate-700"
       >
         <div className="flex items-center gap-2 mb-2">
@@ -241,7 +265,7 @@ export function BlockedLiveCounters({ onOpenQueue, compact = false }: Props) {
               {stats.topBureaux.map(({ bureau, count, critical }) => (
                 <button
                   key={bureau}
-                  onClick={() => onOpenQueue(`bureau:${bureau}`, bureau, '🏢')}
+                  onClick={() => onOpenQueue('all')}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all"
                 >
                   <span className="font-medium text-sm text-slate-700 dark:text-slate-300">{bureau}</span>

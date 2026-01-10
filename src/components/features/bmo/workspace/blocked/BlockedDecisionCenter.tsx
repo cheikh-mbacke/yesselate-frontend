@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
   X, Zap, AlertCircle, AlertTriangle, Clock, ArrowUpRight, Shield, 
   CheckCircle2, FileText, Building2, TrendingUp, ChevronRight, Filter,
-  Users, MessageSquare, Calendar
+  Users, MessageSquare, Calendar, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { blockedDossiers } from '@/lib/data';
-import { useBlockedWorkspaceStore } from '@/lib/stores/blockedWorkspaceStore';
+import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
+import { blockedApi } from '@/lib/services/blockedApiService';
 import { useBlockedToast } from './BlockedToast';
 import type { BlockedDossier } from '@/lib/types/bmo.types';
 
@@ -45,14 +45,47 @@ async function sha256Hex(input: string): Promise<string> {
 
 export function BlockedDecisionCenter({ open, onClose }: Props) {
   const toast = useBlockedToast();
-  const { openTab, addDecision, selectedIds, toggleSelected, selectAll, clearSelection } = useBlockedWorkspaceStore();
+  const { 
+    addDecision, 
+    selectedIds, 
+    toggleSelected, 
+    selectAll, 
+    clearSelection,
+    navigate,
+  } = useBlockedCommandCenterStore();
   
   const [activeTab, setActiveTab] = useState<DecisionTab>('overview');
   const [escalationNote, setEscalationNote] = useState('');
   const [resolutionNote, setResolutionNote] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [data, setData] = useState<BlockedDossier[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const data = blockedDossiers as unknown as BlockedDossier[];
+  // Load data from API
+  useEffect(() => {
+    if (!open) return;
+    
+    let cancelled = false;
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const result = await blockedApi.getAll(undefined, undefined, 1, 100);
+        if (!cancelled) {
+          setData(result.data);
+        }
+      } catch (error) {
+        console.error('Failed to load blocked dossiers:', error);
+        toast.error('Erreur', 'Impossible de charger les dossiers');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    
+    loadData();
+    return () => { cancelled = true; };
+  }, [open, toast]);
 
   const stats = useMemo(() => {
     const critical = data.filter(d => d.impact === 'critical');
@@ -85,12 +118,16 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
   // Actions
   const handleEscalate = useCallback(async (dossiers: BlockedDossier[], note: string) => {
     setProcessing(true);
-    const batchId = `BATCH-ESC-${Date.now()}`;
     
     try {
+      // Call API for bulk escalation
+      const dossierIds = dossiers.map(d => d.id);
+      const result = await blockedApi.bulkEscalate(dossierIds, note);
+      
+      // Add to decision register for each dossier
       for (const dossier of dossiers) {
         const payload = {
-          batchId,
+          batchId: result.batchId,
           dossierId: dossier.id,
           action: 'escalation',
           note,
@@ -100,7 +137,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
         
         addDecision({
           at: new Date().toISOString(),
-          batchId,
+          batchId: result.batchId,
           action: 'escalation',
           dossierId: dossier.id,
           dossierSubject: dossier.subject,
@@ -120,7 +157,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
       toast.escalation(
         `${dossiers.length} dossier(s) escaladé(s)`,
         'Notification envoyée au CODIR',
-        batchId
+        result.batchId
       );
       
       clearSelection();
@@ -134,12 +171,11 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
 
   const handleSubstitute = useCallback(async (dossiers: BlockedDossier[], note: string) => {
     setProcessing(true);
-    const batchId = `BATCH-SUB-${Date.now()}`;
     
     try {
+      // Call API for each substitution (requires individual hash)
       for (const dossier of dossiers) {
         const payload = {
-          batchId,
           dossierId: dossier.id,
           action: 'substitution',
           note,
@@ -147,9 +183,17 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
         };
         const hash = await sha256Hex(JSON.stringify(payload));
         
+        await blockedApi.substitute({
+          dossierId: dossier.id,
+          action: 'Substitution BMO',
+          justification: note,
+          sha256Hash: hash,
+          overriddenBureau: dossier.bureau,
+        });
+        
         addDecision({
           at: new Date().toISOString(),
-          batchId,
+          batchId: `BATCH-SUB-${Date.now()}`,
           action: 'substitution',
           dossierId: dossier.id,
           dossierSubject: dossier.subject,
@@ -169,7 +213,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
       toast.resolution(
         `${dossiers.length} dossier(s) traité(s) par substitution`,
         'Pouvoir BMO exercé',
-        batchId
+        `BATCH-SUB-${Date.now()}`
       );
       
       clearSelection();
@@ -252,8 +296,16 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Loading State */}
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+              <span className="ml-3 text-slate-500">Chargement des dossiers...</span>
+            </div>
+          )}
+
           {/* Overview - Design épuré */}
-          {activeTab === 'overview' && (
+          {!loading && activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Alertes */}
               {stats.totalCritical > 0 && (
@@ -352,7 +404,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
                   </button>
 
                   <button
-                    onClick={() => openTab({ type: 'audit', id: 'audit:main', title: 'Audit', icon: '🔐', data: {} })}
+                    onClick={() => { navigate('audit'); onClose(); }}
                     className="flex items-center gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
                     <FileText className="w-4 h-4 text-slate-400" />
@@ -360,7 +412,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
                   </button>
 
                   <button
-                    onClick={() => openTab({ type: 'matrix', id: 'matrix:main', title: 'Matrice', icon: '📐', data: {} })}
+                    onClick={() => { navigate('matrix'); onClose(); }}
                     className="flex items-center gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
                     <TrendingUp className="w-4 h-4 text-blue-500" />
@@ -372,7 +424,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
           )}
 
           {/* Critical */}
-          {activeTab === 'critical' && (
+          {!loading && activeTab === 'critical' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold">Dossiers critiques à traiter</h3>
@@ -450,7 +502,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
           )}
 
           {/* Escalade */}
-          {activeTab === 'escalate' && (
+          {!loading && activeTab === 'escalate' && (
             <div className="space-y-6">
               <div className="p-4 rounded-xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-2 mb-2">
@@ -515,7 +567,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
           )}
 
           {/* Substitution */}
-          {activeTab === 'substitute' && (
+          {!loading && activeTab === 'substitute' && (
             <div className="space-y-6">
               <div className="p-4 rounded-xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-2 mb-2">
@@ -581,7 +633,7 @@ export function BlockedDecisionCenter({ open, onClose }: Props) {
           )}
 
           {/* Bulk actions */}
-          {activeTab === 'bulk' && (
+          {!loading && activeTab === 'bulk' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold">{stats.totalSelected} dossier(s) sélectionné(s)</h3>

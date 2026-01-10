@@ -1,10 +1,9 @@
-/**
- * API Route: GET /api/alerts/[id]/timeline
- * Récupère l'historique d'une alerte
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * GET /api/alerts/[id]/timeline
+ * Récupérer la timeline d'une alerte spécifique
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,140 +11,60 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Mock timeline
+    // Générer une timeline mockée
     const timeline = [
       {
-        id: 'TL-001',
+        id: 'tl-1',
         alertId: id,
-        type: 'creation',
-        category: 'system',
-        title: 'Alerte créée',
-        description: 'Alerte générée automatiquement suite au dépassement du seuil budget (80%)',
-        timestamp: '2026-01-10T08:30:00Z',
-        actor: 'Système de monitoring',
-        actorId: 'SYSTEM',
-        actorType: 'system',
-        icon: 'alert',
-        metadata: {
-          threshold: 80,
-          actualValue: 85,
-          source: 'budget_monitor'
-        }
+        type: 'created',
+        userId: 'system',
+        userName: 'Système',
+        timestamp: new Date(Date.now() - 7200000).toISOString(), // il y a 2h
+        data: { severity: 'critical' },
       },
       {
-        id: 'TL-002',
+        id: 'tl-2',
         alertId: id,
-        type: 'notification',
-        category: 'system',
-        title: 'Notifications envoyées',
-        description: 'Email envoyé à 3 destinataires',
-        timestamp: '2026-01-10T08:31:00Z',
-        actor: 'Système de notification',
-        actorId: 'SYSTEM',
-        actorType: 'system',
-        icon: 'mail',
-        metadata: {
-          recipients: ['amadou.diop@company.sn', 'direction@company.sn', 'finances@company.sn'],
-          channel: 'email'
-        }
+        type: 'assigned',
+        userId: 'user-001',
+        userName: 'Jean Dupont',
+        timestamp: new Date(Date.now() - 5400000).toISOString(), // il y a 1h30
+        data: { assignedTo: 'user-002', note: 'Assignation pour traitement urgent' },
       },
       {
-        id: 'TL-003',
+        id: 'tl-3',
         alertId: id,
-        type: 'view',
-        category: 'user',
-        title: 'Alerte consultée',
-        description: 'L\'alerte a été ouverte et consultée',
-        timestamp: '2026-01-10T09:15:00Z',
-        actor: 'Amadou DIOP',
-        actorId: 'USER-001',
-        actorType: 'user',
-        icon: 'eye',
-        metadata: {
-          viewDuration: 45, // seconds
-          device: 'desktop'
-        }
+        type: 'acknowledged',
+        userId: 'user-002',
+        userName: 'Marie Martin',
+        timestamp: new Date(Date.now() - 3600000).toISOString(), // il y a 1h
+        data: { note: 'Prise en compte, analyse en cours' },
       },
       {
-        id: 'TL-004',
+        id: 'tl-4',
         alertId: id,
-        type: 'comment',
-        category: 'user',
-        title: 'Commentaire ajouté',
-        description: 'Je vais analyser les postes de dépenses principaux',
-        timestamp: '2026-01-10T09:20:00Z',
-        actor: 'Amadou DIOP',
-        actorId: 'USER-001',
-        actorType: 'user',
-        icon: 'message',
-        metadata: {}
+        type: 'commented',
+        userId: 'user-002',
+        userName: 'Marie Martin',
+        timestamp: new Date(Date.now() - 1800000).toISOString(), // il y a 30min
+        data: { comment: 'Vérification des données nécessaires' },
       },
-      {
-        id: 'TL-005',
-        alertId: id,
-        type: 'acknowledge',
-        category: 'action',
-        title: 'Alerte acquittée',
-        description: 'Prise en compte, analyse en cours',
-        timestamp: '2026-01-10T10:00:00Z',
-        actor: 'Amadou DIOP',
-        actorId: 'USER-001',
-        actorType: 'user',
-        icon: 'check',
-        metadata: {
-          responseTimeMinutes: 90
-        }
-      },
-      {
-        id: 'TL-006',
-        alertId: id,
-        type: 'document',
-        category: 'user',
-        title: 'Document attaché',
-        description: 'Analyse budgétaire détaillée',
-        timestamp: '2026-01-10T14:30:00Z',
-        actor: 'Amadou DIOP',
-        actorId: 'USER-001',
-        actorType: 'user',
-        icon: 'file',
-        metadata: {
-          documentId: 'DOC-123',
-          documentName: 'analyse_budget_proj001.pdf',
-          documentSize: 256000
-        }
-      }
     ];
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        alertId: id,
-        timeline,
-        total: timeline.length,
-        stats: {
-          totalActions: timeline.filter(t => t.category === 'action').length,
-          totalComments: timeline.filter(t => t.type === 'comment').length,
-          totalDocuments: timeline.filter(t => t.type === 'document').length,
-          responseTimeMinutes: 90
-        }
-      },
-      timestamp: new Date().toISOString()
-    });
-
+    return NextResponse.json({ timeline });
   } catch (error) {
-    const { id } = await params;
-    console.error(`Erreur API GET /api/alerts/${id}/timeline:`, error);
+    console.error('Error fetching alert timeline:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de la récupération de l\'historique',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
-      },
+      { error: 'Failed to fetch timeline', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
 
+/**
+ * POST /api/alerts/[id]/comments
+ * Ajouter un commentaire à une alerte
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -153,71 +72,45 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
+    const { comment, userId } = body;
 
-    const { type, description, userId, userName, metadata = {} } = body;
-
-    // Validate
-    if (!type || !description) {
+    if (!comment || !userId) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Paramètres manquants',
-          details: 'type et description sont requis'
-        },
+        { error: 'Missing required fields: comment, userId' },
         { status: 400 }
       );
     }
 
-    const validTypes = ['comment', 'document', 'action', 'note'];
-    if (!validTypes.includes(type)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Type invalide',
-          details: `Types valides: ${validTypes.join(', ')}`
-        },
-        { status: 400 }
-      );
-    }
-
-    // Create timeline entry
-    const entry = {
-      id: `TL-${Date.now()}`,
+    // Créer le commentaire
+    const newComment = {
+      id: `comment-${Date.now()}`,
       alertId: id,
-      type,
-      category: 'user',
-      title: type === 'comment' ? 'Commentaire ajouté' : 
-             type === 'document' ? 'Document attaché' :
-             type === 'note' ? 'Note ajoutée' : 'Action effectuée',
-      description,
+      userId,
+      comment,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Créer une entrée timeline
+    const timelineEntry = {
+      id: `timeline-${Date.now()}`,
+      alertId: id,
+      type: 'commented',
+      userId,
       timestamp: new Date().toISOString(),
-      actor: userName || 'Utilisateur',
-      actorId: userId || 'USER-001',
-      actorType: 'user',
-      icon: type === 'comment' ? 'message' : 
-            type === 'document' ? 'file' :
-            type === 'note' ? 'note' : 'action',
-      metadata
+      data: { comment },
     };
 
     return NextResponse.json({
       success: true,
-      message: 'Entrée ajoutée à l\'historique',
-      data: entry,
-      timestamp: new Date().toISOString()
-    }, { status: 201 });
-
+      comment: newComment,
+      timeline: timelineEntry,
+      message: 'Comment added successfully',
+    });
   } catch (error) {
-    const { id } = await params;
-    console.error(`Erreur API POST /api/alerts/${id}/timeline:`, error);
+    console.error('Error adding comment:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Erreur lors de l\'ajout à l\'historique',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
-      },
+      { error: 'Failed to add comment', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
-

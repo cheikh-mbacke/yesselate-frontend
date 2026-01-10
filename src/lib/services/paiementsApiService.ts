@@ -5,6 +5,7 @@
  */
 
 import type { PaiementFilter, PaiementDecisionEntry } from '@/lib/stores/paiementsWorkspaceStore';
+import type { PaiementsActiveFilters } from '@/components/features/bmo/workspace/paiements';
 
 export interface Paiement {
   id: string;
@@ -223,6 +224,7 @@ export const paiementsApiService = {
     await delay(300);
     let data = [...MOCK_PAIEMENTS];
 
+    // Filtres simples (ancien format)
     if (filter?.status) data = data.filter(p => p.status === filter.status);
     if (filter?.urgency) data = data.filter(p => p.urgency === filter.urgency);
     if (filter?.fournisseur) {
@@ -240,6 +242,84 @@ export const paiementsApiService = {
       );
     }
 
+    if (sortBy === 'montant') data.sort((a, b) => b.montant - a.montant);
+    else if (sortBy === 'urgency') {
+      const order = { critical: 0, high: 1, medium: 2, low: 3 };
+      data.sort((a, b) => order[a.urgency] - order[b.urgency]);
+    } else if (sortBy === 'echeance') {
+      data.sort((a, b) => new Date(a.dateEcheance).getTime() - new Date(b.dateEcheance).getTime());
+    }
+
+    const total = data.length;
+    const totalPages = Math.ceil(total / limit);
+    const start = (page - 1) * limit;
+    return { data: data.slice(start, start + limit), total, page, totalPages };
+  },
+
+  /**
+   * Nouvelle méthode: Applique les filtres avancés (PaiementsActiveFilters)
+   */
+  async getAllWithAdvancedFilters(
+    filters: PaiementsActiveFilters,
+    sortBy?: string,
+    page = 1,
+    limit = 20
+  ): Promise<{
+    data: Paiement[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    await delay(300);
+    let data = [...MOCK_PAIEMENTS];
+
+    // Urgence (multi-sélection)
+    if (filters.urgency && filters.urgency.length > 0) {
+      data = data.filter(p => filters.urgency.includes(p.urgency));
+    }
+
+    // Bureaux (multi-sélection)
+    if (filters.bureaux && filters.bureaux.length > 0) {
+      data = data.filter(p => filters.bureaux.includes(p.bureau));
+    }
+
+    // Types de paiement (multi-sélection)
+    if (filters.types && filters.types.length > 0) {
+      data = data.filter(p => filters.types.includes(p.type));
+    }
+
+    // Statut (multi-sélection)
+    if (filters.status && filters.status.length > 0) {
+      data = data.filter(p => filters.status.includes(p.status));
+    }
+
+    // Montant (range)
+    if (filters.amountRange?.min !== undefined) {
+      data = data.filter(p => p.montant >= filters.amountRange.min!);
+    }
+    if (filters.amountRange?.max !== undefined) {
+      data = data.filter(p => p.montant <= filters.amountRange.max!);
+    }
+
+    // Date range (échéance)
+    if (filters.dateRange?.start) {
+      data = data.filter(p => new Date(p.dateEcheance) >= new Date(filters.dateRange!.start));
+    }
+    if (filters.dateRange?.end) {
+      data = data.filter(p => new Date(p.dateEcheance) <= new Date(filters.dateRange!.end));
+    }
+
+    // Fournisseurs (multi-sélection)
+    if (filters.fournisseurs && filters.fournisseurs.length > 0) {
+      data = data.filter(p => filters.fournisseurs!.includes(p.fournisseur.id));
+    }
+
+    // Responsables (multi-sélection)
+    if (filters.responsables && filters.responsables.length > 0) {
+      data = data.filter(p => filters.responsables!.includes(p.responsible));
+    }
+
+    // Tri
     if (sortBy === 'montant') data.sort((a, b) => b.montant - a.montant);
     else if (sortBy === 'urgency') {
       const order = { critical: 0, high: 1, medium: 2, low: 3 };

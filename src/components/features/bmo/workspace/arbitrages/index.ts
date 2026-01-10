@@ -6,3 +6,13 @@ export { ArbitragesCommandPalette } from './ArbitragesCommandPalette';
 export { ArbitragesStatsModal } from './ArbitragesStatsModal';
 export { ArbitragesDirectionPanel } from './ArbitragesDirectionPanel';
 
+// Command Center Components - Architecture v3.0
+export {
+  ArbitragesCommandSidebar,
+  ArbitragesSubNavigation,
+  ArbitragesKPIBar,
+  ArbitragesContentRouter,
+  arbitragesCategories,
+  type SidebarCategory,
+} from './command-center';
+

@@ -10,6 +10,16 @@ import { CalendarDirectionPanel } from '@/components/features/calendar/workspace
 import { CalendarAlertsBanner } from '@/components/features/calendar/workspace/CalendarAlertsBanner';
 import { CalendarToastProvider, useCalendarToast } from '@/components/features/calendar/workspace/CalendarToast';
 import { CalendarStatsModal } from '@/components/features/calendar/workspace/CalendarStatsModal';
+import { CalendarHelpModal } from '@/components/features/calendar/modals/CalendarHelpModal';
+import {
+  CalendarEventsTrendChart,
+  CalendarEventTypesChart,
+  CalendarPriorityChart,
+  CalendarTimeDistributionChart,
+  CalendarCompletionRateChart,
+  CalendarConflictsChart,
+  CalendarProjectsChart,
+} from '@/components/features/calendar/analytics/CalendarAnalyticsCharts';
 
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { FluentButton } from '@/components/ui/fluent-button';
@@ -50,6 +60,21 @@ import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
 // ================================
 // Types
 // ================================
+interface CalendarEvent {
+  id: string;
+  title: string;
+  date: Date;
+  startTime?: string;
+  endTime?: string;
+  type: 'meeting' | 'deadline' | 'milestone' | 'task' | 'reminder';
+  priority: 'high' | 'medium' | 'low';
+  project?: string;
+  participants?: string[];
+  location?: string;
+  hasConflict?: boolean;
+  conflictWith?: string[];
+}
+
 type CalendarStats = {
   total: number;
   today: number;
@@ -168,21 +193,25 @@ function CalendrierPageContent() {
     monthEndISO,
   ]);
 
-  const gridEvents = useMemo(() => {
+  const gridEvents = useMemo((): CalendarEvent[] => {
     const list = eventsData?.events ?? [];
-    return list.map((e) => ({
+    return list.map((e): CalendarEvent => ({
       id: e.id,
       title: e.title,
       date: new Date(e.date),
       startTime: e.startTime,
       endTime: e.endTime,
-      type: (e.type as any) || 'task',
-      priority: (e.priority as any) || 'medium',
+      type: (e.type as CalendarEvent['type']) || 'meeting',
+      priority: (e.priority as CalendarEvent['priority']) || 'medium',
       project: e.project,
       participants: e.participants,
       location: e.location,
+      hasConflict: conflictsData?.conflicts?.some((c: any) => c.eventIds?.includes(e.id)),
+      conflictWith: conflictsData?.conflicts
+        ?.filter((c: any) => c.eventIds?.includes(e.id))
+        ?.flatMap((c: any) => c.eventIds?.filter((id: string) => id !== e.id) ?? []),
     }));
-  }, [eventsData]);
+  }, [eventsData, conflictsData]);
 
   // UI State
   const [fullscreen, setFullscreen] = useState(false);
@@ -412,6 +441,7 @@ function CalendrierPageContent() {
   });
 
   useHotkeys('shift+?', () => setHelpOpen(true));
+  useHotkeys('f1', () => setHelpOpen(true));
 
   useHotkeys('escape', () => {
     setStatsOpen(false);
@@ -732,8 +762,8 @@ function CalendrierPageContent() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
                     >
                       <Keyboard className="w-4 h-4" />
-                      Raccourcis & aide
-                      <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">?</kbd>
+                      Aide & Raccourcis
+                      <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">F1</kbd>
                     </button>
                   </div>
                 </>
@@ -947,8 +977,8 @@ function CalendrierPageContent() {
                   {!eventsLoading && !eventsError && (
                     <div className="mt-4">
                       <CalendarGrid
-                        events={gridEvents as any}
-                        onEventClick={(ev: any) => {
+                        events={gridEvents}
+                        onEventClick={(ev) => {
                           // ouvrir détail via workspace (si besoin) ou toast
                           toast.info('Événement', String(ev.title ?? ''));
                         }}
@@ -1089,8 +1119,8 @@ function CalendrierPageContent() {
                     {!eventsLoading && !eventsError && (
                       <div className="mt-4">
                         <CalendarGrid
-                          events={gridEvents as any}
-                          onEventClick={(ev: any) => {
+                          events={gridEvents}
+                          onEventClick={(ev) => {
                             toast.info('Événement', String(ev.title ?? ''));
                           }}
                           onCreateEvent={() => openCreateWizard()}
@@ -1125,6 +1155,60 @@ function CalendrierPageContent() {
                           <div className="text-xs text-slate-500 mb-1">Taux de complétion</div>
                           <div className="text-2xl font-bold text-blue-400">
                             {statsData ? Math.round((statsData.completed / Math.max(statsData.total, 1)) * 100) : 0}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Analytics Charts */}
+                    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <BarChart2 className="w-5 h-5 text-purple-400" />
+                        <h3 className="font-semibold text-slate-200">Analytics & Tendances</h3>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Trend Chart */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Tendance des événements</h4>
+                          <CalendarEventsTrendChart />
+                        </div>
+
+                        {/* Event Types */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Répartition par type</h4>
+                          <CalendarEventTypesChart />
+                        </div>
+
+                        {/* Priority Distribution */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Distribution par priorité</h4>
+                          <CalendarPriorityChart />
+                        </div>
+
+                        {/* Time Distribution */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Répartition horaire</h4>
+                          <CalendarTimeDistributionChart />
+                        </div>
+
+                        {/* Completion Rate */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Taux de complétion</h4>
+                          <CalendarCompletionRateChart />
+                        </div>
+
+                        {/* Conflicts */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Conflits détectés</h4>
+                          <CalendarConflictsChart />
+                        </div>
+
+                        {/* Projects Distribution */}
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50 lg:col-span-2">
+                          <h4 className="text-sm font-medium text-slate-300 mb-3">Répartition par projet</h4>
+                          <div className="max-w-2xl mx-auto">
+                            <CalendarProjectsChart />
                           </div>
                         </div>
                       </div>
@@ -1360,63 +1444,8 @@ function CalendrierPageContent() {
         </div>
       </FluentModal>
 
-      {/* Aide */}
-      <FluentModal open={helpOpen} title="Raccourcis clavier" onClose={() => setHelpOpen(false)}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Palette de commandes</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘K</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Centre de décision</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘D</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Nouvel événement</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘N</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Aujourd&apos;hui</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘1</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Cette semaine</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘2</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Retard SLA</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘3</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Conflits</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘4</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Statistiques</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘S</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Exporter</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘E</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Vue mensuelle</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">⌘M</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Fermer modales</span>
-              <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs text-slate-300 border border-slate-700">Esc</kbd>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end mt-6">
-          <FluentButton size="sm" variant="primary" onClick={() => setHelpOpen(false)}>
-            Fermer
-          </FluentButton>
-        </div>
-      </FluentModal>
+      {/* Aide - Help Modal */}
+      <CalendarHelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

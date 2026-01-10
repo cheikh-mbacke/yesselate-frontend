@@ -25,18 +25,18 @@ export default function ParametresPage() {
   ];
 
   return (
-    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-teal-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-teal-950/10", fullscreen && "fixed inset-0 z-50")}>
-      <header className="flex-none border-b border-slate-200/70 dark:border-slate-800/70 bg-white/80 dark:bg-[#1f1f1f]/80 backdrop-blur-xl">
+    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950", fullscreen && "fixed inset-0 z-50")}>
+      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/25"><Settings className="w-5 h-5 text-white" /></div>
-              <div><h1 className="text-xl font-bold">Paramètres</h1><p className="text-sm text-slate-500">Configuration du système</p></div>
+              <div className="p-2 rounded-xl bg-teal-500/20"><Settings className="w-5 h-5 text-teal-400" /></div>
+              <div><h1 className="text-xl font-bold text-slate-200">Paramètres</h1><p className="text-sm text-slate-400">Configuration du système</p></div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-500 hover:border-teal-500/50 transition-colors"><Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs font-mono">⌘K</kbd></button>
+              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-teal-500/50 hover:bg-slate-800 transition-colors"><Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-xs font-mono text-slate-500">⌘K</kbd></button>
               <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 text-white font-medium hover:bg-teal-600 transition-colors"><Save className="w-4 h-4" /><span className="hidden md:inline">Sauvegarder</span></button>
-              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-500" /> : <Maximize className="w-4 h-4 text-slate-500" />}</button>
+              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}</button>
             </div>
           </div>
         </div>
@@ -44,8 +44,8 @@ export default function ParametresPage() {
       </header>
       <main className="flex-1 overflow-auto">
         <div className="flex">
-          <aside className="w-64 flex-none p-4 border-r border-slate-200/70 dark:border-slate-800 hidden lg:block">
-            <nav className="space-y-1">{quickNav.map(item => { const Icon = item.icon; return <button key={item.type} onClick={() => openTab({ type: item.type, id: item.type, title: item.label, icon: '⚙️', data: {}, closable: item.type !== 'general' })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"><Icon className={cn("w-5 h-5", item.color === 'teal' ? 'text-teal-500' : item.color === 'red' ? 'text-red-500' : item.color === 'amber' ? 'text-amber-500' : item.color === 'blue' ? 'text-blue-500' : item.color === 'indigo' ? 'text-indigo-500' : 'text-emerald-500')} /><span className="font-medium">{item.label}</span></button>; })}</nav>
+          <aside className="w-64 flex-none p-4 border-r border-slate-700/50 hidden lg:block">
+            <nav className="space-y-1">{quickNav.map(item => { const Icon = item.icon; return <button key={item.type} onClick={() => openTab({ type: item.type, id: item.type, title: item.label, icon: '⚙️', data: {}, closable: item.type !== 'general' })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-slate-300 hover:bg-slate-800/50 transition-colors"><Icon className={cn("w-5 h-5", item.color === 'teal' ? 'text-teal-400' : item.color === 'red' ? 'text-rose-400' : item.color === 'amber' ? 'text-amber-400' : item.color === 'blue' ? 'text-blue-400' : item.color === 'indigo' ? 'text-indigo-400' : 'text-emerald-400')} /><span className="font-medium">{item.label}</span></button>; })}</nav>
           </aside>
           <div className="flex-1 p-6"><ParametresWorkspaceContent /></div>
         </div>

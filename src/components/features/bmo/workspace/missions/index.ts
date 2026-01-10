@@ -3,4 +3,5 @@ export { MissionsWorkspaceTabs } from './MissionsWorkspaceTabs';
 export { MissionsWorkspaceContent } from './MissionsWorkspaceContent';
 export { MissionsLiveCounters } from './MissionsLiveCounters';
 export { MissionsCommandPalette } from './MissionsCommandPalette';
+export { MissionsStatsModal } from './MissionsStatsModal';
 

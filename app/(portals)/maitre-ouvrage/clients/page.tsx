@@ -91,33 +91,33 @@ export default function ClientsPage() {
   }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, setStatsModalOpen, handleExport]);
 
   return (
-    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-cyan-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-cyan-950/10", fullscreen && "fixed inset-0 z-50")}>
-      <header className="flex-none border-b border-slate-200/70 dark:border-slate-800/70 bg-white/80 dark:bg-[#1f1f1f]/80 backdrop-blur-xl">
+    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950", fullscreen && "fixed inset-0 z-50")}>
+      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 shadow-lg shadow-cyan-500/25"><Users className="w-5 h-5 text-white" /></div>
-              <div><h1 className="text-xl font-bold">Gestion Clients</h1><p className="text-sm text-slate-500">Portefeuille clients et relations commerciales</p></div>
+              <div className="p-2 rounded-xl bg-cyan-500/20"><Users className="w-5 h-5 text-cyan-400" /></div>
+              <div><h1 className="text-xl font-bold text-slate-200">Gestion Clients</h1><p className="text-sm text-slate-400">Portefeuille clients et relations commerciales</p></div>
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
-                <button onClick={() => setViewMode('dashboard')} className={cn("p-2 rounded-md transition-colors", viewMode === 'dashboard' ? "bg-white dark:bg-slate-700 shadow-sm" : "hover:bg-slate-200 dark:hover:bg-slate-700")} title="Dashboard"><LayoutDashboard className="w-4 h-4" /></button>
-                <button onClick={() => setViewMode('workspace')} className={cn("p-2 rounded-md transition-colors", viewMode === 'workspace' ? "bg-white dark:bg-slate-700 shadow-sm" : "hover:bg-slate-200 dark:hover:bg-slate-700")} title="Workspace"><ClipboardList className="w-4 h-4" /></button>
+              <div className="flex items-center p-1 rounded-lg bg-slate-800/50">
+                <button onClick={() => setViewMode('dashboard')} className={cn("p-2 rounded-md transition-colors", viewMode === 'dashboard' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Dashboard"><LayoutDashboard className="w-4 h-4" /></button>
+                <button onClick={() => setViewMode('workspace')} className={cn("p-2 rounded-md transition-colors", viewMode === 'workspace' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Workspace"><ClipboardList className="w-4 h-4" /></button>
               </div>
 
-              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-500 hover:border-cyan-500/50 transition-colors">
-                <Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs font-mono">⌘K</kbd>
+              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-cyan-500/50 hover:bg-slate-800 transition-colors">
+                <Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-xs font-mono text-slate-500">⌘K</kbd>
               </button>
 
-              <button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" title="Rafraîchir"><RefreshCw className="w-4 h-4 text-slate-500" /></button>
-              <button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" title="Statistiques"><BarChart3 className="w-4 h-4 text-slate-500" /></button>
-              <button onClick={() => setDirectionPanelOpen(!directionPanelOpen)} className={cn("p-2.5 rounded-xl border transition-colors", directionPanelOpen ? "border-cyan-500 bg-cyan-500/10 text-cyan-600" : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500")} title="Panneau">{directionPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}</button>
-              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-500" /> : <Maximize className="w-4 h-4 text-slate-500" />}</button>
+              <button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors" title="Rafraîchir"><RefreshCw className="w-4 h-4 text-slate-400" /></button>
+              <button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors" title="Statistiques"><BarChart3 className="w-4 h-4 text-slate-400" /></button>
+              <button onClick={() => setDirectionPanelOpen(!directionPanelOpen)} className={cn("p-2.5 rounded-xl border transition-colors", directionPanelOpen ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-400" : "border-slate-700/50 hover:bg-slate-800/50 text-slate-400")} title="Panneau">{directionPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}</button>
+              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}</button>
 
               <div className="relative">
-                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><MoreHorizontal className="w-4 h-4 text-slate-500" /></button>
-                {moreMenuOpen && (<><div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} /><div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-20 py-2"><button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3"><Download className="w-4 h-4 text-slate-400" />Exporter</button><div className="border-t border-slate-200 dark:border-slate-700 my-2" /><div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div></div></>)}
+                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><MoreHorizontal className="w-4 h-4 text-slate-400" /></button>
+                {moreMenuOpen && (<><div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} /><div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-700/50 bg-slate-900 shadow-xl z-20 py-2"><button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3"><Download className="w-4 h-4 text-slate-400" />Exporter</button><div className="border-t border-slate-700/50 my-2" /><div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div></div></>)}
               </div>
             </div>
           </div>
@@ -143,20 +143,20 @@ export default function ClientsPage() {
 function DashboardView({ onOpenQueue }: { onOpenQueue: (queue: string, title: string, icon: string) => void }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('litige', 'En litige', '⚠️')}>
-        <AlertTriangle className="w-8 h-8 text-red-500 mb-3" />
-        <h3 className="font-semibold mb-2">Clients en Litige</h3>
-        <p className="text-sm text-slate-500">Relations nécessitant une attention particulière</p>
+      <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('litige', 'En litige', '⚠️')}>
+        <AlertTriangle className="w-8 h-8 text-rose-400 mb-3" />
+        <h3 className="font-semibold text-slate-200 mb-2">Clients en Litige</h3>
+        <p className="text-sm text-slate-400">Relations nécessitant une attention particulière</p>
       </div>
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('prospect', 'Prospects', '🆕')}>
-        <UserPlus className="w-8 h-8 text-blue-500 mb-3" />
-        <h3 className="font-semibold mb-2">Prospects</h3>
-        <p className="text-sm text-slate-500">Opportunités commerciales en cours</p>
+      <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('prospect', 'Prospects', '🆕')}>
+        <UserPlus className="w-8 h-8 text-blue-400 mb-3" />
+        <h3 className="font-semibold text-slate-200 mb-2">Prospects</h3>
+        <p className="text-sm text-slate-400">Opportunités commerciales en cours</p>
       </div>
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('premium', 'Premium', '👑')}>
-        <Crown className="w-8 h-8 text-amber-500 mb-3" />
-        <h3 className="font-semibold mb-2">Clients Premium</h3>
-        <p className="text-sm text-slate-500">Comptes stratégiques prioritaires</p>
+      <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('premium', 'Premium', '👑')}>
+        <Crown className="w-8 h-8 text-amber-400 mb-3" />
+        <h3 className="font-semibold text-slate-200 mb-2">Clients Premium</h3>
+        <p className="text-sm text-slate-400">Comptes stratégiques prioritaires</p>
       </div>
     </div>
   );

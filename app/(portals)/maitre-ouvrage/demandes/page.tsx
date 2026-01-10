@@ -1,419 +1,450 @@
+/**
+ * Demandes - Command Center v3.0
+ * Architecture identique à Governance/Dashboard
+ * Gestion des demandes de validation BMO
+ */
+
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { WorkspaceTabs } from '@/components/features/bmo/workspace/WorkspaceTabs';
-import { WorkspaceContent } from '@/components/features/bmo/workspace/WorkspaceContent';
-import { LiveCounters } from '@/components/features/bmo/workspace/LiveCounters';
-import { CommandPalette } from '@/components/features/bmo/workspace/CommandPalette';
-import { RecentActivity } from '@/components/features/bmo/workspace/RecentActivity';
-import { useWorkspaceStore } from '@/lib/stores/workspaceStore';
-import { ThemeToggle } from '@/components/features/bmo/ThemeToggle';
-import { QuickStatsModal } from '@/components/features/bmo/QuickStatsModal';
-import { ExportModal } from '@/components/features/bmo/modals/ExportModal';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { 
-  Command, BarChart3, Download, Keyboard, HelpCircle, X,
-  LayoutDashboard, Table2, Maximize2, Minimize2, PanelRightOpen, PanelRightClose
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  ChevronLeft,
+  Bell,
+  Search,
+  FileCheck,
+  MoreVertical,
+  RefreshCw,
+  Download,
+  Settings,
+  Maximize2,
+  Keyboard,
 } from 'lucide-react';
+import { useDemandesCommandCenterStore } from '@/lib/stores/demandesCommandCenterStore';
+import {
+  DemandesSidebar,
+  DemandesKPIBar,
+  DemandesSubNavigation,
+  DemandesContentRouter,
+  DemandesCommandPalette,
+  DemandesModals,
+} from '@/components/features/bmo/demandes/command-center';
 
-// ============================================
-// Types
-// ============================================
-type ViewMode = 'dashboard' | 'workspace';
-
-// ============================================
-// Page principale
-// ============================================
 export default function DemandesPage() {
-  const { tabs, openTab } = useWorkspaceStore();
-  
-  // États UI
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  // Modales
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
+  const {
+    fullscreen,
+    notificationsPanelOpen,
+    liveStats,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    goBack,
+    navigationHistory,
+    openModal,
+    startRefresh,
+    endRefresh,
+    setLiveStats,
+  } = useDemandesCommandCenterStore();
 
-  // Ouvrir une file
-  const handleOpenQueue = useCallback((queue: string) => {
-    const configs: Record<string, { title: string; icon: string }> = {
-      pending: { title: 'À traiter', icon: '📥' },
-      urgent: { title: 'Urgentes', icon: '🔥' },
-      overdue: { title: 'En retard', icon: '⏱️' },
-      validated: { title: 'Validées', icon: '✅' },
-      rejected: { title: 'Rejetées', icon: '❌' },
-    };
-    const config = configs[queue] ?? { title: queue, icon: '📄' };
-    
-    openTab({
-      type: 'inbox',
-      id: `inbox:${queue}`,
-      title: config.title,
-      icon: config.icon,
-      data: { queue },
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Load initial stats
+  useEffect(() => {
+    // Simulate loading stats
+    setLiveStats({
+      total: 453,
+      pending: 45,
+      urgent: 12,
+      validated: 378,
+      rejected: 15,
+      overdue: 8,
+      avgDelay: 2.3,
+      totalMontant: 125000000000,
     });
-    
-    // Basculer en mode workspace si on ouvre un onglet
-    if (viewMode === 'dashboard') {
-      setViewMode('workspace');
-    }
-  }, [openTab, viewMode]);
+  }, [setLiveStats]);
+
+  const handleRefresh = () => {
+    startRefresh();
+    setTimeout(() => {
+      endRefresh();
+      setLastUpdate(new Date());
+    }, 1500);
+  };
 
   // Raccourcis clavier globaux
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-    const isModifier = e.metaKey || e.ctrlKey;
-
-    // Cmd/Ctrl+K - Palette de commandes
-    if (isModifier && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      setCommandOpen(true);
-      return;
-    }
-
-    // Cmd/Ctrl+1-5 pour les files
-    if (isModifier && ['1', '2', '3', '4', '5'].includes(e.key)) {
-      e.preventDefault();
-      const queues = ['pending', 'urgent', 'overdue', 'validated', 'rejected'];
-      handleOpenQueue(queues[parseInt(e.key) - 1]);
-      return;
-    }
-
-    // Cmd/Ctrl+S pour stats
-    if (isModifier && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      setStatsModalOpen(true);
-      return;
-    }
-
-    // Cmd/Ctrl+E pour export
-    if (isModifier && e.key.toLowerCase() === 'e') {
-      e.preventDefault();
-      setExportModalOpen(true);
-      return;
-    }
-
-    // Cmd/Ctrl+D pour thème (géré par ThemeToggle)
-
-    // Cmd/Ctrl+B pour sidebar
-    if (isModifier && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      setShowSidebar(prev => !prev);
-      return;
-    }
-
-    // ? pour aide
-    if (e.key === '?' && !isModifier) {
-      setShowShortcuts(prev => !prev);
-      return;
-    }
-
-    // F11 ou Cmd+Shift+F pour fullscreen
-    if (e.key === 'F11' || (isModifier && e.shiftKey && e.key.toLowerCase() === 'f')) {
-      e.preventDefault();
-      setIsFullscreen(prev => !prev);
-      return;
-    }
-
-    // Escape
-    if (e.key === 'Escape') {
-      setShowShortcuts(false);
-      setCommandOpen(false);
-      if (isFullscreen) setIsFullscreen(false);
-      return;
-    }
-  }, [handleOpenQueue, isFullscreen]);
-
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + K : Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl/Cmd + E : Export
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt + Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // ? : Help (when not in input)
+      if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          openModal('shortcuts');
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [toggleCommandPalette, toggleFullscreen, goBack, openModal]);
 
-  // Auto-switch to workspace when tabs are opened
-  useEffect(() => {
-    if (tabs.length > 0 && viewMode === 'dashboard') {
-      // Keep dashboard if user prefers
-    }
-  }, [tabs.length, viewMode]);
+  const formatLastUpdate = () => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  };
 
-  // ============================================
-  // Render
-  // ============================================
   return (
-    <div className={cn(
-      "w-full min-h-screen transition-all duration-300",
-      isFullscreen ? "fixed inset-0 z-50 bg-[rgb(var(--bg))]" : ""
-    )}>
-      <div className={cn(
-        "px-4 sm:px-6 lg:px-8 py-4 space-y-4",
-        isFullscreen ? "h-full flex flex-col" : ""
-      )}>
-        
-        {/* ============================================ */}
-        {/* Header */}
-        {/* ============================================ */}
-        <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          {/* Titre et sous-titre */}
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <LayoutDashboard className="w-6 h-6 text-orange-500" />
-                Console métier
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <DemandesSidebar />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-orange-400" />
+              <h1 className="text-base font-semibold text-slate-200">
+                Demandes
               </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Gestion et traitement des demandes de validation
-              </p>
+              <Badge
+                variant="default"
+                className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+              >
+                v3.0
+              </Badge>
             </div>
-            
-            {/* Badge version */}
-            <span className="hidden sm:inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-600 dark:text-orange-400">
-              v2.0
-            </span>
           </div>
 
-          {/* Toolbar principal */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Compteurs live (compact) */}
-            <div className="hidden xl:block">
-              <LiveCounters onOpenQueue={handleOpenQueue} compact />
-            </div>
-            
-            {/* Séparateur */}
-            <div className="hidden xl:block w-px h-6 bg-slate-200 dark:bg-slate-700" />
-            
-            {/* Bouton recherche */}
-            <button
-              onClick={() => setCommandOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm
-                         border-slate-200 bg-white hover:bg-slate-50
-                         dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
-              title="Recherche (⌘K)"
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
-              <Command className="w-4 h-4" />
-              <span className="hidden sm:inline text-slate-500">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-xs font-mono ml-2">
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
                 ⌘K
               </kbd>
-            </button>
+            </Button>
 
-            {/* Mode de vue */}
-            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-xl p-0.5">
-              <button
-                onClick={() => setViewMode('dashboard')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-sm transition-colors",
-                  viewMode === 'dashboard' 
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" 
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-                title="Vue Dashboard"
-              >
-                <LayoutDashboard className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('workspace')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-sm transition-colors",
-                  viewMode === 'workspace' 
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" 
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-                title="Vue Workspace"
-              >
-                <Table2 className="w-4 h-4" />
-              </button>
-            </div>
-            
-            {/* Séparateur */}
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-            {/* Stats */}
-            <button
-              onClick={() => setStatsModalOpen(true)}
-              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50
-                         dark:border-slate-700 dark:hover:bg-slate-800"
-              title="Statistiques (⌘S)"
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-orange-400 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+              )}
+              title="Notifications"
             >
-              <BarChart3 className="w-4 h-4" />
-            </button>
-            
-            {/* Export */}
-            <button
-              onClick={() => setExportModalOpen(true)}
-              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50
-                         dark:border-slate-700 dark:hover:bg-slate-800"
-              title="Exporter (⌘E)"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            
-            {/* Sidebar toggle */}
-            <button
-              onClick={() => setShowSidebar(prev => !prev)}
-              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50
-                         dark:border-slate-700 dark:hover:bg-slate-800"
-              title={showSidebar ? "Masquer le panneau (⌘B)" : "Afficher le panneau (⌘B)"}
-            >
-              {showSidebar ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-            </button>
-            
-            {/* Fullscreen */}
-            <button
-              onClick={() => setIsFullscreen(prev => !prev)}
-              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50
-                         dark:border-slate-700 dark:hover:bg-slate-800"
-              title={isFullscreen ? "Quitter plein écran (F11)" : "Plein écran (F11)"}
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-            
-            {/* Aide */}
-            <button
-              onClick={() => setShowShortcuts(prev => !prev)}
-              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50
-                         dark:border-slate-700 dark:hover:bg-slate-800"
-              title="Raccourcis clavier (?)"
-            >
-              <Keyboard className="w-4 h-4" />
-            </button>
+              <Bell className="h-4 w-4" />
+              {liveStats.urgent > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {liveStats.urgent}
+                </span>
+              )}
+            </Button>
 
-            {/* Theme */}
-            <ThemeToggle />
+            {/* Actions Menu */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
           </div>
         </header>
 
-        {/* ============================================ */}
-        {/* Compteurs (mobile) */}
-        {/* ============================================ */}
-        <div className="xl:hidden">
-          <LiveCounters onOpenQueue={handleOpenQueue} />
-        </div>
+        {/* Sub Navigation */}
+        <DemandesSubNavigation />
 
-        {/* ============================================ */}
-        {/* Panneau d'aide raccourcis */}
-        {/* ============================================ */}
-        {showShortcuts && (
-          <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 dark:bg-blue-500/10">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-blue-500" />
-                Raccourcis clavier
-              </h3>
-              <button 
-                onClick={() => setShowShortcuts(false)}
-                className="p-1 rounded hover:bg-blue-500/10"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
-              {[
-                { key: '⌘K', label: 'Recherche' },
-                { key: '⌘1', label: 'À traiter' },
-                { key: '⌘2', label: 'Urgentes' },
-                { key: '⌘3', label: 'En retard' },
-                { key: '⌘4', label: 'Validées' },
-                { key: '⌘5', label: 'Rejetées' },
-                { key: '⌘S', label: 'Stats' },
-                { key: '⌘E', label: 'Export' },
-                { key: '⌘B', label: 'Panneau' },
-                { key: 'F11', label: 'Plein écran' },
-                { key: '?', label: 'Aide' },
-                { key: 'Esc', label: 'Fermer' },
-              ].map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-2">
-                  <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 font-mono text-xs min-w-[40px] text-center">
-                    {key}
-                  </kbd>
-                  <span className="text-slate-600 dark:text-slate-300">{label}</span>
-                </div>
-              ))}
+        {/* KPI Bar */}
+        <DemandesKPIBar onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <DemandesContentRouter />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {liveStats.total} demandes • {liveStats.pending} en attente • {liveStats.urgent} urgentes
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
             </div>
           </div>
-        )}
-
-        {/* ============================================ */}
-        {/* Contenu principal */}
-        {/* ============================================ */}
-        <div className={cn(
-          "flex gap-4",
-          isFullscreen ? "flex-1 min-h-0" : ""
-        )}>
-          {/* Zone de travail */}
-          <div className={cn(
-            "flex-1 min-w-0 space-y-4",
-            isFullscreen ? "flex flex-col" : ""
-          )}>
-            {/* Onglets de travail */}
-            {(viewMode === 'workspace' || tabs.length > 0) && (
-              <WorkspaceTabs />
-            )}
-            
-            {/* Contenu selon le mode */}
-            <div className={cn(isFullscreen ? "flex-1 min-h-0 overflow-auto" : "")}>
-              {viewMode === 'dashboard' && tabs.length === 0 ? (
-                // Dashboard d'accueil
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Welcome card */}
-                  <div className="lg:col-span-2 rounded-2xl border border-slate-200/70 bg-gradient-to-br from-orange-500/5 to-amber-500/5 p-6 dark:border-slate-800">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h2 className="text-xl font-bold mb-2">Bienvenue dans la console métier</h2>
-                        <p className="text-slate-500 max-w-2xl">
-                          Gérez vos demandes de validation, suivez les indicateurs en temps réel et exportez vos données.
-                          Utilisez <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">⌘K</kbd> pour
-                          rechercher rapidement ou les boutons ci-dessus pour naviguer.
-                        </p>
-                      </div>
-                      <LayoutDashboard className="w-12 h-12 text-orange-500/30" />
-                    </div>
-                  </div>
-                  
-                  {/* Stats détaillées */}
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-[#1f1f1f]/70">
-                    <h3 className="font-semibold mb-4 flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-blue-500" />
-                      Vue d&apos;ensemble
-                    </h3>
-                    <LiveCounters onOpenQueue={handleOpenQueue} />
-                  </div>
-                  
-                  {/* Activité récente */}
-                  <RecentActivity limit={8} />
-                </div>
-              ) : (
-                // Workspace avec contenu
-                <WorkspaceContent />
-              )}
-            </div>
-          </div>
-
-          {/* Sidebar latérale */}
-          {showSidebar && viewMode === 'workspace' && tabs.length > 0 && (
-            <aside className="hidden lg:block w-80 flex-none">
-              <RecentActivity limit={10} />
-            </aside>
-          )}
-        </div>
+        </footer>
       </div>
 
-      {/* ============================================ */}
-      {/* Modales */}
-      {/* ============================================ */}
-      <CommandPalette 
-        open={commandOpen} 
-        onClose={() => setCommandOpen(false)}
-        onOpenStats={() => setStatsModalOpen(true)}
-        onOpenExport={() => setExportModalOpen(true)}
-      />
-      <QuickStatsModal open={statsModalOpen} onOpenChange={setStatsModalOpen} />
-      <ExportModal open={exportModalOpen} onOpenChange={setExportModalOpen} />
+      {/* Modals */}
+      <DemandesModals />
+
+      {/* Command Palette */}
+      <DemandesCommandPalette />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
     </div>
+  );
+}
+
+// Actions Menu Component
+function ActionsMenu({
+  onRefresh,
+  isRefreshing,
+}: {
+  onRefresh: () => void;
+  isRefreshing: boolean;
+}) {
+  const { toggleFullscreen, openModal } = useDemandesCommandCenterStore();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-48 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+            <button
+              onClick={() => {
+                onRefresh();
+                setOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+              Rafraîchir
+            </button>
+            <button
+              onClick={() => {
+                openModal('export');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Download className="w-4 h-4" />
+              Exporter
+            </button>
+            <div className="border-t border-slate-700/50 my-1" />
+            <button
+              onClick={() => {
+                toggleFullscreen();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Maximize2 className="w-4 h-4" />
+              Plein écran
+            </button>
+            <button
+              onClick={() => {
+                openModal('shortcuts');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Keyboard className="w-4 h-4" />
+              Raccourcis
+            </button>
+            <button
+              onClick={() => {
+                openModal('settings');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Settings className="w-4 h-4" />
+              Paramètres
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Notifications Panel
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'BC-2024-0892 en retard critique',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Nouvelle demande urgente',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'BC-2024-0845 validé',
+      time: 'il y a 2h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-80 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-orange-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

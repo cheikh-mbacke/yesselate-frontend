@@ -88,18 +88,18 @@ export default function SubstitutionPage() {
   }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, setStatsModalOpen, handleExport]);
 
   return (
-    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-indigo-950/10", fullscreen && "fixed inset-0 z-50")}>
+    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950", fullscreen && "fixed inset-0 z-50")}>
       {/* Header */}
-      <header className="flex-none border-b border-slate-200/70 dark:border-slate-800/70 bg-white/80 dark:bg-[#1f1f1f]/80 backdrop-blur-xl">
+      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-lg shadow-indigo-500/25">
-                <RefreshCw className="w-5 h-5 text-white" />
+              <div className="p-2 rounded-xl bg-indigo-500/20">
+                <RefreshCw className="w-5 h-5 text-indigo-400" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Substitutions & Délégations</h1>
-                <p className="text-sm text-slate-500">Gestion des remplacements et continuité de service</p>
+                <h1 className="text-xl font-bold text-slate-200">Substitutions & Délégations</h1>
+                <p className="text-sm text-slate-400">Gestion des remplacements et continuité de service</p>
               </div>
             </div>
 

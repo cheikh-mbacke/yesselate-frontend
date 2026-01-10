@@ -1,191 +1,37 @@
 'use client';
-
-import { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
+import { useDecisionsWorkspaceStore } from '@/lib/stores/decisionsWorkspaceStore';
 import { useBMOStore } from '@/lib/stores';
-import { financials } from '@/lib/data';
-import { useHashVerification } from '@/lib/utils/verifyHash';
-
-type DecisionEntry = {
-  type: 'Gain' | 'Perte' | 'Trésorerie';
-  decisionId: string;
-  origin: string;
-  validatorRole: 'A' | 'R';
-  hash: string;
-  date: string;
-  montant: number;
-  description: string;
-  projetName?: string;
-  link: string;
-};
+import { DecisionsWorkspaceTabs, DecisionsLiveCounters, DecisionsCommandPalette, DecisionsWorkspaceContent, DecisionsStatsModal, DecisionsDirectionPanel } from '@/components/features/bmo/workspace/decisions';
+import { Gavel, Search, BarChart3, MoreHorizontal, Download, Keyboard, PanelRight, PanelRightClose, LayoutDashboard, ClipboardList, Maximize, Minimize, RefreshCw, Zap, Target, Clock } from 'lucide-react';
 
 export default function DecisionsPage() {
-  const { addToast } = useBMOStore();
-  const { verify } = useHashVerification();
-  const [search, setSearch] = useState('');
+  const { openTab, commandPaletteOpen, setCommandPaletteOpen, statsModalOpen, setStatsModalOpen, directionPanelOpen, setDirectionPanelOpen, viewMode, setViewMode } = useDecisionsWorkspaceStore();
+  const { addToast, addActionLog, currentUser } = useBMOStore();
+  const [refreshKey, setRefreshKey] = useState(0); const [moreMenuOpen, setMoreMenuOpen] = useState(false); const [fullscreen, setFullscreen] = useState(false);
 
-  const decisions = useMemo(() => {
-    const all: DecisionEntry[] = [];
+  const handleRefresh = useCallback(() => { setRefreshKey(k => k + 1); addToast('Données rafraîchies', 'success'); addActionLog({ userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role, action: 'audit', module: 'decisions', targetId: 'REFRESH', targetType: 'system', targetLabel: 'Rafraîchissement', details: 'Rafraîchissement manuel des décisions', bureau: 'BMO' }); }, [addToast, addActionLog, currentUser]);
+  const handleOpenQueue = useCallback((queue: string, title: string, icon: string) => { const tabId = queue === 'all' ? 'inbox:all' : `inbox:${queue}`; openTab({ type: 'inbox', id: tabId, title, icon, data: { queue } }); setViewMode('workspace'); }, [openTab, setViewMode]);
+  const handleExport = useCallback(async () => { addToast('Export des décisions en cours...', 'info'); setTimeout(() => addToast('Export généré avec succès', 'success'), 1500); }, [addToast]);
 
-    financials.gains.forEach(g => {
-      if (g.decisionBMO) {
-        all.push({
-          type: 'Gain',
-          decisionId: g.decisionBMO.decisionId,
-          origin: g.decisionBMO.origin,
-          validatorRole: g.decisionBMO.validatorRole,
-          hash: g.decisionBMO.hash,
-          date: g.date,
-          montant: g.montant,
-          description: g.description,
-          projetName: g.projetName,
-          link: g.decisionBMO.origin === 'validation-bc' ? `/validation-bc?id=${g.decisionBMO.decisionId}` : '#',
-        });
-      }
-    });
-
-    financials.pertes.forEach(p => {
-      if (p.decisionBMO) {
-        all.push({
-          type: 'Perte',
-          decisionId: p.decisionBMO.decisionId,
-          origin: p.decisionBMO.origin,
-          validatorRole: p.decisionBMO.validatorRole,
-          hash: p.decisionBMO.hash,
-          date: p.date,
-          montant: p.montant,
-          description: p.description,
-          projetName: p.projetName,
-          link: p.decisionBMO.origin === 'arbitrages' ? `/arbitrages?id=${p.decisionBMO.decisionId}` : '#',
-        });
-      }
-    });
-
-    financials.treasury.forEach(t => {
-      if (t.decisionBMO) {
-        all.push({
-          type: 'Trésorerie',
-          decisionId: t.decisionBMO.decisionId,
-          origin: t.decisionBMO.origin,
-          validatorRole: t.decisionBMO.validatorRole,
-          hash: t.decisionBMO.hash,
-          date: t.date,
-          montant: t.montant,
-          description: t.description,
-          link: '/validation-paiements',
-        });
-      }
-    });
-
-    return all;
-  }, []);
-
-  const filtered = useMemo(() => {
-    return decisions.filter(d =>
-      d.decisionId.toLowerCase().includes(search.toLowerCase()) ||
-      d.hash.toLowerCase().includes(search.toLowerCase()) ||
-      d.description.toLowerCase().includes(search.toLowerCase()) ||
-      d.projetName?.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [search, decisions]);
+  useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setCommandPaletteOpen(true); } if (e.key === 'Escape' && commandPaletteOpen) setCommandPaletteOpen(false); if (e.key === 'r' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRefresh(); } if (e.key === 'i' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setStatsModalOpen(true); } if (e.key === 'F11') { e.preventDefault(); setFullscreen(f => !f); } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, setStatsModalOpen]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold">🔐 Registre des décisions BMO</h1>
-          <p className="text-sm text-slate-400">Toutes les décisions tracées — Hash + RACI + Origine</p>
-        </div>
-        <Input
-          placeholder="Rechercher par ID, hash ou projet..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-80"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filtered.map(decision => (
-          <Card key={decision.decisionId}>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>{decision.decisionId}</span>
-                <Badge variant={decision.type === 'Gain' ? 'success' : decision.type === 'Perte' ? 'urgent' : 'info'}>
-                  {decision.type}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Date</span>
-                <span>{decision.date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Montant</span>
-                <span className="font-mono">
-                  {decision.montant > 0 ? '+' : ''}{decision.montant.toLocaleString('fr-FR')} FCFA
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Projet</span>
-                <span>{decision.projetName || '—'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Rôle RACI</span>
-                <Badge variant={decision.validatorRole === 'A' ? 'warning' : 'default'}>
-                  {decision.validatorRole === 'A' ? 'Accountable (BMO)' : 'Responsible'}
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Origine</span>
-                <span>{decision.origin}</span>
-              </div>
-              <div className="pt-2">
-                <p className="text-slate-500">{decision.description}</p>
-              </div>
-              <div className="pt-2 space-y-2">
-                <div className="flex justify-between items-center">
-                <code className="text-[10px] bg-slate-800/50 px-1 rounded">{decision.hash.slice(0, 32)}...</code>
-                <Button
-                  size="sm"
-                  variant="link"
-                  className="text-blue-400 p-0 h-auto"
-                  onClick={() => window.open(decision.link, '_blank')}
-                >
-                  📄 Voir décision
-                  </Button>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full text-xs"
-                  onClick={async () => {
-                    const isValid = await verify(decision.decisionId, decision.hash);
-                    if (isValid) {
-                      addToast('✅ Hash valide – décision authentique', 'success');
-                    } else {
-                      addToast('❌ Hash invalide – altération détectée', 'error');
-                    }
-                  }}
-                >
-                  🔍 Vérifier l'intégrité
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {filtered.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center text-slate-400">
-            Aucune décision trouvée.
-          </CardContent>
-        </Card>
-      )}
+    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-rose-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-rose-950/10", fullscreen && "fixed inset-0 z-50")}>
+      <header className="flex-none border-b border-slate-200/70 dark:border-slate-800/70 bg-white/80 dark:bg-[#1f1f1f]/80 backdrop-blur-xl"><div className="px-6 py-4"><div className="flex items-center justify-between"><div className="flex items-center gap-4"><div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-lg shadow-rose-500/25"><Gavel className="w-5 h-5 text-white" /></div><div><h1 className="text-xl font-bold">Centre de Décisions</h1><p className="text-sm text-slate-500">Gestion et suivi des prises de décision</p></div></div><div className="flex items-center gap-2"><div className="flex items-center p-1 rounded-lg bg-slate-100 dark:bg-slate-800"><button onClick={() => setViewMode('dashboard')} className={cn("p-2 rounded-md transition-colors", viewMode === 'dashboard' ? "bg-white dark:bg-slate-700 shadow-sm" : "hover:bg-slate-200 dark:hover:bg-slate-700")} title="Dashboard"><LayoutDashboard className="w-4 h-4" /></button><button onClick={() => setViewMode('workspace')} className={cn("p-2 rounded-md transition-colors", viewMode === 'workspace' ? "bg-white dark:bg-slate-700 shadow-sm" : "hover:bg-slate-200 dark:hover:bg-slate-700")} title="Workspace"><ClipboardList className="w-4 h-4" /></button></div><button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-500 hover:border-rose-500/50 transition-colors"><Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs font-mono">⌘K</kbd></button><button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><RefreshCw className="w-4 h-4 text-slate-500" /></button><button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><BarChart3 className="w-4 h-4 text-slate-500" /></button><button onClick={() => setDirectionPanelOpen(!directionPanelOpen)} className={cn("p-2.5 rounded-xl border transition-colors", directionPanelOpen ? "border-rose-500 bg-rose-500/10 text-rose-600" : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500")}>{directionPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}</button><button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-500" /> : <Maximize className="w-4 h-4 text-slate-500" />}</button><div className="relative"><button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><MoreHorizontal className="w-4 h-4 text-slate-500" /></button>{moreMenuOpen && <><div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} /><div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-20 py-2"><button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3"><Download className="w-4 h-4 text-slate-400" />Exporter</button><div className="border-t border-slate-200 dark:border-slate-700 my-2" /><div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div></div></>}</div></div></div></div>{viewMode === 'workspace' && <div className="px-6 pb-2"><DecisionsWorkspaceTabs /></div>}</header>
+      <main className={cn("flex-1 overflow-auto", directionPanelOpen && "mr-80")}><div className="p-6 space-y-6"><DecisionsLiveCounters key={refreshKey} onOpenQueue={handleOpenQueue} />{viewMode === 'workspace' ? <DecisionsWorkspaceContent /> : <DashboardView onOpenQueue={handleOpenQueue} />}</div></main>
+      <DecisionsDirectionPanel open={directionPanelOpen} onClose={() => setDirectionPanelOpen(false)} />
+      <DecisionsCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenStats={() => setStatsModalOpen(true)} onRefresh={handleRefresh} />
+      <DecisionsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
     </div>
   );
+}
+
+function DashboardView({ onOpenQueue }: { onOpenQueue: (queue: string, title: string, icon: string) => void }) {
+  return (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('critical', 'Critiques', '⚡')}><Zap className="w-8 h-8 text-red-500 mb-3" /><h3 className="font-semibold mb-2">Décisions Critiques</h3><p className="text-sm text-slate-500">Décisions urgentes en attente de validation</p></div>
+    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('strategique', 'Stratégiques', '🎯')}><Target className="w-8 h-8 text-indigo-500 mb-3" /><h3 className="font-semibold mb-2">Stratégiques</h3><p className="text-sm text-slate-500">Décisions à impact stratégique long terme</p></div>
+    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onOpenQueue('pending', 'En attente', '⏳')}><Clock className="w-8 h-8 text-amber-500 mb-3" /><h3 className="font-semibold mb-2">En Attente</h3><p className="text-sm text-slate-500">Décisions en cours de validation</p></div>
+  </div>);
 }

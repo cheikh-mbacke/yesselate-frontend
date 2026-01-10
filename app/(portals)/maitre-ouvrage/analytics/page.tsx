@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useAnalyticsWorkspaceStore } from '@/lib/stores/analyticsWorkspaceStore';
 
 import { AnalyticsWorkspaceTabs } from '@/components/features/bmo/analytics/workspace/AnalyticsWorkspaceTabs';
@@ -10,96 +10,154 @@ import { AnalyticsStatsModal } from '@/components/features/bmo/analytics/workspa
 import { AnalyticsExportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsExportModal';
 import { AnalyticsAlertConfigModal } from '@/components/features/bmo/analytics/workspace/AnalyticsAlertConfigModal';
 import { AnalyticsReportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsReportModal';
-import { AnalyticsSideRailClean } from '@/components/features/bmo/analytics/workspace/AnalyticsSideRailClean';
 
-import { FluentButton } from '@/components/ui/fluent-button';
 import { FluentModal } from '@/components/ui/fluent-modal';
-import { Button } from '@/components/ui/button';
+import { FluentButton } from '@/components/ui/fluent-button';
 
 import {
   BarChart3,
-  Command,
-  Maximize,
-  Minimize,
-  PanelRightClose,
-  PanelRight,
-  ChevronLeft,
+  Search,
+  LayoutDashboard,
+  FolderOpen,
+  Settings,
+  History,
+  Star,
+  ChevronRight,
   TrendingUp,
   Activity,
   DollarSign,
-  ChevronDown,
-  ChevronUp,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Shield,
+  Users,
+  Calendar,
+  Brain,
+  Workflow,
+  Download,
   RefreshCw,
-  MoreHorizontal,
+  Plus,
+  Target,
+  PieChart,
+  LineChart,
+  Zap,
+  AlertTriangle,
+  XCircle,
   Keyboard,
-  Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { analyticsAPI } from '@/lib/api/pilotage/analyticsClient';
 import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
 
-type Mode = 'dashboard' | 'workspace';
+// ================================
+// Types
+// ================================
+type ViewMode = 'dashboard' | 'workspace';
+type DashboardTab = 'overview' | 'performance' | 'financial' | 'history' | 'favorites';
+type LoadReason = 'init' | 'manual' | 'auto';
 
-const UI_PREF_KEY = 'bmo.analytics.ui.v2';
+interface AnalyticsStats {
+  total: number;
+  kpis: number;
+  reports: number;
+  alerts: number;
+  trends: number;
+  avgPerformance: number;
+  byCategory: { category: string; count: number }[];
+  byDepartment: { department: string; count: number }[];
+  ts: string;
+}
 
-function readUIPrefs() {
+interface UIState {
+  viewMode: ViewMode;
+  dashboardTab: DashboardTab;
+  autoRefresh: boolean;
+}
+
+const UI_PREF_KEY = 'bmo.analytics.ui.v3';
+
+// ================================
+// Semantic colors
+// ================================
+const STATUS_ICON_COLORS = {
+  good: 'text-emerald-500',
+  warning: 'text-amber-500',
+  critical: 'text-rose-500',
+  neutral: 'text-slate-400',
+  info: 'text-blue-500',
+} as const;
+
+const BG_STATUS = {
+  good: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200/50 dark:border-emerald-800/30',
+  warning: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200/50 dark:border-amber-800/30',
+  critical: 'bg-rose-50 dark:bg-rose-950/30 border-rose-200/50 dark:border-rose-800/30',
+  neutral: 'bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50',
+  info: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200/50 dark:border-blue-800/30',
+} as const;
+
+// ================================
+// Helpers
+// ================================
+function readUIState(): UIState | null {
   try {
     const raw = localStorage.getItem(UI_PREF_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const p = JSON.parse(raw) as Partial<UIState>;
+    return {
+      viewMode: p.viewMode === 'workspace' ? 'workspace' : 'dashboard',
+      dashboardTab: ['performance', 'financial', 'history', 'favorites'].includes(p.dashboardTab as string)
+        ? p.dashboardTab as DashboardTab
+        : 'overview',
+      autoRefresh: typeof p.autoRefresh === 'boolean' ? p.autoRefresh : true,
+    };
   } catch {
     return null;
   }
 }
 
-function writeUIPrefs(p: Record<string, unknown>) {
+function writeUIState(s: UIState) {
   try {
-    localStorage.setItem(UI_PREF_KEY, JSON.stringify(p));
+    localStorage.setItem(UI_PREF_KEY, JSON.stringify(s));
   } catch {
     // no-op
   }
 }
 
-function ShortcutRow({ shortcut, label }: { shortcut: string; label: string }) {
-  return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className="text-slate-400">{label}</span>
-      <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">
-        {shortcut}
-      </kbd>
-    </div>
-  );
+function useInterval(fn: () => void, delay: number | null): void {
+  const ref = useRef(fn);
+  useEffect(() => { ref.current = fn; }, [fn]);
+  useEffect(() => {
+    if (delay === null) return;
+    const id = window.setInterval(() => ref.current(), delay);
+    return () => window.clearInterval(id);
+  }, [delay]);
 }
 
-function ignoreIfTyping(e: KeyboardEvent) {
-  const target = e.target as HTMLElement | null;
-  const tag = target?.tagName?.toLowerCase();
-  if (target?.isContentEditable) return true;
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-  return false;
-}
-
-type KpiCard = {
-  id: string;
-  label: string;
-  value: string;
-  status: 'good' | 'warning' | 'critical' | 'neutral';
-};
-
+// ================================
+// Main Component
+// ================================
 export default function AnalyticsPage() {
   const { openTab, tabs, activeTabId, openCommandPalette } = useAnalyticsWorkspaceStore();
 
-  const [mode, setMode] = useState<Mode>('dashboard');
-  const [fullscreen, setFullscreen] = useState(false);
+  // UI State
+  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Stats state
+  const [statsData, setStatsData] = useState<AnalyticsStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  // Modals state
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [alertConfigModalOpen, setAlertConfigModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [showSideRail, setShowSideRail] = useState(false);
-  const [kpiCollapsed, setKpiCollapsed] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
+  const abortStatsRef = useRef<AbortController | null>(null);
+
+  // KPIs from API
   const {
     data: kpiData,
     isLoading: kpisLoading,
@@ -107,40 +165,140 @@ export default function AnalyticsPage() {
     refetch: refetchKpis,
   } = useApiQuery(async (_signal: AbortSignal) => analyticsAPI.getKpis(), []);
 
-  const kpiCards: KpiCard[] = useMemo(() => {
+  // Load UI State
+  useEffect(() => {
+    const st = readUIState();
+    if (st) {
+      setViewMode(st.viewMode);
+      setDashboardTab(st.dashboardTab);
+      setAutoRefresh(st.autoRefresh);
+    }
+  }, []);
+
+  useEffect(() => {
+    writeUIState({ viewMode, dashboardTab, autoRefresh });
+  }, [viewMode, dashboardTab, autoRefresh]);
+
+  // ================================
+  // Computed values
+  // ================================
+  const showDashboard = useMemo(() => viewMode === 'dashboard' || tabs.length === 0, [viewMode, tabs.length]);
+
+  const hasUrgentItems = useMemo(() =>
+    statsData && (statsData.alerts > 0),
+    [statsData]
+  );
+
+  const statsLastUpdate = useMemo(() => {
+    if (!statsData?.ts) return null;
+    return new Date(statsData.ts).toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }, [statsData?.ts]);
+
+  const kpiCards = useMemo(() => {
     const kpis = kpiData?.kpis ?? [];
     return kpis.slice(0, 6).map((k) => ({
       id: k.id,
       label: k.name,
       value: `${k.value}${k.unit ?? ''}`,
-      status: (k.status as any) || 'neutral',
+      status: (k.status as 'good' | 'warning' | 'critical' | 'neutral') || 'neutral',
     }));
   }, [kpiData]);
 
-  // Init prefs
-  useEffect(() => {
-    const p = readUIPrefs();
-    if (p) {
-      if (p.mode) setMode(p.mode);
-      if (typeof p.fullscreen === 'boolean') setFullscreen(p.fullscreen);
-      if (typeof p.showSideRail === 'boolean') setShowSideRail(p.showSideRail);
-    }
+  // ================================
+  // Callbacks
+  // ================================
+  const openQueue = useCallback(
+    (queue: string) => {
+      const titles: Record<string, string> = {
+        overview: "Vue d'ensemble",
+        performance: 'Performance',
+        financial: 'Financier',
+        trends: 'Tendances',
+        alerts: 'Alertes',
+        reports: 'Rapports',
+      };
+      openTab({
+        type: 'inbox',
+        id: `inbox:${queue}`,
+        title: titles[queue] || queue,
+        icon: '📊',
+        data: { queue },
+      });
+      if (viewMode === 'dashboard') setViewMode('workspace');
+    },
+    [openTab, viewMode]
+  );
+
+  const closeAllOverlays = useCallback(() => {
+    setStatsModalOpen(false);
+    setExportModalOpen(false);
+    setAlertConfigModalOpen(false);
+    setReportModalOpen(false);
+    setHelpOpen(false);
   }, []);
 
-  // Persist prefs
-  useEffect(() => {
-    writeUIPrefs({ mode, fullscreen, showSideRail });
-  }, [mode, fullscreen, showSideRail]);
+  // Load Stats
+  const loadStats = useCallback(
+    async (reason: LoadReason = 'manual') => {
+      abortStatsRef.current?.abort();
+      const ac = new AbortController();
+      abortStatsRef.current = ac;
 
-  // Fullscreen
+      setStatsLoading(true);
+
+      try {
+        await new Promise((r) => setTimeout(r, reason === 'init' ? 300 : 150));
+        if (ac.signal.aborted) return;
+
+        const mockStats: AnalyticsStats = {
+          total: 156,
+          kpis: 24,
+          reports: 45,
+          alerts: 8,
+          trends: 12,
+          avgPerformance: 87,
+          byCategory: [
+            { category: 'Performance', count: 42 },
+            { category: 'Financier', count: 38 },
+            { category: 'RH', count: 28 },
+            { category: 'Opérationnel', count: 48 },
+          ],
+          byDepartment: [
+            { department: 'DAF', count: 45 },
+            { department: 'DRH', count: 32 },
+            { department: 'DSI', count: 28 },
+            { department: 'Direction', count: 51 },
+          ],
+          ts: new Date().toISOString(),
+        };
+
+        setStatsData(mockStats);
+        
+        if (reason === 'manual') {
+          refetchKpis?.();
+        }
+      } catch (error) {
+        if (ac.signal.aborted) return;
+        console.error('Erreur chargement stats:', error);
+      } finally {
+        setStatsLoading(false);
+      }
+    },
+    [refetchKpis]
+  );
+
   useEffect(() => {
-    if (!fullscreen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [fullscreen]);
+    loadStats('init');
+    return () => { abortStatsRef.current?.abort(); };
+  }, [loadStats]);
+
+  useInterval(
+    () => { if (autoRefresh && showDashboard) loadStats('auto'); },
+    autoRefresh ? 60_000 : null
+  );
 
   // Custom events
   useEffect(() => {
@@ -162,353 +320,456 @@ export default function AnalyticsPage() {
     };
   }, []);
 
-  const hasTabs = tabs.length > 0 && !!activeTabId;
-  const showDashboard = mode === 'dashboard' && !hasTabs;
-
-  const openAndFocus = useCallback(
-    (tab: Parameters<typeof openTab>[0]) => {
-      openTab(tab);
-      if (mode === 'dashboard') setMode('workspace');
-    },
-    [openTab, mode]
-  );
-
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    Promise.resolve(refetchKpis?.()).finally(() => {
-      setTimeout(() => setIsRefreshing(false), 350);
-    });
-  };
-
   // Keyboard shortcuts
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (ignoreIfTyping(e)) return;
-      const mod = e.ctrlKey || e.metaKey;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() || '')) return;
 
-      if (mod && e.key.toLowerCase() === 'k') {
+      const isMod = e.metaKey || e.ctrlKey;
+
+      if (isMod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         openCommandPalette();
         return;
       }
 
-      if (mod && e.key.toLowerCase() === 's') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAllOverlays();
+        return;
+      }
+
+      if (isMod && e.key === 's') {
         e.preventDefault();
         setStatsModalOpen(true);
         return;
       }
 
-      if (mod && e.key.toLowerCase() === 'e') {
+      if (isMod && e.key === 'e') {
         e.preventDefault();
         setExportModalOpen(true);
         return;
       }
 
-      if (mod && e.shiftKey && e.key.toLowerCase() === 'r') {
+      if (e.key === '?' && !isMod) {
         e.preventDefault();
-        setReportModalOpen(true);
+        setHelpOpen(true);
         return;
       }
 
-      if (mod && !e.shiftKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
-        e.preventDefault();
-        const views = [
-          { id: 'dashboard:overview', type: 'dashboard' as const, title: "Vue d'ensemble", icon: '📊', data: { view: 'overview' } },
-          { id: 'inbox:performance', type: 'inbox' as const, title: 'Performance', icon: '⚡', data: { queue: 'performance' } },
-          { id: 'inbox:financial', type: 'inbox' as const, title: 'Financier', icon: '💰', data: { queue: 'financial' } },
-          { id: 'inbox:trends', type: 'inbox' as const, title: 'Tendances', icon: '📈', data: { queue: 'trends' } },
-          { id: 'inbox:alerts', type: 'inbox' as const, title: 'Alertes', icon: '⚠️', data: { queue: 'alerts' } },
-        ];
-        const idx = parseInt(e.key) - 1;
-        if (views[idx]) openAndFocus(views[idx]);
-        return;
-      }
-
-      if (e.key === 'F11' || (mod && e.shiftKey && e.key.toLowerCase() === 'f')) {
-        e.preventDefault();
-        setFullscreen((p) => !p);
-        return;
-      }
-
-      if (e.key === '?' && !mod) {
-        e.preventDefault();
-        setShowHelp(true);
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setStatsModalOpen(false);
-        setExportModalOpen(false);
-        setAlertConfigModalOpen(false);
-        setReportModalOpen(false);
-        setShowHelp(false);
-        if (fullscreen) setFullscreen(false);
-      }
+      if (isMod && e.key === '1') { e.preventDefault(); openQueue('overview'); }
+      if (isMod && e.key === '2') { e.preventDefault(); openQueue('performance'); }
+      if (isMod && e.key === '3') { e.preventDefault(); openQueue('financial'); }
+      if (isMod && e.key === '4') { e.preventDefault(); openQueue('trends'); }
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openCommandPalette, openAndFocus, fullscreen]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [closeAllOverlays, openQueue, openCommandPalette]);
 
+  // Dashboard tabs
+  const dashboardTabs = useMemo(() => [
+    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutDashboard },
+    { id: 'performance' as DashboardTab, label: 'Performance', icon: Activity },
+    { id: 'financial' as DashboardTab, label: 'Financier', icon: DollarSign },
+    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
+    { id: 'favorites' as DashboardTab, label: 'Suivis', icon: Star },
+  ], []);
+
+  // Analytics categories
+  const categoryStats = useMemo(() => [
+    { id: 'performance', name: 'Performance', icon: Activity, color: 'emerald', description: 'KPIs opérationnels' },
+    { id: 'financial', name: 'Financier', icon: DollarSign, color: 'amber', description: 'Budget & dépenses' },
+    { id: 'trends', name: 'Tendances', icon: TrendingUp, color: 'purple', description: 'Évolutions et prédictions' },
+    { id: 'alerts', name: 'Alertes', icon: AlertTriangle, color: 'rose', description: 'Seuils et notifications' },
+  ], []);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div
-      className={cn(
-        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
-        fullscreen && 'fixed inset-0 z-50'
-      )}
-    >
-      {/* Sidebar Collapsible */}
-      <aside
-        className={cn(
-          'flex flex-col border-r border-slate-700/50 bg-slate-900/80 backdrop-blur-xl transition-all duration-300',
-          showSideRail ? 'w-64' : 'w-16'
-        )}
-      >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-3 border-b border-slate-700/50">
-          {showSideRail && (
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-blue-400" />
-              <span className="font-semibold text-slate-200 text-sm">Analytics</span>
-            </div>
-          )}
-          {!showSideRail && (
-            <BarChart3 className="h-5 w-5 text-blue-400 mx-auto" />
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSideRail(!showSideRail)}
-            className="h-7 w-7 p-0 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
-          >
-            {showSideRail ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
-          </Button>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Header */}
+      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
+        <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <BarChart3 className="w-5 h-5 text-blue-400" />
+            <h1 className="font-semibold text-slate-200">Analytics & Rapports</h1>
+            {statsData && (
+              <span className="text-sm text-slate-400">
+                {statsData.kpis} KPIs actifs
+              </span>
+            )}
+            {hasUrgentItems && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                {statsData?.alerts} alerte{(statsData?.alerts ?? 0) > 1 ? 's' : ''}
+              </span>
+            )}
+            {statsLastUpdate && (
+              <span className="text-xs text-slate-500">
+                MAJ: {statsLastUpdate}
+              </span>
+            )}
+          </div>
 
-        {/* Search Trigger */}
-        {showSideRail && (
-          <div className="p-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={openCommandPalette}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
+              type="button"
             >
               <Search className="w-4 h-4" />
-              <span className="flex-1 text-left">Rechercher...</span>
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-[10px] font-mono text-slate-400">⌘K</kbd>
+              <span className="hidden sm:inline">Rechercher...</span>
+              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
             </button>
+
+            <button
+              onClick={() => setReportModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
+              type="button"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Nouveau rapport</span>
+            </button>
+
+            <button
+              onClick={() => loadStats('manual')}
+              className="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800/50 transition-colors"
+              type="button"
+              title="Rafraîchir"
+            >
+              <RefreshCw className={cn('w-4 h-4 text-slate-400', statsLoading && 'animate-spin')} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-screen-2xl mx-auto px-6 py-6">
+        {/* Workspace tabs */}
+        {(viewMode === 'workspace' || tabs.length > 0) && (
+          <div className="mb-6">
+            <AnalyticsWorkspaceTabs />
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          <div className="space-y-1 px-2">
-            {[
-              { id: 'overview', icon: BarChart3, label: "Vue d'ensemble", color: 'text-blue-400' },
-              { id: 'performance', icon: Activity, label: 'Performance', color: 'text-emerald-400' },
-              { id: 'financial', icon: DollarSign, label: 'Financier', color: 'text-amber-400' },
-              { id: 'trends', icon: TrendingUp, label: 'Tendances', color: 'text-purple-400' },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => openAndFocus({
-                  id: `inbox:${item.id}`,
-                  type: 'inbox',
-                  title: item.label,
-                  icon: '📊',
-                  data: { queue: item.id },
-                })}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
-                  'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                )}
-              >
-                <item.icon className={cn('h-5 w-5', item.color)} />
-                {showSideRail && <span className="text-sm">{item.label}</span>}
-              </button>
-            ))}
-          </div>
-        </nav>
+        {showDashboard ? (
+          <div className="space-y-8">
+            {/* Navigation dashboard */}
+            <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+              {dashboardTabs.map((t) => {
+                const Icon = t.icon;
+                const isActive = dashboardTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setDashboardTab(t.id)}
+                    className={cn(
+                      'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+                      isActive
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    )}
+                    type="button"
+                  >
+                    <Icon className="w-4 h-4" />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </nav>
 
-        {/* Footer */}
-        <div className="border-t border-slate-700/50 p-3">
-          {showSideRail && (
-            <div className="text-xs text-slate-500 text-center">
-              Analytics v2.0
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
-        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => window.history.back()}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-base font-semibold text-slate-200">Analytics & Rapports</h1>
-            <span className="px-2 py-0.5 text-xs rounded bg-slate-800/50 text-slate-300 border border-slate-700/50">
-              v2.0
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setFullscreen((p) => !p)}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
-              title="Plein écran"
-            >
-              {fullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowHelp(true)}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
-              title="Options"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
-
-        {/* KPI Bar */}
-        <div className="bg-slate-900/40 border-b border-slate-700/40">
-          <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800/50">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                Indicateurs temps réel
-              </span>
-              <span className="text-xs text-slate-600">
-                Mise à jour: il y a 2 min
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefresh}
-                className="h-6 w-6 p-0 text-slate-500 hover:text-slate-300"
-              >
-                <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setKpiCollapsed(!kpiCollapsed)}
-                className="h-6 w-6 p-0 text-slate-500 hover:text-slate-300"
-              >
-                {kpiCollapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-              </Button>
-            </div>
-          </div>
-
-          {!kpiCollapsed && (
-            <div className="grid grid-cols-3 lg:grid-cols-6 gap-px bg-slate-800/30 p-px">
-              {kpisLoading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="bg-slate-900/60 px-3 py-2 animate-pulse">
-                    <div className="h-3 w-20 bg-slate-700/60 rounded mb-2" />
-                    <div className="h-5 w-14 bg-slate-700/60 rounded" />
-                  </div>
-                ))
-              ) : kpisError ? (
-                <div className="col-span-3 lg:col-span-6 bg-slate-900/60 px-3 py-2">
-                  <p className="text-xs text-slate-500">KPIs indisponibles</p>
-                  <p className="text-sm text-slate-300 mt-1">{kpisError.message}</p>
-                </div>
-              ) : (
-                kpiCards.map((kpi) => {
-                  const dot =
-                    kpi.status === 'critical'
-                      ? 'bg-rose-400'
-                      : kpi.status === 'warning'
-                      ? 'bg-amber-400'
-                      : kpi.status === 'good'
-                      ? 'bg-emerald-400'
-                      : 'bg-slate-500';
-
-                  return (
-                    <button
-                      key={kpi.id}
-                      type="button"
-                      onClick={openCommandPalette}
-                      className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors cursor-pointer text-left"
-                      title="Ouvrir la palette (⌘K) pour drill-down"
-                    >
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className={cn('w-1.5 h-1.5 rounded-full', dot)} />
-                        <p className="text-xs text-slate-500 truncate">{kpi.label}</p>
+            {/* Dashboard content */}
+            {dashboardTab === 'overview' && (
+              <div className="space-y-8">
+                {/* Alertes critiques */}
+                {statsData && statsData.alerts > 0 && (
+                  <div className={cn('p-4 rounded-lg border', BG_STATUS.warning)}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <AlertCircle className={cn('w-5 h-5', STATUS_ICON_COLORS.warning)} />
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">
+                            {statsData.alerts} alerte{statsData.alerts > 1 ? 's' : ''} active{statsData.alerts > 1 ? 's' : ''}
+                          </p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Des KPIs ont dépassé leurs seuils d'alerte
+                          </p>
+                        </div>
                       </div>
-                      <span className="text-lg font-bold text-slate-200">{kpi.value}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
+                      <button
+                        onClick={() => openQueue('alerts')}
+                        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                        type="button"
+                      >
+                        Voir
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
-            {showDashboard ? (
-              <div className="space-y-6">
-                {/* Poste de contrôle */}
-                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-200 mb-2">
-                        Poste de contrôle Analytics
-                      </h2>
-                      <p className="text-slate-400 max-w-2xl">
-                        Surveillez les KPIs clés, analysez les tendances et générez des rapports détaillés
-                        pour piloter l&apos;activité avec précision.
+                {/* KPIs temps réel */}
+                <section>
+                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
+                    Indicateurs temps réel
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {kpisLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 animate-pulse">
+                          <div className="h-3 w-20 bg-slate-700/60 rounded mb-2" />
+                          <div className="h-6 w-14 bg-slate-700/60 rounded" />
+                        </div>
+                      ))
+                    ) : kpisError ? (
+                      <div className="col-span-6 p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50">
+                        <p className="text-sm text-slate-500">KPIs indisponibles: {kpisError.message}</p>
+                      </div>
+                    ) : (
+                      kpiCards.map((kpi) => {
+                        const dotColor =
+                          kpi.status === 'critical' ? 'bg-rose-400' :
+                          kpi.status === 'warning' ? 'bg-amber-400' :
+                          kpi.status === 'good' ? 'bg-emerald-400' : 'bg-slate-500';
+                        return (
+                          <button
+                            key={kpi.id}
+                            onClick={openCommandPalette}
+                            className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left hover:shadow-sm transition-all"
+                            type="button"
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={cn('w-2 h-2 rounded-full', dotColor)} />
+                              <p className="text-xs text-slate-500 truncate">{kpi.label}</p>
+                            </div>
+                            <span className="text-lg font-bold text-slate-900 dark:text-slate-100">{kpi.value}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </section>
+
+                {/* KPIs principaux */}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  <button
+                    onClick={() => openQueue('performance')}
+                    className={cn('p-4 rounded-lg border text-left transition-all hover:shadow-sm', BG_STATUS.good)}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity className="w-4 h-4 text-emerald-500" />
+                      <span className="text-sm text-slate-500">Performance</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.avgPerformance ?? '—'}%
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => openQueue('trends')}
+                    className={cn('p-4 rounded-lg border text-left transition-all hover:shadow-sm', BG_STATUS.info)}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm text-slate-500">Tendances</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.trends ?? '—'}
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => openQueue('reports')}
+                    className="p-4 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200/50 dark:border-purple-800/30 text-left transition-all hover:shadow-sm"
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <PieChart className="w-4 h-4 text-purple-500" />
+                      <span className="text-sm text-slate-500">Rapports</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.reports ?? '—'}
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => openQueue('alerts')}
+                    className={cn(
+                      'p-4 rounded-lg border text-left transition-all hover:shadow-sm',
+                      statsData && statsData.alerts > 0 ? BG_STATUS.warning : BG_STATUS.neutral
+                    )}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className={cn('w-4 h-4', statsData && statsData.alerts > 0 ? 'text-amber-500' : 'text-slate-400')} />
+                      <span className="text-sm text-slate-500">Alertes</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.alerts ?? '—'}
+                    </p>
+                  </button>
+
+                  <div className="p-4 rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-4 h-4 text-amber-500" />
+                      <span className="text-sm text-slate-500">KPIs</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.kpis ?? '—'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200/50 dark:border-slate-800/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="w-4 h-4 text-slate-500" />
+                      <span className="text-sm text-slate-500">Total</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                      {statsData?.total ?? '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Par catégorie */}
+                <section>
+                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
+                    Par catégorie
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {categoryStats.map((cat) => {
+                      const Icon = cat.icon;
+                      const count = statsData?.byCategory.find(c => c.category.toLowerCase().includes(cat.id))?.count || 0;
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => openQueue(cat.id)}
+                          className={cn(
+                            'p-4 rounded-lg border text-left hover:shadow-sm transition-all',
+                            `border-${cat.color}-200/50 dark:border-${cat.color}-800/30`,
+                            `bg-${cat.color}-50/30 dark:bg-${cat.color}-950/20`
+                          )}
+                          type="button"
+                        >
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', `bg-${cat.color}-500/20`)}>
+                              <Icon className={cn('w-5 h-5', `text-${cat.color}-600`)} />
+                            </div>
+                            <div>
+                              <p className="font-medium">{cat.name}</p>
+                              <p className="text-xs text-slate-500">{cat.description}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-lg font-semibold">{count}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* Par département */}
+                {statsData && (
+                  <section>
+                    <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
+                      Par département
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      {statsData.byDepartment.map((d) => (
+                        <div
+                          key={d.department}
+                          className="p-4 rounded-lg border border-slate-200/50 dark:border-slate-800/50 bg-white dark:bg-slate-900/30 text-left"
+                        >
+                          <p className="text-sm text-slate-500 mb-1">{d.department}</p>
+                          <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                            {d.count}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Outils avancés */}
+                <section>
+                  <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
+                    Outils avancés
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <button
+                      onClick={() => setReportModalOpen(true)}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <PieChart className="w-5 h-5 text-purple-500 mb-2" />
+                      <p className="font-medium text-sm">Rapports</p>
+                      <p className="text-xs text-slate-500">Génération</p>
+                    </button>
+                    <button
+                      onClick={() => setAlertConfigModalOpen(true)}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <AlertTriangle className="w-5 h-5 text-amber-500 mb-2" />
+                      <p className="font-medium text-sm">Alertes</p>
+                      <p className="text-xs text-slate-500">Configuration</p>
+                    </button>
+                    <button
+                      onClick={() => openQueue('trends')}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <LineChart className="w-5 h-5 text-blue-500 mb-2" />
+                      <p className="font-medium text-sm">Tendances</p>
+                      <p className="text-xs text-slate-500">Évolutions</p>
+                    </button>
+                    <button
+                      onClick={() => {}}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <Brain className="w-5 h-5 text-pink-500 mb-2" />
+                      <p className="font-medium text-sm">IA Prédictive</p>
+                      <p className="text-xs text-slate-500">Prévisions</p>
+                    </button>
+                    <button
+                      onClick={() => setStatsModalOpen(true)}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <BarChart3 className="w-5 h-5 text-emerald-500 mb-2" />
+                      <p className="font-medium text-sm">Statistiques</p>
+                      <p className="text-xs text-slate-500">Vue détaillée</p>
+                    </button>
+                    <button
+                      onClick={() => setExportModalOpen(true)}
+                      className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors"
+                      type="button"
+                    >
+                      <Download className="w-5 h-5 text-slate-500 mb-2" />
+                      <p className="font-medium text-sm">Export</p>
+                      <p className="text-xs text-slate-500">Télécharger</p>
+                    </button>
+                  </div>
+                </section>
+
+                {/* Bloc gouvernance */}
+                <div className={cn('p-4 rounded-lg border', BG_STATUS.info)}>
+                  <div className="flex items-center gap-3">
+                    <Shield className="w-6 h-6 text-blue-500 flex-none" />
+                    <div className="flex-1">
+                      <h3 className="font-bold text-blue-700 dark:text-blue-300">
+                        Pilotage par les données
+                      </h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-300">
+                        Surveillez les KPIs clés, analysez les tendances et générez des rapports détaillés pour piloter l'activité avec précision.
                       </p>
                     </div>
-                    <FluentButton variant="primary" onClick={() => setMode('workspace')}>
-                      Ouvrir Workspace
-                    </FluentButton>
                   </div>
-                </div>
-
-                {/* Navigation Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <NavCard
-                    icon={<BarChart3 className="w-5 h-5 text-blue-400" />}
-                    title="Vue d'ensemble"
-                    subtitle="Synthèse globale"
-                    onClick={() => openAndFocus({ id: 'dashboard:overview', type: 'dashboard', title: "Vue d'ensemble", icon: '📊', data: { view: 'overview' } })}
-                  />
-                  <NavCard
-                    icon={<Activity className="w-5 h-5 text-emerald-400" />}
-                    title="Performance"
-                    subtitle="KPIs opérationnels"
-                    onClick={() => openAndFocus({ id: 'inbox:performance', type: 'inbox', title: 'Performance', icon: '⚡', data: { queue: 'performance' } })}
-                  />
-                  <NavCard
-                    icon={<DollarSign className="w-5 h-5 text-amber-400" />}
-                    title="Financier"
-                    subtitle="Budget & dépenses"
-                    onClick={() => openAndFocus({ id: 'inbox:financial', type: 'inbox', title: 'Financier', icon: '💰', data: { queue: 'financial' } })}
-                  />
-                  <NavCard
-                    icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
-                    title="Tendances"
-                    subtitle="Évolutions"
-                    onClick={() => openAndFocus({ id: 'inbox:trends', type: 'inbox', title: 'Tendances', icon: '📈', data: { queue: 'trends' } })}
-                  />
-                </div>
-
-                {/* Content */}
-                <div className="rounded-xl border border-slate-700/50 bg-slate-900/50 overflow-hidden">
-                  <AnalyticsWorkspaceContent />
                 </div>
 
                 {/* Astuce raccourcis */}
@@ -517,111 +778,116 @@ export default function AnalyticsPage() {
                     <Keyboard className="w-5 h-5 text-slate-400" />
                     <p className="text-sm text-slate-400">
                       <strong className="text-slate-300">Astuce :</strong> utilise{' '}
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘1-5</kbd>{' '}
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘1-4</kbd>{' '}
                       pour les vues,{' '}
                       <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">⌘K</kbd>{' '}
                       pour la palette, et{' '}
                       <kbd className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">?</kbd>{' '}
-                      pour l&apos;aide.
+                      pour l'aide.
                     </p>
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {hasTabs && <AnalyticsWorkspaceTabs />}
-                <div className="rounded-xl border border-slate-700/50 bg-slate-900/50 overflow-hidden">
-                  <AnalyticsWorkspaceContent />
-                </div>
+            )}
+
+            {dashboardTab === 'performance' && (
+              <div className="space-y-6">
+                <AnalyticsWorkspaceContent />
+              </div>
+            )}
+
+            {dashboardTab === 'financial' && (
+              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                <h3 className="text-lg font-semibold mb-4">Données financières</h3>
+                <p className="text-slate-500">Budget, dépenses et analyses financières.</p>
+              </div>
+            )}
+
+            {dashboardTab === 'history' && (
+              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                <h3 className="text-lg font-semibold mb-4">Historique des rapports</h3>
+                <p className="text-slate-500">Journal des rapports générés et consultations.</p>
+              </div>
+            )}
+
+            {dashboardTab === 'favorites' && (
+              <div className="p-8 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                <h3 className="text-lg font-semibold mb-4">KPIs et rapports suivis</h3>
+                <p className="text-slate-500">Vos indicateurs et rapports épinglés.</p>
               </div>
             )}
           </div>
-        </main>
-
-        {/* Status Bar */}
-        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
-          <div className="flex items-center gap-4">
-            <span className="text-slate-600">Màj: à l&apos;instant</span>
-            <span className="text-slate-700">•</span>
-            <span className="text-slate-600">Performance • Financier • Tendances • Alertes</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-slate-500">Connecté</span>
+        ) : (
+          <div className="space-y-4">
+            {tabs.length > 0 && <AnalyticsWorkspaceTabs />}
+            <div className="rounded-xl border border-slate-700/50 bg-slate-900/50 overflow-hidden">
+              <AnalyticsWorkspaceContent />
             </div>
           </div>
-        </footer>
-      </div>
+        )}
+      </main>
+
+      {/* Command Palette */}
+      <AnalyticsCommandPalette />
 
       {/* Modals */}
       <AnalyticsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
       <AnalyticsExportModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} />
       <AnalyticsAlertConfigModal open={alertConfigModalOpen} onClose={() => setAlertConfigModalOpen(false)} />
       <AnalyticsReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} />
-      <AnalyticsCommandPalette />
 
       {/* Help Modal */}
-      <FluentModal open={showHelp} onClose={() => setShowHelp(false)} title="Raccourcis & Actions">
+      <FluentModal open={helpOpen} onClose={() => setHelpOpen(false)} title="Raccourcis & Actions">
         <div className="space-y-6">
           <div>
             <h3 className="text-sm font-medium text-slate-300 mb-3">Navigation</h3>
             <div className="space-y-1">
-              <ShortcutRow shortcut="⌘K" label="Rechercher / Commandes" />
-              <ShortcutRow shortcut="⌘1-5" label="Accès rapide aux vues" />
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Rechercher / Commandes</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘K</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Vue d'ensemble</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘1</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Performance</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘2</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Financier</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘3</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Tendances</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘4</kbd>
+              </div>
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-medium text-slate-300 mb-3">Actions</h3>
             <div className="space-y-1">
-              <ShortcutRow shortcut="⌘S" label="Statistiques" />
-              <ShortcutRow shortcut="⌘E" label="Export" />
-              <ShortcutRow shortcut="⌘⇧R" label="Rapport" />
-              <ShortcutRow shortcut="F11" label="Plein écran" />
-              <ShortcutRow shortcut="Esc" label="Fermer" />
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-slate-700">
-            <h3 className="text-sm font-medium text-slate-300 mb-3">Outils</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { setShowHelp(false); setStatsModalOpen(true); }} className="p-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-left transition-colors">
-                <span className="text-sm font-medium text-slate-300">Statistiques</span>
-              </button>
-              <button type="button" onClick={() => { setShowHelp(false); setExportModalOpen(true); }} className="p-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-left transition-colors">
-                <span className="text-sm font-medium text-slate-300">Export</span>
-              </button>
-              <button type="button" onClick={() => { setShowHelp(false); setReportModalOpen(true); }} className="p-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-left transition-colors">
-                <span className="text-sm font-medium text-slate-300">Rapports</span>
-              </button>
-              <button type="button" onClick={() => { setShowHelp(false); setAlertConfigModalOpen(true); }} className="p-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-left transition-colors">
-                <span className="text-sm font-medium text-slate-300">Alertes</span>
-              </button>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Statistiques</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘S</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Export</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">⌘E</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-slate-400">Fermer</span>
+                <kbd className="px-2 py-1 rounded bg-slate-800 font-mono text-xs border border-slate-700 text-slate-300">Esc</kbd>
+              </div>
             </div>
           </div>
 
           <div className="pt-2">
-            <FluentButton variant="secondary" onClick={() => setShowHelp(false)} className="w-full">Fermer</FluentButton>
+            <FluentButton variant="secondary" onClick={() => setHelpOpen(false)} className="w-full">Fermer</FluentButton>
           </div>
         </div>
       </FluentModal>
     </div>
-  );
-}
-
-function NavCard({ icon, title, subtitle, onClick }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-3 p-4 rounded-xl border border-slate-700/50 bg-slate-800/30 hover:border-slate-600 hover:bg-slate-800/50 transition-all text-left group"
-    >
-      <div className="text-slate-500 group-hover:scale-110 transition-transform">{icon}</div>
-      <div>
-        <div className="text-sm font-medium text-slate-200">{title}</div>
-        <div className="text-xs text-slate-500">{subtitle}</div>
-      </div>
-    </button>
   );
 }

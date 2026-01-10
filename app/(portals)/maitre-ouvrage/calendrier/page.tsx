@@ -40,6 +40,7 @@ import {
   Minimize,
   MoreHorizontal,
   Keyboard,
+  History,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CalendarGrid } from '@/components/features/calendar/CalendarGrid';
@@ -62,6 +63,7 @@ type CalendarStats = {
 type ExportFormat = 'ical' | 'csv' | 'json' | 'pdf';
 type ExportQueue = 'today' | 'week' | 'month' | 'all';
 type LoadReason = 'init' | 'manual' | 'auto';
+type DashboardTab = 'overview' | 'calendar' | 'metrics' | 'history' | 'favorites';
 
 // ================================
 // Helpers
@@ -186,6 +188,7 @@ function CalendrierPageContent() {
   const [fullscreen, setFullscreen] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [kpiCollapsed, setKpiCollapsed] = useState(false);
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
 
   // Stats
   const [statsOpen, setStatsOpen] = useState(false);
@@ -805,6 +808,38 @@ function CalendrierPageContent() {
           <div className="mx-auto max-w-[1920px] p-4 sm:p-6 lg:p-8">
             {showDashboard ? (
               <div className="space-y-6">
+                {/* Navigation dashboard tabs */}
+                <nav className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+                  {[
+                    { id: 'overview' as DashboardTab, label: "Vue d'ensemble", icon: LayoutGrid },
+                    { id: 'calendar' as DashboardTab, label: 'Grille mensuelle', icon: CalendarIcon },
+                    { id: 'metrics' as DashboardTab, label: 'Indicateurs', icon: BarChart2 },
+                    { id: 'history' as DashboardTab, label: 'Historique', icon: History },
+                    { id: 'favorites' as DashboardTab, label: 'Épinglés', icon: Star },
+                  ].map((t) => {
+                    const Icon = t.icon;
+                    const isActive = dashboardTab === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setDashboardTab(t.id)}
+                        className={cn(
+                          'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+                          isActive
+                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                            : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        )}
+                        type="button"
+                      >
+                        <Icon className="w-4 h-4" />
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+
+                {dashboardTab === 'overview' && (
+                  <>
                 {/* Poste de contrôle */}
                 <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                   <div className="flex items-start justify-between gap-4">
@@ -1014,6 +1049,167 @@ function CalendrierPageContent() {
                     </p>
                   </div>
                 </div>
+                  </>
+                )}
+
+                {dashboardTab === 'calendar' && (
+                  <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                    <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <CalendarIcon className="w-4 h-4 text-blue-400" />
+                        <h3 className="font-semibold text-slate-200">Vue mensuelle complète</h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            refetchEvents();
+                            refetchConflicts();
+                          }}
+                          className="text-slate-400 hover:text-slate-200"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Actualiser
+                        </Button>
+                      </div>
+                    </div>
+
+                    {(eventsLoading || conflictsLoading) && (
+                      <div className="text-sm text-slate-500">Chargement…</div>
+                    )}
+                    {(eventsError || conflictsError) && (
+                      <div className="text-sm text-slate-400">
+                        {eventsError ? `Événements: ${eventsError.message}` : null}
+                        {eventsError && conflictsError ? ' • ' : null}
+                        {conflictsError ? `Conflits: ${conflictsError.message}` : null}
+                      </div>
+                    )}
+
+                    {!eventsLoading && !eventsError && (
+                      <div className="mt-4">
+                        <CalendarGrid
+                          events={gridEvents as any}
+                          onEventClick={(ev: any) => {
+                            toast.info('Événement', String(ev.title ?? ''));
+                          }}
+                          onCreateEvent={() => openCreateWizard()}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {dashboardTab === 'metrics' && (
+                  <div className="space-y-6">
+                    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <BarChart2 className="w-5 h-5 text-purple-400" />
+                        <h3 className="font-semibold text-slate-200">Indicateurs de performance</h3>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <div className="text-xs text-slate-500 mb-1">Taux de respect SLA</div>
+                          <div className="text-2xl font-bold text-emerald-400">
+                            {statsData ? Math.round(((statsData.total - statsData.overdueSLA) / Math.max(statsData.total, 1)) * 100) : 0}%
+                          </div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <div className="text-xs text-slate-500 mb-1">Taux de conflits</div>
+                          <div className="text-2xl font-bold text-rose-400">
+                            {statsData ? Math.round((statsData.conflicts / Math.max(statsData.total, 1)) * 100) : 0}%
+                          </div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                          <div className="text-xs text-slate-500 mb-1">Taux de complétion</div>
+                          <div className="text-2xl font-bold text-blue-400">
+                            {statsData ? Math.round((statsData.completed / Math.max(statsData.total, 1)) * 100) : 0}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                      <CalendarDirectionPanel onOpenStats={() => setStatsOpen(true)} onOpenExport={() => setExportOpen(true)} />
+                    </div>
+                  </div>
+                )}
+
+                {dashboardTab === 'history' && (
+                  <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <History className="w-5 h-5 text-blue-400" />
+                      <h3 className="font-semibold text-slate-200">Historique des événements</h3>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      L'historique complet des événements passés et des modifications est disponible dans la vue mensuelle.
+                    </div>
+                    <div className="mt-4">
+                      <FluentButton 
+                        size="sm" 
+                        variant="secondary" 
+                        onClick={() => openInbox('completed', 'Terminés', '✅')}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Voir les événements terminés
+                      </FluentButton>
+                    </div>
+                  </div>
+                )}
+
+                {dashboardTab === 'favorites' && (
+                  <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+                    <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-4 h-4 text-amber-400" />
+                        <h3 className="font-semibold text-slate-200">Vues épinglées</h3>
+                        <span className="text-xs text-slate-500">({pinnedViews.length})</span>
+                      </div>
+
+                      <div className="flex gap-2 flex-wrap">
+                        <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:today', title: "Aujourd'hui", icon: '📅', queue: 'today' })}>
+                          Épingler Aujourd'hui
+                        </FluentButton>
+                        <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:overdue', title: 'Retard SLA', icon: '⏰', queue: 'overdue' })}>
+                          Épingler SLA
+                        </FluentButton>
+                        <FluentButton size="sm" variant="secondary" onClick={() => pinView({ key: 'pin:conflicts', title: 'Conflits', icon: '⚠️', queue: 'conflicts' })}>
+                          Épingler Conflits
+                        </FluentButton>
+                      </div>
+                    </div>
+
+                    {pinnedViews.length === 0 ? (
+                      <p className="text-sm text-slate-500">Aucune vue épinglée. Épingle SLA / Conflits / Aujourd&apos;hui / Semaine.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {pinnedViews.map((v) => (
+                          <button
+                            key={v.key}
+                            type="button"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/50 transition-colors"
+                            onClick={() => openInbox(v.queue, v.title, v.icon)}
+                            title="Ouvrir"
+                          >
+                            <span className="text-sm">{v.icon}</span>
+                            <span className="text-sm text-slate-300">{v.title}</span>
+                            <span
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-slate-700/40"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                unpinView(v.key);
+                              }}
+                              title="Retirer"
+                            >
+                              <StarOff className="w-4 h-4 text-slate-500" />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

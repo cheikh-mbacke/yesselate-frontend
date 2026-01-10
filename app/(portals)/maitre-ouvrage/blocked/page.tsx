@@ -415,18 +415,18 @@ function BlockedPageContent() {
   // Render
   // ================================
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-0 z-40">
+      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-red-500/10">
-              <AlertCircle className="w-5 h-5 text-red-500" />
+            <div className="p-1.5 rounded-lg bg-red-500/20">
+              <AlertCircle className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <h1 className="font-semibold text-slate-900 dark:text-slate-100">Dossiers bloqués</h1>
+              <h1 className="font-semibold text-slate-200">Dossiers bloqués</h1>
               {displayStats.critical > 0 && (
-                <span className="text-xs text-red-500 font-medium">
+                <span className="text-xs text-red-400 font-medium">
                   {displayStats.critical} critique(s)
                 </span>
               )}
@@ -438,11 +438,11 @@ function BlockedPageContent() {
             {/* Search */}
             <button
               onClick={() => setCommandOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-slate-600 hover:bg-slate-800 transition-colors"
             >
-              <Search className="w-4 h-4 text-slate-400" />
+              <Search className="w-4 h-4 text-slate-500" />
               <span className="hidden sm:inline">Rechercher...</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs text-slate-500">⌘K</kbd>
+              <kbd className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-700 text-xs text-slate-400">⌘K</kbd>
             </button>
 
             {/* Decision center - Bouton principal */}

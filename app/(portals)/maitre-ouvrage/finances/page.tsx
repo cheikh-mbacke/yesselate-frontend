@@ -52,18 +52,18 @@ export default function FinancesPage() {
   }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh]);
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-emerald-50/20 dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-emerald-950/10">
+    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="flex-none border-b border-slate-200/70 dark:border-slate-800/70 bg-white/80 dark:bg-[#1f1f1f]/80 backdrop-blur-xl">
+      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/25">
-                <Wallet className="w-5 h-5 text-white" />
+              <div className="p-2 rounded-xl bg-emerald-500/20">
+                <Wallet className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Pilotage Financier</h1>
-                <p className="text-sm text-slate-500">Trésorerie, budget et flux financiers</p>
+                <h1 className="text-xl font-bold text-slate-200">Pilotage Financier</h1>
+                <p className="text-sm text-slate-400">Trésorerie, budget et flux financiers</p>
               </div>
             </div>
 

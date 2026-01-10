@@ -62,16 +62,16 @@ export default function ValidationPaiementsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0f0f0f]">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-0 z-40">
+      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-screen-2xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-emerald-500/10">
-              <DollarSign className="w-5 h-5 text-emerald-500" />
+            <div className="p-1.5 rounded-lg bg-emerald-500/20">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h1 className="font-semibold text-slate-900 dark:text-slate-100">Validation Paiements</h1>
+              <h1 className="font-semibold text-slate-200">Validation Paiements</h1>
               {stats && stats.pending > 0 && (
                 <span className="text-xs text-emerald-500 font-medium">{stats.pending} en attente</span>
               )}

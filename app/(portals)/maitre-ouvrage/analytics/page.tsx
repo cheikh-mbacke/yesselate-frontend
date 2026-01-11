@@ -29,10 +29,10 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  BarChart3, 
-  Search, 
-  Bell, 
+import {
+  BarChart3,
+  Search,
+  Bell,
   ChevronLeft,
   Grid3x3,
   LayoutGrid,
@@ -63,7 +63,6 @@ import {
   AnalyticsModals,
   AnalyticsDetailPanel,
   AnalyticsBatchActionsBar,
-  ActionsMenu,
   analyticsCategories,
 } from '@/components/features/bmo/analytics/command-center';
 
@@ -170,6 +169,8 @@ const INITIAL_NOTIFICATIONS = [
   { id: '5', type: 'info' as const, title: 'Nouvelle analyse disponible', time: 'hier', read: true },
 ];
 
+const SESSION_KEY = 'bmo.analytics.session.v1';
+
 // ================================
 // Utils ERP
 // ================================
@@ -214,7 +215,7 @@ function useUiAudit(scope: string) {
 
 function useScrollRestoration(ref: React.RefObject<HTMLElement | null>, key: string) {
   useEffect(() => {
-    const el = ref.current;
+    const el = ref.current; // ✅ Lu au moment de l'exécution
     if (!el) return;
 
     const storageKey = `bmo.analytics.scroll:${key}`;
@@ -237,7 +238,8 @@ function useScrollRestoration(ref: React.RefObject<HTMLElement | null>, key: str
       el.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [ref, key]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]); // ✅ Seulement key
 }
 
 class ClientErrorBoundary extends React.Component<
@@ -336,7 +338,7 @@ function AnalyticsPageContent() {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
-  const refreshTimerRef = useRef<number | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
   const [notifications, setNotifications] = useState(() => INITIAL_NOTIFICATIONS.map(n => ({ ...n })));
@@ -483,10 +485,21 @@ function AnalyticsPageContent() {
   );
 
   useEffect(() => {
+    if (currentSubCategories.length === 0) return; // Skip si pas de sous-catégories
+    
     const has = currentSubCategories.some((s) => s.id === activeSubCategory);
-    if (!has && currentSubCategories.length > 0) {
-      audit.log('NAV_SUB_INVALID_RESET', { cat: activeCategory, sub: activeSubCategory });
-      navigate(activeCategory, 'all', null);
+    
+    if (!has) {
+      const firstAvailableSub = currentSubCategories[0]?.id; // Prendre la première disponible
+      
+      if (firstAvailableSub && activeSubCategory !== firstAvailableSub) {
+        audit.log('NAV_SUB_INVALID_RESET', { 
+          cat: activeCategory, 
+          invalidSub: activeSubCategory,
+          newSub: firstAvailableSub 
+        });
+        navigate(activeCategory, firstAvailableSub, null);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategory, activeSubCategory, currentSubCategories]);
@@ -506,15 +519,19 @@ function AnalyticsPageContent() {
   // URL sync + Session (AMÉLIORÉ v3.0 avec viewMode)
   // ================================
   const hydratedRef = useRef(false);
-  const SESSION_KEY = 'bmo.analytics.session.v1';
 
   const applyState = useCallback(
     (st: SessionState, origin: 'url' | 'session') => {
-      const nextCat = resolveMainCategoryId(st.cat || activeCategory);
+      // ✅ Lire depuis le store directement pour éviter boucle infinie
+      const currentNav = useAnalyticsCommandCenterStore.getState().navigation;
+      const currentCat = currentNav.mainCategory;
+      const currentSub = currentNav.subCategory || 'all';
+      
+      const nextCat = resolveMainCategoryId(st.cat || currentCat);
       const nextSub = st.sub ? resolveSubCategoryId(st.sub) : 'all';
 
-      if (nextCat !== activeCategory) navigate(nextCat, 'all', null);
-      if (nextCat === activeCategory && nextSub !== activeSubCategory) navigate(activeCategory, nextSub, null);
+      if (nextCat !== currentCat) navigate(nextCat, 'all', null);
+      if (nextCat === currentCat && nextSub !== currentSub) navigate(currentCat, nextSub, null);
 
       if (typeof st.fs === 'boolean' && st.fs !== fullscreen) toggleFullscreen();
       if (typeof st.sc === 'boolean' && st.sc !== sidebarCollapsed) toggleSidebar();
@@ -533,8 +550,6 @@ function AnalyticsPageContent() {
     [
       resolveMainCategoryId,
       resolveSubCategoryId,
-      activeCategory,
-      activeSubCategory,
       fullscreen,
       sidebarCollapsed,
       notificationsPanelOpen,
@@ -636,7 +651,7 @@ function AnalyticsPageContent() {
     setIsRefreshing(true);
 
     if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = window.setTimeout(() => {
+    refreshTimerRef.current = setTimeout(() => {
       if (!mountedRef.current) return;
       setIsRefreshing(false);
       setLastUpdate(new Date());
@@ -669,19 +684,19 @@ function AnalyticsPageContent() {
     (actionId: string, ids: string[]) => {
       audit.log('BATCH_ACTION', { actionId, count: ids.length });
 
-      switch (actionId) {
-        case 'export':
-          openModal('export', { selectedIds: ids });
-          break;
-        case 'view':
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
           if (ids.length > 0) openModal('kpi-detail', { kpiId: ids[0] });
-          break;
-        case 'delete':
-          toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
-          break;
-        case 'archive':
-          toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
-          break;
+        break;
+      case 'delete':
+        toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
+        break;
+      case 'archive':
+        toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
+        break;
         // NOUVEAU v3.0: Actions sophistiquées
         case 'validate-workflow':
           toast.info('Workflow de validation', `Démarrage pour ${ids.length} KPI(s)`);
@@ -692,9 +707,9 @@ function AnalyticsPageContent() {
         case 'generate-report':
           toast.success('Génération rapport', `Rapport direction pour ${ids.length} KPI(s)`);
           break;
-        default:
-          break;
-      }
+      default:
+        break;
+    }
     },
     [audit, openModal, toast]
   );
@@ -782,7 +797,7 @@ function AnalyticsPageContent() {
       if (isMod && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         audit.log('FILTERS_OPEN');
-        openModal('filters');
+          openModal('filters');
         return;
       }
 
@@ -815,7 +830,7 @@ function AnalyticsPageContent() {
         if (drillDownPath.length > 0) {
           handleDrillDownNavigate(drillDownPath.length - 2);
         } else {
-          goBack();
+        goBack();
         }
         return;
       }
@@ -984,7 +999,7 @@ function AnalyticsPageContent() {
               {unreadCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
                   {Math.min(unreadCount, 99)}
-                </span>
+              </span>
               )}
             </Button>
 
@@ -1414,25 +1429,25 @@ function NotificationsPanel({
       <div className="fixed right-0 top-0 h-full w-80 bg-slate-900 border-l border-slate-800/50 z-50 flex flex-col">
         <div className="p-4 border-b border-slate-800/50">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-orange-400" />
-              <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
               {unread > 0 && (
                 <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
                   {unread} nouvelle{unread > 1 ? 's' : ''}
-                </Badge>
+            </Badge>
               )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
               aria-label="Fermer les notifications"
               title="Fermer (Esc)"
-            >
-              ×
-            </Button>
+          >
+            ×
+          </Button>
           </div>
         </div>
 

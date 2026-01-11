@@ -103,13 +103,20 @@ function handleToastNotification(
   toast: ReturnType<typeof useAnalyticsToast>
 ) {
   switch (event.type) {
-    case 'alert_new':
-      toast.alert({
-        title: event.data.title || 'Nouvelle alerte',
-        message: event.data.message || 'Une nouvelle alerte nécessite votre attention',
-        severity: event.data.severity || 'warning',
-      });
+    case 'alert_new': {
+      const severity = event.data.severity || 'warning';
+      const title = event.data.title || 'Nouvelle alerte';
+      const message = event.data.message || 'Une nouvelle alerte nécessite votre attention';
+      
+      if (severity === 'critical' || severity === 'error') {
+        toast.error(title, message);
+      } else if (severity === 'warning') {
+        toast.warning(title, message);
+      } else {
+        toast.info(title, message);
+      }
       break;
+    }
 
     case 'alert_resolved':
       toast.success(
@@ -118,12 +125,12 @@ function handleToastNotification(
       );
       break;
 
-    case 'export_ready':
-      toast.exportReady(
-        event.data.fileName || 'export.xlsx',
-        event.data.downloadUrl
-      );
+    case 'export_ready': {
+      const fileName = event.data.fileName || 'export.xlsx';
+      const format = fileName.split('.').pop()?.toUpperCase() || 'XLSX';
+      toast.exportSuccess(format);
       break;
+    }
 
     case 'report_completed':
       toast.success(

@@ -242,18 +242,28 @@ function useScrollRestoration(ref: React.RefObject<HTMLElement | null>, key: str
   }, [key]); // ✅ Seulement key
 }
 
-class ClientErrorBoundary extends React.Component<
-  { title?: string; children: React.ReactNode; className?: string },
-  { hasError: boolean; error?: Error }
-> {
-  constructor(props: any) {
+interface ErrorBoundaryProps {
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ClientErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
   }
-  static getDerivedStateFromError(error: Error) {
+  
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
-  componentDidCatch(error: Error) {
+  
+  componentDidCatch(error: Error): void {
     console.error('Analytics content crashed:', error);
   }
   render() {
@@ -492,7 +502,7 @@ function AnalyticsPageContent() {
     if (!has) {
       const firstAvailableSub = currentSubCategories[0]?.id; // Prendre la première disponible
       
-      if (firstAvailableSub && activeSubCategory !== firstAvailableSub) {
+      if (firstAvailableSub) {
         audit.log('NAV_SUB_INVALID_RESET', { 
           cat: activeCategory, 
           invalidSub: activeSubCategory,
@@ -502,7 +512,7 @@ function AnalyticsPageContent() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory, activeSubCategory, currentSubCategories]);
+  }, [activeCategory]); // ✅ Seulement activeCategory - currentSubCategories est dérivé via useMemo
 
   // NOUVEAU v3.0: Scroll restoration inclut viewMode
   useScrollRestoration(scrollRef, `${activeCategory}:${activeSubCategory}:${viewMode}`);
@@ -1111,7 +1121,6 @@ function AnalyticsPageContent() {
                 <DashboardViewPlaceholder
                   category={activeCategory}
                   subCategory={activeSubCategory}
-                  onDrillDown={handleDrillDown}
                 />
               )}
 
@@ -1119,7 +1128,6 @@ function AnalyticsPageContent() {
                 <ComparativeViewPlaceholder
                   category={activeCategory}
                   subCategory={activeSubCategory}
-                  onDrillDown={handleDrillDown}
                 />
               )}
             </ClientErrorBoundary>
@@ -1137,7 +1145,7 @@ function AnalyticsPageContent() {
             {isConnected && (
               <>
                 <span className="text-slate-700">•</span>
-                <span className="text-slate-600">🔴 Temps réel ({subscriptionsCount} abonnements)</span>
+                <span className="text-slate-600">🟢 Temps réel ({subscriptionsCount} abonnements)</span>
               </>
             )}
           </div>
@@ -1178,7 +1186,7 @@ function AnalyticsPageContent() {
             audit.log('MODAL_CLOSE', { type: 'filters' });
             closeModal();
           }}
-          onApplyFilters={(newFilters) => {
+          onApplyFilters={(newFilters: Record<string, unknown>) => {
             Object.entries(newFilters).forEach(([key, value]) => {
               if (Array.isArray(value)) setFilter(key as keyof typeof filters, value);
             });
@@ -1244,77 +1252,77 @@ function EnhancedActionsMenu({
 
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-slate-900 border border-slate-800/60 rounded-lg shadow-xl z-50">
-            <div className="py-1">
-              <button
-                onClick={() => {
-                  onRefresh();
-                  setMenuOpen(false);
-                }}
-                disabled={isRefreshing}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
-                Actualiser
-              </button>
+          <div className="py-1">
+            <button
+              onClick={() => {
+                onRefresh();
+                setMenuOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+              Actualiser
+            </button>
 
-              <div className="h-px bg-slate-800/60 my-1" />
+            <div className="h-px bg-slate-800/60 my-1" />
 
-              <button
-                onClick={() => {
-                  onExport('excel');
-                  setMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Exporter Excel
-              </button>
+            <button
+              onClick={() => {
+                onExport('excel');
+                setMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Exporter Excel
+            </button>
 
-              <button
-                onClick={() => {
-                  onExport('pdf');
-                  setMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
-              >
-                <FileText className="h-4 w-4" />
-                Exporter PDF
-              </button>
+            <button
+              onClick={() => {
+                onExport('pdf');
+                setMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            >
+              <FileText className="h-4 w-4" />
+              Exporter PDF
+            </button>
 
-              <div className="h-px bg-slate-800/60 my-1" />
+            <div className="h-px bg-slate-800/60 my-1" />
 
-              <button
-                onClick={() => {
-                  onGenerateReport('direction');
-                  setMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
-              >
-                <Presentation className="h-4 w-4" />
-                Rapport direction
-              </button>
+            <button
+              onClick={() => {
+                onGenerateReport('direction');
+                setMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            >
+              <Presentation className="h-4 w-4" />
+              Rapport direction
+            </button>
 
-              <button
-                onClick={() => {
-                  onGenerateReport('conseil');
-                  setMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
-              >
-                <UsersIcon className="h-4 w-4" />
-                Rapport Conseil
-              </button>
+            <button
+              onClick={() => {
+                onGenerateReport('conseil');
+                setMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            >
+              <UsersIcon className="h-4 w-4" />
+              Rapport Conseil
+            </button>
 
-              <div className="h-px bg-slate-800/60 my-1" />
+            <div className="h-px bg-slate-800/60 my-1" />
 
-              <button
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
-              >
-                <Clock className="h-4 w-4" />
-                Planifier rapport auto
-              </button>
-            </div>
+            <button
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            >
+              <Clock className="h-4 w-4" />
+              Planifier rapport auto
+            </button>
           </div>
+        </div>
       )}
     </div>
   );
@@ -1369,11 +1377,9 @@ function DrillDownBreadcrumb({
 function DashboardViewPlaceholder({
   category,
   subCategory,
-  onDrillDown,
 }: {
   category: string;
   subCategory: string;
-  onDrillDown: (item: BreadcrumbItem) => void;
 }) {
   return (
     <div className="p-6">
@@ -1397,11 +1403,9 @@ function DashboardViewPlaceholder({
 function ComparativeViewPlaceholder({
   category,
   subCategory,
-  onDrillDown,
 }: {
   category: string;
   subCategory: string;
-  onDrillDown: (item: BreadcrumbItem) => void;
 }) {
   return (
     <div className="p-6">

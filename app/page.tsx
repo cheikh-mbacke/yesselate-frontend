@@ -1,124 +1,144 @@
-import Image from "next/image";
-import Link from "next/link";
+import Link from 'next/link';
 
-// ================================
-// Constants
-// ================================
+type ModuleCard = {
+  title: string;
+  description: string;
+  href: string;
+  badge?: string;
+};
 
-const COPY = {
-  title: "To get started, edit the page.tsx file.",
-  descriptionPrefix: "Looking for a starting point or more instructions? Head over to",
-  templates: "Templates",
-  learning: "Learning",
-  deployNow: "Deploy Now",
-  documentation: "Documentation",
-} as const;
-
-const LINKS = {
-  templates:
-    "https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app",
-  learning:
-    "https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app",
-  deploy:
-    "https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app",
-  docs:
-    "https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app",
-} as const;
-
-const IMAGES = {
-  nextLogo: {
-    src: "/next.svg",
-    alt: "Next.js logo",
-    width: 100,
-    height: 20,
-    sizes: "100px",
+const MODULES: ModuleCard[] = [
+  {
+    title: 'DMO',
+    description: 'Pilotage global, suivi des dossiers et arbitrages.',
+    href: '/dmo',
+    badge: 'Direction',
   },
-  vercelLogo: {
-    src: "/vercel.svg",
-    alt: "Vercel logomark",
-    width: 16,
-    height: 16,
-    sizes: "16px",
+  {
+    title: 'BMO',
+    description: 'Demandes, validations, décisions, historisation et pièces.',
+    href: '/bmo',
+    badge: 'Exécution',
   },
-} as const;
+  {
+    title: 'Achats',
+    description: 'Sourcing, consultations, marchés, fournisseurs, suivi.',
+    href: '/achats',
+    badge: 'Procurement',
+  },
+  {
+    title: 'Projets',
+    description: 'Planification, jalons, risques, livrables, coordination.',
+    href: '/projets',
+  },
+  {
+    title: 'Litiges',
+    description: 'Précontentieux, contentieux, pénalités, preuves, stratégie.',
+    href: '/litiges',
+    badge: 'Risque',
+  },
+  {
+    title: 'Paramètres',
+    description: 'Profils, rôles, sécurité, modèles, référentiels.',
+    href: '/settings',
+  },
+];
 
-// ================================
-// Component
-// ================================
-
-export default function Home() {
+function BadgePill({ children }: { children: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src={IMAGES.nextLogo.src}
-          alt={IMAGES.nextLogo.alt}
-          width={IMAGES.nextLogo.width}
-          height={IMAGES.nextLogo.height}
-          sizes={IMAGES.nextLogo.sizes}
-          priority
-        />
+    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+      {children}
+    </span>
+  );
+}
 
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            {COPY.title}
-          </h1>
-
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            {COPY.descriptionPrefix}{" "}
-            <Link
-              href={LINKS.templates}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open Vercel Templates in a new tab"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              {COPY.templates}
-            </Link>{" "}
-            or the{" "}
-            <Link
-              href={LINKS.learning}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open Next.js Learning Center in a new tab"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              {COPY.learning}
-            </Link>{" "}
-            center.
+export default function HomePage() {
+  return (
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-8">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">Console Interne</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Organisation (6 grands blocs) — accès rapide aux espaces métier.
           </p>
         </div>
 
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+        <div className="flex items-center gap-3">
           <Link
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href={LINKS.deploy}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open Vercel Deploy in a new tab"
+            href="/login"
+            className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
           >
-            <Image
-              className="dark:invert"
-              src={IMAGES.vercelLogo.src}
-              alt={IMAGES.vercelLogo.alt}
-              width={IMAGES.vercelLogo.width}
-              height={IMAGES.vercelLogo.height}
-              sizes={IMAGES.vercelLogo.sizes}
-            />
-            {COPY.deployNow}
+            Se connecter
           </Link>
-
           <Link
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href={LINKS.docs}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open Next.js Documentation in a new tab"
+            href="/bmo"
+            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            {COPY.documentation}
+            Entrer (BMO)
           </Link>
         </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="mb-5 flex items-start justify-between gap-6">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold">Espaces</h2>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Clique sur un bloc pour ouvrir son interface dédiée.
+              </p>
+            </div>
+
+            <div className="hidden items-center gap-2 sm:flex">
+              <BadgePill>Sécurisé</BadgePill>
+              <BadgePill>Traçable</BadgePill>
+              <BadgePill>Multi-bureaux</BadgePill>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {MODULES.map(m => (
+              <Link
+                key={m.href}
+                href={m.href}
+                className="group rounded-xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold tracking-tight">{m.title}</h3>
+                      {m.badge ? <BadgePill>{m.badge}</BadgePill> : null}
+                    </div>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">{m.description}</p>
+                  </div>
+                  <span className="mt-1 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-zinc-700 dark:group-hover:text-zinc-200">
+                    →
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+            Astuce : garde cette page comme "hub", et mets l'intelligence (command palette, raccourcis, notifications)
+            dans chaque module, pour éviter un accueil trop chargé.
+          </div>
+        </section>
+
+        <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+          <span>© {new Date().getFullYear()} Console interne</span>
+          <div className="flex items-center gap-4">
+            <Link href="/help" className="hover:text-zinc-900 dark:hover:text-zinc-200">
+              Aide
+            </Link>
+            <Link href="/security" className="hover:text-zinc-900 dark:hover:text-zinc-200">
+              Sécurité
+            </Link>
+            <Link href="/status" className="hover:text-zinc-900 dark:hover:text-zinc-200">
+              Statut
+            </Link>
+          </div>
+        </footer>
       </main>
     </div>
   );

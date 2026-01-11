@@ -12,6 +12,7 @@ type Props = {
   children: React.ReactNode;
   className?: string;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+  noPadding?: boolean;
 };
 
 const maxWidthClasses: Record<string, string> = {
@@ -25,7 +26,7 @@ const maxWidthClasses: Record<string, string> = {
   '5xl': 'max-w-5xl',
 };
 
-export function FluentModal({ open, title, onClose, children, className, maxWidth = '3xl' }: Props) {
+export function FluentModal({ open, title, onClose, children, className, maxWidth = '3xl', noPadding = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -74,7 +75,11 @@ export function FluentModal({ open, title, onClose, children, className, maxWidt
             </button>
           </div>
 
-          <div className="p-4 overflow-auto max-h-[calc(85vh-56px)]">
+          <div className={cn(
+            "overflow-auto max-h-[calc(85vh-56px)]",
+            !noPadding && "p-4",
+            noPadding && "!p-0 !overflow-visible"
+          )}>
             {children}
           </div>
         </div>

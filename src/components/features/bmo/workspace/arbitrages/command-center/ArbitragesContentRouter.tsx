@@ -25,6 +25,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { ArbitragesAnalyticsCharts } from '../analytics/ArbitragesAnalyticsCharts';
 
 interface ContentRouterProps {
   category: string;
@@ -232,6 +233,12 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Analytics Charts */}
+      <div className="p-6 rounded-xl border border-slate-700/50 bg-slate-900/30">
+        <h3 className="text-lg font-semibold text-slate-200 mb-4">Analytics & Tendances</h3>
+        <ArbitragesAnalyticsCharts />
       </div>
 
       {/* Bloc gouvernance */}

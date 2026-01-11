@@ -21,6 +21,16 @@ import {
   Target,
   Activity,
   ChevronRight,
+  Bell,
+  Download,
+  Share2,
+  CheckCircle2,
+  XCircle,
+  Minus,
+  Info,
+  Users,
+  Zap,
+  Link2,
 } from 'lucide-react';
 import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 
@@ -121,6 +131,13 @@ export function AnalyticsDetailPanel() {
 // KPI Detail Content
 // ================================
 function KPIDetailContent({ data }: { data: Record<string, unknown> }) {
+  const statusIcon = {
+    success: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
+    warning: <AlertTriangle className="h-4 w-4 text-amber-400" />,
+    critical: <XCircle className="h-4 w-4 text-red-400" />,
+    ok: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
+  }[data.status as string] || <Minus className="h-4 w-4 text-slate-400" />;
+
   return (
     <div className="space-y-4">
       {/* Title */}
@@ -129,15 +146,15 @@ function KPIDetailContent({ data }: { data: Record<string, unknown> }) {
         <p className="text-sm text-slate-500">{data.category as string}</p>
       </div>
 
-      {/* Value */}
+      {/* Résumé - Valeur, Delta, Statut */}
       <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2 mb-2">
           <span className="text-3xl font-bold text-slate-100">{data.value as string}</span>
           {data.unit && (
             <span className="text-sm text-slate-500">{data.unit as string}</span>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-3 mb-3">
           {data.trend === 'up' ? (
             <TrendingUp className="h-4 w-4 text-emerald-400" />
           ) : data.trend === 'down' ? (
@@ -157,50 +174,213 @@ function KPIDetailContent({ data }: { data: Record<string, unknown> }) {
               {data.trendValue as string}
             </span>
           )}
+          {data.status && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              {statusIcon}
+              <Badge
+                variant={
+                  data.status === 'success' || data.status === 'ok'
+                    ? 'default'
+                    : data.status === 'warning'
+                    ? 'warning'
+                    : 'destructive'
+                }
+                className="text-xs"
+              >
+                {data.status === 'success' || data.status === 'ok'
+                  ? 'OK'
+                  : data.status === 'warning'
+                  ? 'Attention'
+                  : 'Critique'}
+              </Badge>
+            </div>
+          )}
         </div>
+        {data.lastUpdate && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 pt-2 border-t border-slate-700/50">
+            <Clock className="h-3 w-3" />
+            <span>MàJ: {data.lastUpdate as string}</span>
+          </div>
+        )}
       </div>
 
-      {/* Status */}
-      {data.status && (
-        <div className="flex items-center gap-2">
-          <Badge
-            variant={
-              data.status === 'success'
-                ? 'default'
-                : data.status === 'warning'
-                ? 'warning'
-                : 'destructive'
-            }
-          >
-            {data.status === 'success' && 'OK'}
-            {data.status === 'warning' && 'Attention'}
-            {data.status === 'critical' && 'Critique'}
-          </Badge>
+      {/* Seuils / Règles */}
+      {(data.thresholds || data.metadata?.threshold) && (
+        <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Target className="h-3.5 w-3.5 text-blue-400" />
+            <h5 className="text-xs font-semibold text-slate-400 uppercase">Seuils</h5>
+          </div>
+          <div className="space-y-1.5 text-xs">
+            {data.metadata?.threshold?.success && (
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Succès</span>
+                <Badge variant="default" className="text-xs">
+                  ≥ {data.metadata.threshold.success}%
+                </Badge>
+              </div>
+            )}
+            {data.metadata?.threshold?.warning && (
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Attention</span>
+                <Badge variant="warning" className="text-xs">
+                  ≥ {data.metadata.threshold.warning}%
+                </Badge>
+              </div>
+            )}
+            {data.metadata?.threshold?.critical && (
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Critique</span>
+                <Badge variant="destructive" className="text-xs">
+                  &lt; {data.metadata.threshold.critical}%
+                </Badge>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Metadata */}
-      <div className="space-y-2 text-sm">
-        {data.target && (
-          <div className="flex justify-between">
-            <span className="text-slate-500">Objectif</span>
-            <span className="text-slate-300 font-medium">{data.target as string}</span>
+      {/* Contexte Métier */}
+      {(data.metadata?.owner ||
+        data.metadata?.dataSource ||
+        data.metadata?.updateFrequency ||
+        data.metadata?.formula) && (
+        <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Info className="h-3.5 w-3.5 text-blue-400" />
+            <h5 className="text-xs font-semibold text-slate-400 uppercase">Contexte</h5>
           </div>
-        )}
-        {data.lastUpdate && (
-          <div className="flex justify-between">
-            <span className="text-slate-500">Dernière mise à jour</span>
-            <span className="text-slate-300">{data.lastUpdate as string}</span>
+          <div className="space-y-1.5 text-xs">
+            {data.metadata?.owner && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Propriétaire</span>
+                <span className="text-slate-300 font-medium">{data.metadata.owner}</span>
+              </div>
+            )}
+            {data.metadata?.dataSource && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Source</span>
+                <span className="text-slate-300 font-medium">{data.metadata.dataSource}</span>
+              </div>
+            )}
+            {data.metadata?.updateFrequency && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Fréquence</span>
+                <span className="text-slate-300 font-medium">{data.metadata.updateFrequency}</span>
+              </div>
+            )}
+            {data.metadata?.formula && (
+              <div className="pt-1.5 border-t border-slate-700/50">
+                <span className="text-slate-500 block mb-1">Formule</span>
+                <code className="text-xs font-mono text-blue-400 bg-slate-900/50 px-2 py-1 rounded">
+                  {data.metadata.formula}
+                </code>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Description */}
       {data.description && (
         <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="h-3.5 w-3.5 text-blue-400" />
+            <h5 className="text-xs font-semibold text-slate-400 uppercase">Description</h5>
+          </div>
           <p className="text-sm text-slate-400">{data.description as string}</p>
         </div>
       )}
+
+      {/* Historique Mini (placeholder) */}
+      {data.hasHistory && (
+        <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Activity className="h-3.5 w-3.5 text-blue-400" />
+              <h5 className="text-xs font-semibold text-slate-400 uppercase">Historique 7j</h5>
+            </div>
+            <span className="text-xs text-slate-500">Voir plus →</span>
+          </div>
+          <div className="h-16 bg-slate-900/50 rounded flex items-center justify-center">
+            <span className="text-xs text-slate-600">Sparkline graphique</span>
+          </div>
+        </div>
+      )}
+
+      {/* Liens - KPIs liés, Alertes liées */}
+      {(data.relatedKpiIds || data.relatedAlertIds || data.relatedReportIds) && (
+        <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Link2 className="h-3.5 w-3.5 text-blue-400" />
+            <h5 className="text-xs font-semibold text-slate-400 uppercase">Liens</h5>
+          </div>
+          <div className="space-y-1.5 text-xs">
+            {data.relatedKpiIds && Array.isArray(data.relatedKpiIds) && data.relatedKpiIds.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">KPIs liés</span>
+                <span className="text-slate-300 font-medium">{data.relatedKpiIds.length}</span>
+              </div>
+            )}
+            {data.relatedAlertIds && Array.isArray(data.relatedAlertIds) && data.relatedAlertIds.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Alertes liées</span>
+                <Badge variant="warning" className="text-xs">
+                  {data.relatedAlertIds.length}
+                </Badge>
+              </div>
+            )}
+            {data.relatedReportIds && Array.isArray(data.relatedReportIds) && data.relatedReportIds.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Rapports liés</span>
+                <span className="text-slate-300 font-medium">{data.relatedReportIds.length}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Actions Rapides */}
+      <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="h-3.5 w-3.5 text-blue-400" />
+          <h5 className="text-xs font-semibold text-slate-400 uppercase">Actions rapides</h5>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+          >
+            <Download className="h-3 w-3 mr-1" />
+            Exporter
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+          >
+            <Bell className="h-3 w-3 mr-1" />
+            Alerte
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+          >
+            <Share2 className="h-3 w-3 mr-1" />
+            Partager
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+          >
+            <Users className="h-3 w-3 mr-1" />
+            Assigner
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,62 +1,550 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+
+/**
+ * Centre de Commandement Audit - Version 3.0
+ * Plateforme de surveillance et conformité système
+ * Architecture cohérente avec la page Analytics et Gouvernance
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAuditWorkspaceStore } from '@/lib/stores/auditWorkspaceStore';
-import { useBMOStore } from '@/lib/stores';
-import { AuditWorkspaceTabs, AuditLiveCounters, AuditCommandPalette, AuditWorkspaceContent, AuditStatsModal, AuditDirectionPanel } from '@/components/features/bmo/workspace/audit';
-import { Shield, Search, BarChart3, MoreHorizontal, Download, Keyboard, PanelRight, PanelRightClose, LayoutDashboard, ClipboardList, Maximize, Minimize, RefreshCw, Zap, Lock, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Shield,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useAuditCommandCenterStore,
+  type AuditMainCategory,
+} from '@/lib/stores/auditCommandCenterStore';
+import {
+  AuditCommandSidebar,
+  AuditSubNavigation,
+  AuditKPIBar,
+  AuditContentRouter,
+  ActionsMenu,
+  AuditModals,
+  AuditDetailPanel,
+  AuditFiltersPanel,
+  auditCategories,
+} from '@/components/features/bmo/audit/command-center';
+import { AuditCommandPalette } from '@/components/features/bmo/workspace/audit/AuditCommandPalette';
 
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  events: [
+    { id: 'all', label: 'Tous les événements', badge: 156 },
+    { id: 'critical', label: 'Critiques', badge: 8, badgeType: 'critical' },
+    { id: 'warning', label: 'Avertissements', badge: 24, badgeType: 'warning' },
+    { id: 'info', label: 'Informatifs' },
+    { id: 'resolved', label: 'Résolus' },
+  ],
+  security: [
+    { id: 'all', label: 'Toutes', badge: 12 },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'threats', label: 'Menaces', badge: 5, badgeType: 'warning' },
+    { id: 'vulnerabilities', label: 'Vulnérabilités', badge: 4 },
+  ],
+  compliance: [
+    { id: 'all', label: 'Tout', badge: 8 },
+    { id: 'violations', label: 'Violations', badge: 2, badgeType: 'warning' },
+    { id: 'checks', label: 'Vérifications' },
+    { id: 'reports', label: 'Rapports' },
+  ],
+  performance: [
+    { id: 'all', label: 'Tous' },
+    { id: 'metrics', label: 'Métriques' },
+    { id: 'alerts', label: 'Alertes', badge: 6, badgeType: 'warning' },
+    { id: 'optimization', label: 'Optimisations' },
+  ],
+  'system-logs': [
+    { id: 'all', label: 'Tous', badge: 234 },
+    { id: 'errors', label: 'Erreurs', badge: 12, badgeType: 'warning' },
+    { id: 'warnings', label: 'Avertissements', badge: 34 },
+    { id: 'info', label: 'Info' },
+  ],
+  traceability: [
+    { id: 'all', label: 'Tout' },
+    { id: 'actions', label: 'Actions utilisateur' },
+    { id: 'changes', label: 'Modifications', badge: 45 },
+    { id: 'access', label: 'Accès' },
+  ],
+  reports: [
+    { id: 'all', label: 'Tous', badge: 24 },
+    { id: 'recent', label: 'Récents' },
+    { id: 'scheduled', label: 'Planifiés' },
+    { id: 'custom', label: 'Personnalisés' },
+  ],
+  settings: [
+    { id: 'general', label: 'Général' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'retention', label: 'Rétention' },
+    { id: 'exports', label: 'Exports' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function AuditPage() {
-  const { openTab, commandPaletteOpen, setCommandPaletteOpen, statsModalOpen, setStatsModalOpen, directionPanelOpen, setDirectionPanelOpen, viewMode, setViewMode } = useAuditWorkspaceStore();
-  const { addToast, addActionLog, currentUser } = useBMOStore();
-  const [refreshKey, setRefreshKey] = useState(0); const [moreMenuOpen, setMoreMenuOpen] = useState(false); const [fullscreen, setFullscreen] = useState(false);
+  return <AuditPageContent />;
+}
 
-  const handleRefresh = useCallback(() => { setRefreshKey(k => k + 1); addToast('Données rafraîchies', 'success'); addActionLog({ userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role, action: 'audit', module: 'audit', targetId: 'REFRESH', targetType: 'system', targetLabel: 'Rafraîchissement', details: 'Rafraîchissement manuel des événements', bureau: 'BMO' }); }, [addToast, addActionLog, currentUser]);
-  const handleOpenQueue = useCallback((queue: string, title: string, icon: string) => { const tabId = queue === 'all' ? 'inbox:all' : `inbox:${queue}`; openTab({ type: 'inbox', id: tabId, title, icon, data: { queue } }); setViewMode('workspace'); }, [openTab, setViewMode]);
-  const handleExport = useCallback(async () => { addToast('Export des événements en cours...', 'info'); setTimeout(() => addToast('Export généré avec succès', 'success'), 1500); }, [addToast]);
+function AuditPageContent() {
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useAuditCommandCenterStore();
 
-  useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setCommandPaletteOpen(true); } if (e.key === 'Escape' && commandPaletteOpen) setCommandPaletteOpen(false); if (e.key === 'r' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRefresh(); } if (e.key === 'i' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setStatsModalOpen(true); } if (e.key === 'F11') { e.preventDefault(); setFullscreen(f => !f); } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, setStatsModalOpen]);
+  // État local pour refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return auditCategories.find((c) => c.id === activeCategory)?.label || 'Audit';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
+  }, []);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as AuditMainCategory, 'all', null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950", fullscreen && "fixed inset-0 z-50")}>
-      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-cyan-500/20"><Shield className="w-5 h-5 text-cyan-400" /></div>
-              <div><h1 className="text-xl font-bold text-slate-200">Audit & Traçabilité</h1><p className="text-sm text-slate-400">Surveillance et conformité système</p></div>
-            </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <AuditCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-lg bg-slate-800/50">
-                <button onClick={() => setViewMode('dashboard')} className={cn("p-2 rounded-md transition-colors", viewMode === 'dashboard' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Dashboard"><LayoutDashboard className="w-4 h-4" /></button>
-                <button onClick={() => setViewMode('workspace')} className={cn("p-2 rounded-md transition-colors", viewMode === 'workspace' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Workspace"><ClipboardList className="w-4 h-4" /></button>
-              </div>
-              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-cyan-500/50 hover:bg-slate-800 transition-colors"><Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-xs font-mono text-slate-500">⌘K</kbd></button>
-              <button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><RefreshCw className="w-4 h-4 text-slate-400" /></button>
-              <button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><BarChart3 className="w-4 h-4 text-slate-400" /></button>
-              <button onClick={() => setDirectionPanelOpen(!directionPanelOpen)} className={cn("p-2.5 rounded-xl border transition-colors", directionPanelOpen ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-400" : "border-slate-700/50 hover:bg-slate-800/50 text-slate-400")}>{directionPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}</button>
-              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}</button>
-              <div className="relative">
-                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><MoreHorizontal className="w-4 h-4 text-slate-400" /></button>
-                {moreMenuOpen && <><div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} /><div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-700/50 bg-slate-900 shadow-xl z-20 py-2"><button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3"><Download className="w-4 h-4 text-slate-400" />Exporter</button><div className="border-t border-slate-700/50 my-2" /><div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div></div></>}
-              </div>
+              <Shield className="h-5 w-5 text-cyan-400" />
+              <h1 className="text-base font-semibold text-slate-200">Audit & Traçabilité</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v3.0
+              </Badge>
             </div>
           </div>
-        </div>
-        {viewMode === 'workspace' && <div className="px-6 pb-2"><AuditWorkspaceTabs /></div>}
-      </header>
-      <main className={cn("flex-1 overflow-auto", directionPanelOpen && "mr-80")}><div className="p-6 space-y-6"><AuditLiveCounters key={refreshKey} onOpenQueue={handleOpenQueue} />{viewMode === 'workspace' ? <AuditWorkspaceContent /> : <DashboardView onOpenQueue={handleOpenQueue} />}</div></main>
-      <AuditDirectionPanel open={directionPanelOpen} onClose={() => setDirectionPanelOpen(false)} />
-      <AuditCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenStats={() => setStatsModalOpen(true)} onRefresh={handleRefresh} />
-      <AuditStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <AuditSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <AuditKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <AuditContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              156 événements • 12 alertes sécurité • 24 rapports
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <AuditCommandPalette
+          open={commandPaletteOpen}
+          onClose={toggleCommandPalette}
+          onOpenStats={() => openModal('stats')}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Modals */}
+      <AuditModals />
+
+      {/* Detail Panel */}
+      <AuditDetailPanel />
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <AuditFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            // Convertir les filtres au format du store
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value);
+              }
+            });
+            closeModal();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function DashboardView({ onOpenQueue }: { onOpenQueue: (queue: string, title: string, icon: string) => void }) {
-  return (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('critical', 'Critiques', '⚡')}><Zap className="w-8 h-8 text-rose-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">Événements Critiques</h3><p className="text-sm text-slate-400">Alertes nécessitant une action immédiate</p></div>
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('security', 'Sécurité', '🔒')}><Lock className="w-8 h-8 text-rose-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">Sécurité</h3><p className="text-sm text-slate-400">Événements liés à la sécurité du système</p></div>
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('new', 'Nouveaux', '🆕')}><Clock className="w-8 h-8 text-amber-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">Nouveaux</h3><p className="text-sm text-slate-400">Événements non encore examinés</p></div>
-  </div>);
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Événement critique détecté',
+      time: 'il y a 5 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Alerte sécurité',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Rapport d\'audit disponible',
+      time: 'il y a 1h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: 'Violation de conformité',
+      time: 'il y a 2h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Nouveau log système',
+      time: 'hier',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-cyan-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
+  );
 }

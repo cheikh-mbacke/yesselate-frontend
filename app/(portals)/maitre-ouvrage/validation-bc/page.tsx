@@ -886,7 +886,13 @@ function ValidationBCPageContent() {
                 )}
                 
                 {activeCategory === 'overview' && activeSubCategory === 'all' && (
-                  <ValidationDashboardCharts stats={statsData} />
+                  statsData ? (
+                    <ValidationDashboardCharts data={statsData} />
+                  ) : (
+                    <div className="flex items-center justify-center h-64 text-slate-400">
+                      Chargement des statistiques...
+                    </div>
+                  )
                 )}
                 
                 {activeCategory === 'overview' && activeSubCategory === 'kanban' && (

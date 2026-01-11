@@ -34,8 +34,7 @@ export function DelegationsDetailPanel() {
 
   const handleOpenFullModal = () => {
     if (type === 'delegation') {
-      // Ouvrir le viewer de délégation
-      // openModal('delegation-detail', { delegationId: detailPanel.entityId });
+      openModal('delegation-detail', { delegationId: detailPanel.entityId });
     } else if (type === 'stat') {
       openModal('stats');
     } else if (type === 'alert') {

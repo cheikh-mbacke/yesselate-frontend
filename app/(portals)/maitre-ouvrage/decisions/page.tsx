@@ -1,62 +1,414 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+
+/**
+ * Centre de Commandement Decisions - Version 2.0
+ * Plateforme de gestion et suivi des décisions
+ * Architecture cohérente avec la page Analytics
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useDecisionsWorkspaceStore } from '@/lib/stores/decisionsWorkspaceStore';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Gavel,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useDecisionsCommandCenterStore,
+  type DecisionsMainCategory,
+} from '@/lib/stores/decisionsCommandCenterStore';
+import {
+  DecisionsCommandSidebar,
+  DecisionsSubNavigation,
+  DecisionsKPIBar,
+  DecisionsContentRouter,
+  DecisionsModals,
+  DecisionsDetailPanel,
+  decisionsCategories,
+} from '@/components/features/bmo/workspace/decisions/command-center';
+import { DecisionsCommandPalette, DecisionsStatsModal, DecisionsDirectionPanel } from '@/components/features/bmo/workspace/decisions';
 import { useBMOStore } from '@/lib/stores';
-import { DecisionsWorkspaceTabs, DecisionsLiveCounters, DecisionsCommandPalette, DecisionsWorkspaceContent, DecisionsStatsModal, DecisionsDirectionPanel } from '@/components/features/bmo/workspace/decisions';
-import { Gavel, Search, BarChart3, MoreHorizontal, Download, Keyboard, PanelRight, PanelRightClose, LayoutDashboard, ClipboardList, Maximize, Minimize, RefreshCw, Zap, Target, Clock } from 'lucide-react';
 
-export default function DecisionsPage() {
-  const { openTab, commandPaletteOpen, setCommandPaletteOpen, statsModalOpen, setStatsModalOpen, directionPanelOpen, setDirectionPanelOpen, viewMode, setViewMode } = useDecisionsWorkspaceStore();
-  const { addToast, addActionLog, currentUser } = useBMOStore();
-  const [refreshKey, setRefreshKey] = useState(0); const [moreMenuOpen, setMoreMenuOpen] = useState(false); const [fullscreen, setFullscreen] = useState(false);
-
-  const handleRefresh = useCallback(() => { setRefreshKey(k => k + 1); addToast('Données rafraîchies', 'success'); addActionLog({ userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role, action: 'audit', module: 'decisions', targetId: 'REFRESH', targetType: 'system', targetLabel: 'Rafraîchissement', details: 'Rafraîchissement manuel des décisions', bureau: 'BMO' }); }, [addToast, addActionLog, currentUser]);
-  const handleOpenQueue = useCallback((queue: string, title: string, icon: string) => { const tabId = queue === 'all' ? 'inbox:all' : `inbox:${queue}`; openTab({ type: 'inbox', id: tabId, title, icon, data: { queue } }); setViewMode('workspace'); }, [openTab, setViewMode]);
-  const handleExport = useCallback(async () => { addToast('Export des décisions en cours...', 'info'); setTimeout(() => addToast('Export généré avec succès', 'success'), 1500); }, [addToast]);
-
-  useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setCommandPaletteOpen(true); } if (e.key === 'Escape' && commandPaletteOpen) setCommandPaletteOpen(false); if (e.key === 'r' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRefresh(); } if (e.key === 'i' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setStatsModalOpen(true); } if (e.key === 'F11') { e.preventDefault(); setFullscreen(f => !f); } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, setStatsModalOpen]);
-
-  return (
-    <div className={cn("h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950", fullscreen && "fixed inset-0 z-50")}>
-      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-rose-500/20"><Gavel className="w-5 h-5 text-rose-400" /></div>
-              <div><h1 className="text-xl font-bold text-slate-200">Centre de Décisions</h1><p className="text-sm text-slate-400">Gestion et suivi des prises de décision</p></div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-lg bg-slate-800/50">
-                <button onClick={() => setViewMode('dashboard')} className={cn("p-2 rounded-md transition-colors", viewMode === 'dashboard' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Dashboard"><LayoutDashboard className="w-4 h-4" /></button>
-                <button onClick={() => setViewMode('workspace')} className={cn("p-2 rounded-md transition-colors", viewMode === 'workspace' ? "bg-slate-700 shadow-sm text-slate-200" : "text-slate-400 hover:bg-slate-700/50")} title="Workspace"><ClipboardList className="w-4 h-4" /></button>
-              </div>
-              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-rose-500/50 hover:bg-slate-800 transition-colors"><Search className="w-4 h-4" /><span className="hidden md:inline">Rechercher...</span><kbd className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-xs font-mono text-slate-500">⌘K</kbd></button>
-              <button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><RefreshCw className="w-4 h-4 text-slate-400" /></button>
-              <button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><BarChart3 className="w-4 h-4 text-slate-400" /></button>
-              <button onClick={() => setDirectionPanelOpen(!directionPanelOpen)} className={cn("p-2.5 rounded-xl border transition-colors", directionPanelOpen ? "border-rose-500/50 bg-rose-500/10 text-rose-400" : "border-slate-700/50 hover:bg-slate-800/50 text-slate-400")}>{directionPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}</button>
-              <button onClick={() => setFullscreen(f => !f)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">{fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}</button>
-              <div className="relative">
-                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors"><MoreHorizontal className="w-4 h-4 text-slate-400" /></button>
-                {moreMenuOpen && <><div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} /><div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-700/50 bg-slate-900 shadow-xl z-20 py-2"><button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3"><Download className="w-4 h-4 text-slate-400" />Exporter</button><div className="border-t border-slate-700/50 my-2" /><div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div></div></>}
-              </div>
-            </div>
-          </div>
-        </div>
-        {viewMode === 'workspace' && <div className="px-6 pb-2"><DecisionsWorkspaceTabs /></div>}
-      </header>
-      <main className={cn("flex-1 overflow-auto", directionPanelOpen && "mr-80")}><div className="p-6 space-y-6"><DecisionsLiveCounters key={refreshKey} onOpenQueue={handleOpenQueue} />{viewMode === 'workspace' ? <DecisionsWorkspaceContent /> : <DashboardView onOpenQueue={handleOpenQueue} />}</div></main>
-      <DecisionsDirectionPanel open={directionPanelOpen} onClose={() => setDirectionPanelOpen(false)} />
-      <DecisionsCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenStats={() => setStatsModalOpen(true)} onRefresh={handleRefresh} />
-      <DecisionsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
-    </div>
-  );
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
 }
 
-function DashboardView({ onOpenQueue }: { onOpenQueue: (queue: string, title: string, icon: string) => void }) {
-  return (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('critical', 'Critiques', '⚡')}><Zap className="w-8 h-8 text-rose-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">Décisions Critiques</h3><p className="text-sm text-slate-400">Décisions urgentes en attente de validation</p></div>
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('strategique', 'Stratégiques', '🎯')}><Target className="w-8 h-8 text-indigo-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">Stratégiques</h3><p className="text-sm text-slate-400">Décisions à impact stratégique long terme</p></div>
-    <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50 hover:bg-slate-800/50 transition-all cursor-pointer" onClick={() => onOpenQueue('pending', 'En attente', '⏳')}><Clock className="w-8 h-8 text-amber-400 mb-3" /><h3 className="font-semibold text-slate-200 mb-2">En Attente</h3><p className="text-sm text-slate-400">Décisions en cours de validation</p></div>
-  </div>);
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  pending: [
+    { id: 'all', label: 'Toutes', badge: 23 },
+    { id: 'recent', label: 'Récentes', badge: 8 },
+    { id: 'old', label: 'Anciennes', badge: 15, badgeType: 'warning' },
+    { id: 'blocked', label: 'Bloquées', badge: 3, badgeType: 'critical' },
+  ],
+  critical: [
+    { id: 'all', label: 'Toutes', badge: 7, badgeType: 'critical' },
+    { id: 'immediate', label: 'Immédiates', badge: 3, badgeType: 'critical' },
+    { id: 'urgent', label: 'Urgentes', badge: 4, badgeType: 'warning' },
+  ],
+  strategique: [
+    { id: 'all', label: 'Toutes', badge: 12 },
+    { id: 'pending', label: 'En attente', badge: 5, badgeType: 'warning' },
+    { id: 'approved', label: 'Approuvées', badge: 7 },
+  ],
+  operationnel: [
+    { id: 'all', label: 'Toutes', badge: 18 },
+    { id: 'pending', label: 'En attente', badge: 8, badgeType: 'warning' },
+    { id: 'approved', label: 'Approuvées', badge: 10 },
+  ],
+  approved: [
+    { id: 'all', label: 'Toutes', badge: 45 },
+    { id: 'today', label: "Aujourd'hui", badge: 12 },
+    { id: 'this-week', label: 'Cette semaine', badge: 28 },
+    { id: 'this-month', label: 'Ce mois', badge: 45 },
+  ],
+  history: [
+    { id: 'all', label: 'Tout' },
+    { id: 'recent', label: 'Récent' },
+    { id: 'archived', label: 'Archivé' },
+  ],
+  analytics: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'performance', label: 'Performance' },
+    { id: 'trends', label: 'Tendances' },
+  ],
+  types: [
+    { id: 'strategique', label: 'Stratégiques', badge: 12 },
+    { id: 'operationnel', label: 'Opérationnelles', badge: 18 },
+    { id: 'financier', label: 'Financières', badge: 8 },
+    { id: 'rh', label: 'RH', badge: 5 },
+    { id: 'technique', label: 'Techniques', badge: 9 },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
+export default function DecisionsPage() {
+  return <DecisionsPageContent />;
+}
+
+function DecisionsPageContent() {
+  const { addToast, addActionLog, currentUser } = useBMOStore();
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+  } = useDecisionsCommandCenterStore();
+
+  // État local pour refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+  const [directionPanelOpen, setDirectionPanelOpen] = useState(false);
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return decisionsCategories.find((c) => c.id === activeCategory)?.label || 'Décisions';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    addToast('Données rafraîchies', 'success');
+    addActionLog({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'audit',
+      module: 'decisions',
+      targetId: 'REFRESH',
+      targetType: 'system',
+      targetLabel: 'Rafraîchissement',
+      details: 'Rafraîchissement manuel des décisions',
+      bureau: 'BMO',
+    });
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
+  }, [addToast, addActionLog, currentUser]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as DecisionsMainCategory, 'all', null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        setStatsModalOpen(true);
+        return;
+      }
+
+      // Ctrl+R : Refresh
+      if (isMod && e.key === 'r') {
+        e.preventDefault();
+        handleRefresh();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, handleRefresh]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <DecisionsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Gavel className="h-5 w-5 text-rose-400" />
+              <h1 className="text-base font-semibold text-slate-200">Décisions</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStatsModalOpen(true)}
+              className="h-8 w-8 p-0 relative text-slate-500 hover:text-slate-300"
+              title="Statistiques"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                3
+              </span>
+            </Button>
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <DecisionsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <DecisionsKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <DecisionsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              23 en attente • 7 critiques • 45 approuvées
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <DecisionsCommandPalette
+          open={commandPaletteOpen}
+          onClose={toggleCommandPalette}
+          onOpenStats={() => setStatsModalOpen(true)}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* Stats Modal */}
+      {statsModalOpen && (
+        <DecisionsStatsModal
+          open={statsModalOpen}
+          onClose={() => setStatsModalOpen(false)}
+        />
+      )}
+
+      {/* Direction Panel */}
+      {directionPanelOpen && (
+        <DecisionsDirectionPanel
+          open={directionPanelOpen}
+          onClose={() => setDirectionPanelOpen(false)}
+        />
+      )}
+
+      {/* Modals */}
+      <DecisionsModals />
+
+      {/* Detail Panel */}
+      <DecisionsDetailPanel />
+    </div>
+  );
 }

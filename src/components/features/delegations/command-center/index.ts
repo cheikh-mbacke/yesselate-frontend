@@ -8,5 +8,10 @@ export type { SidebarCategory } from './DelegationsCommandSidebar';
 export { DelegationsSubNavigation } from './DelegationsSubNavigation';
 export { DelegationsKPIBar } from './DelegationsKPIBar';
 export { DelegationsContentRouter } from './DelegationsContentRouter';
+export { DelegationsModals } from './DelegationsModals';
+export { DelegationsDetailPanel } from './DelegationsDetailPanel';
+export { DelegationsBatchActionsBar } from './DelegationsBatchActionsBar';
+export { DelegationsFiltersPanel } from './DelegationsFiltersPanel';
 export { ActionsMenu } from './ActionsMenu';
+export { DelegationDetailModal } from './modals/DelegationDetailModal';
 

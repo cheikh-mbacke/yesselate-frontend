@@ -6,7 +6,18 @@
 'use client';
 
 import React from 'react';
-import { Users } from 'lucide-react';
+import {
+  Users,
+  Plane,
+  Wallet,
+  AlertTriangle,
+  Clock,
+  CheckCircle,
+  BarChart3,
+} from 'lucide-react';
+import { DemandesRHOverviewView } from './views/DemandesRHOverviewView';
+import { DemandesRHCongesView } from './views/DemandesRHCongesView';
+import { DemandesRHDepensesView } from './views/DemandesRHDepensesView';
 
 interface ContentRouterProps {
   category: string;
@@ -17,16 +28,83 @@ export const DemandesRHContentRouter = React.memo(function DemandesRHContentRout
   category,
   subCategory,
 }: ContentRouterProps) {
-  // Vue par défaut pour la vue overview
+  // Vue d'ensemble
   if (category === 'overview') {
-    return <OverviewContent />;
+    return <DemandesRHOverviewView />;
+  }
+
+  // Vue Congés
+  if (category === 'conges') {
+    return <DemandesRHCongesView subCategory={subCategory} />;
+  }
+
+  // Vue Dépenses
+  if (category === 'depenses') {
+    return <DemandesRHDepensesView subCategory={subCategory} />;
+  }
+
+  // Vue Déplacements (placeholder)
+  if (category === 'deplacements') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="Plane" />;
+  }
+
+  // Vue Avances (placeholder)
+  if (category === 'avances') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="Wallet" />;
+  }
+
+  // Vue Urgentes (placeholder)
+  if (category === 'urgent') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="AlertTriangle" />;
+  }
+
+  // Vue En attente (placeholder)
+  if (category === 'pending') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="Clock" />;
+  }
+
+  // Vue Validées (placeholder)
+  if (category === 'validated') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="CheckCircle" />;
+  }
+
+  // Vue Analytics (placeholder)
+  if (category === 'analytics') {
+    return <PlaceholderView category={category} subCategory={subCategory} icon="BarChart3" />;
   }
 
   // Autres vues (placeholder)
+  return <PlaceholderView category={category} subCategory={subCategory} icon="Users" />;
+});
+
+// ================================
+// Placeholder View
+// ================================
+function PlaceholderView({
+  category,
+  subCategory,
+  icon: iconName,
+}: {
+  category: string;
+  subCategory: string;
+  icon: string;
+}) {
+  const IconMap: Record<string, React.ElementType> = {
+    Plane,
+    Wallet,
+    AlertTriangle,
+    Clock,
+    CheckCircle,
+    BarChart3,
+    Users,
+  };
+
+  const Icon = IconMap[iconName] || Users;
+
   return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center">
-        <Users className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+        <Icon className="w-16 h-16 text-slate-600 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-slate-300 mb-2">
           {category} - {subCategory}
         </h3>
@@ -34,21 +112,5 @@ export const DemandesRHContentRouter = React.memo(function DemandesRHContentRout
       </div>
     </div>
   );
-});
-
-// ================================
-// Overview Content
-// ================================
-const OverviewContent = React.memo(function OverviewContent() {
-  return (
-    <div className="space-y-6">
-      <div className="p-6 rounded-xl border border-slate-700/50 bg-slate-900/50">
-        <h2 className="text-xl font-semibold text-slate-200 mb-4">Vue d'ensemble des Demandes RH</h2>
-        <p className="text-slate-400">
-          Sélectionnez une catégorie dans la sidebar pour voir les détails.
-        </p>
-      </div>
-    </div>
-  );
-});
+}
 

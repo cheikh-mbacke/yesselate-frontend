@@ -25,6 +25,9 @@ import {
   DelegationsSubNavigation,
   DelegationsKPIBar,
   DelegationsContentRouter,
+  DelegationsModals,
+  DelegationsDetailPanel,
+  DelegationsBatchActionsBar,
   ActionsMenu,
   delegationsCategories,
 } from '@/components/features/delegations/command-center';
@@ -396,6 +399,15 @@ function DelegationsPageContent() {
       {/* Command Palette */}
       {commandPaletteOpen && <DelegationCommandPalette />}
 
+      {/* Modals */}
+      <DelegationsModals />
+
+      {/* Detail Panel */}
+      <DelegationsDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <DelegationsBatchActionsBar />
+
       {/* Notifications Panel */}
       {notificationsPanelOpen && (
         <NotificationsPanel onClose={toggleNotificationsPanel} />
@@ -408,13 +420,57 @@ function DelegationsPageContent() {
 // Notifications Panel
 // ================================
 function NotificationsPanel({ onClose }: { onClose: () => void }) {
-  const notifications: Array<{
-    id: string;
-    type: 'critical' | 'warning' | 'info';
-    title: string;
-    time: string;
-    read: boolean;
-  }> = [];
+  const { stats } = useDelegationsStats(false);
+  
+  // Générer les notifications depuis les stats
+  const notifications = useMemo(() => {
+    const notifs: Array<{
+      id: string;
+      type: 'critical' | 'warning' | 'info';
+      title: string;
+      time: string;
+      read: boolean;
+    }> = [];
+
+    if (!stats) return notifs;
+
+    // Délégations expirant bientôt
+    if (stats.expiringSoon > 0) {
+      notifs.push({
+        id: 'expiring-soon',
+        type: stats.expiringSoon > 5 ? 'critical' : 'warning',
+        title: `${stats.expiringSoon} délégation(s) expirant bientôt`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    // Beaucoup de révoquées
+    if (stats.revoked > 10) {
+      notifs.push({
+        id: 'high-revoked',
+        type: 'warning',
+        title: `${stats.revoked} délégations révoquées - vérifier les anomalies`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    // Usage élevé
+    if (stats.totalUsage > 1000) {
+      notifs.push({
+        id: 'high-usage',
+        type: 'info',
+        title: `Usage total élevé : ${stats.totalUsage} utilisations`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    return notifs;
+  }, [stats]);
+  
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <>
@@ -427,9 +483,11 @@ function NotificationsPanel({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-2">
             <Bell className="h-4 w-4 text-purple-500" />
             <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
-            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
-              0 nouvelles
-            </Badge>
+            {unreadCount > 0 && (
+              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                {unreadCount} nouvelle{unreadCount > 1 ? 's' : ''}
+              </Badge>
+            )}
           </div>
           <Button
             variant="ghost"

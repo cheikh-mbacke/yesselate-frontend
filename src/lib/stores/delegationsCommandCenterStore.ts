@@ -51,7 +51,8 @@ export type DelegationsModalType =
   | 'settings'
   | 'shortcuts'
   | 'help'
-  | 'confirm';
+  | 'confirm'
+  | 'delegation-detail';
 
 // État des modals
 export interface DelegationsModalState {

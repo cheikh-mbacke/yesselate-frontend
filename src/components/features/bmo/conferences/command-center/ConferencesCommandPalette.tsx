@@ -21,6 +21,7 @@ import {
   Unlock,
   ArrowRight,
   X,
+  Download,
 } from 'lucide-react';
 import { useConferencesCommandCenterStore } from '@/lib/stores/conferencesCommandCenterStore';
 import { conferencesCategories } from './ConferencesCommandSidebar';
@@ -95,7 +96,7 @@ export function ConferencesCommandPalette() {
       type: 'action',
       label: 'Exporter',
       description: 'Exporter les données',
-      icon: Search,
+      icon: Download,
       category: 'Actions',
       action: () => {
         openModal('export', {});

@@ -18,6 +18,7 @@ import {
   EmployeesContractTypesChart,
   EmployeesSeniorityChart,
 } from '../analytics/EmployeesAnalyticsCharts';
+import { AllEmployeesView } from './views';
 
 interface ContentRouterProps {
   category: string;
@@ -31,6 +32,11 @@ export const EmployesContentRouter = React.memo(function EmployesContentRouter({
   // Dashboard par défaut pour la vue overview
   if (category === 'overview') {
     return <OverviewDashboard />;
+  }
+
+  // Vue Liste de tous les employés
+  if (category === 'all') {
+    return <AllEmployeesView subCategory={subCategory} />;
   }
 
   // Autres vues (placeholder pour l'instant)

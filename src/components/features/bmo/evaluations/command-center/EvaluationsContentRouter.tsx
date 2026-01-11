@@ -21,34 +21,45 @@ interface EvaluationsContentRouterProps {
   category: string;
   subCategory: string | null;
   onOpenEvaluation: (evaluation: Evaluation) => void;
+  selectedEvaluationIds?: Set<string>;
+  onToggleEvaluationSelection?: (id: string) => void;
+  filteredEvaluations?: Evaluation[];
 }
 
 export const EvaluationsContentRouter = React.memo(function EvaluationsContentRouter({
   category,
   subCategory,
   onOpenEvaluation,
+  selectedEvaluationIds,
+  onToggleEvaluationSelection,
+  filteredEvaluations,
 }: EvaluationsContentRouterProps) {
+  const commonProps = {
+    selectedEvaluationIds,
+    onToggleEvaluationSelection,
+  };
+
   switch (category) {
     case 'overview':
-      return <OverviewView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <OverviewView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'scheduled':
-      return <ScheduledView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <ScheduledView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'in_progress':
-      return <InProgressView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <InProgressView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'completed':
-      return <CompletedView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <CompletedView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'recommendations':
-      return <RecommendationsView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <RecommendationsView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'scores':
       return <ScoresView subCategory={subCategory} />;
     case 'bureaux':
-      return <BureauxView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <BureauxView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     case 'analytics':
       return <AnalyticsView subCategory={subCategory} />;
     case 'archive':
-      return <ArchiveView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <ArchiveView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
     default:
-      return <OverviewView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} />;
+      return <OverviewView subCategory={subCategory} onOpenEvaluation={onOpenEvaluation} {...commonProps} />;
   }
 });
 

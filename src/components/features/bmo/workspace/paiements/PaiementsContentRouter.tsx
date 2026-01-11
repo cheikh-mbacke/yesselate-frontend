@@ -12,6 +12,7 @@ import {
   PaiementsTresorerieView 
 } from './views';
 import type { PaiementsStats } from '@/lib/services/paiementsApiService';
+import { PaiementsAnalyticsCharts } from './analytics/PaiementsAnalyticsCharts';
 import { 
   LayoutDashboard,
   Clock,
@@ -108,6 +109,12 @@ function OverviewContent({ stats }: { stats: PaiementsStats | null }) {
           />
         </div>
       )}
+
+      {/* Analytics Charts */}
+      <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
+        <h3 className="text-lg font-semibold text-slate-200 mb-4">Analytics & Tendances</h3>
+        <PaiementsAnalyticsCharts />
+      </div>
 
       {/* Vue inbox par défaut */}
       <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">

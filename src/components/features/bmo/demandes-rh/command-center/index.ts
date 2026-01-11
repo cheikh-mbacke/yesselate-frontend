@@ -9,4 +9,12 @@ export { DemandesRHSubNavigation } from './DemandesRHSubNavigation';
 export { DemandesRHKPIBar } from './DemandesRHKPIBar';
 export { DemandesRHContentRouter } from './DemandesRHContentRouter';
 export { ActionsMenu } from './ActionsMenu';
+export { DemandesRHDetailModal } from './DemandesRHDetailModal';
+export type { DemandeRH } from './DemandesRHDetailModal';
+export { DemandesRHFiltersPanel } from './DemandesRHFiltersPanel';
+
+// Views
+export { DemandesRHOverviewView } from './views/DemandesRHOverviewView';
+export { DemandesRHCongesView } from './views/DemandesRHCongesView';
+export { DemandesRHDepensesView } from './views/DemandesRHDepensesView';
 

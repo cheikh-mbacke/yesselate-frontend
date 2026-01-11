@@ -9,11 +9,19 @@
 export * from './projets.mock';
 export * from './clients.mock';
 export * from './employes.mock';
+export * from './blocked.mock';
+export * from './comments.mock';
+export * from './timeline.mock';
+export * from './substitution.mock';
 
 // Réexport pour faciliter l'import
 export { mockProjets, mockProjetsStats, mockProjetsFilters } from './projets.mock';
 export { mockClients, mockClientsStats } from './clients.mock';
 export { mockEmployes, mockEmployesStats } from './employes.mock';
+export { mockBlockedDossiers, mockBlockedStats } from './blocked.mock';
+export { mockComments, mockCommentsByEntity } from './comments.mock';
+export { mockTimelineEvents, mockTimelineByEntity } from './timeline.mock';
+export { mockSubstitutions, mockSubstitutionStats } from './substitution.mock';
 
 /**
  * Utilitaires pour les mocks

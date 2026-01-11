@@ -33,6 +33,14 @@ import { BMOValidatorPanel } from './BMOValidatorPanel';
 import { BCModalTabs } from './BCModalTabs';
 import type { SignatoryProfile } from '@/lib/types/document-validation.types';
 import { getStatusBadgeConfig } from '@/lib/utils/status-utils';
+import {
+  useAnomalies,
+  useAnnotations,
+  useResolveAnomaly,
+  useCreateAnnotation,
+  useUpdateAnnotation,
+  useDeleteAnnotation,
+} from '@/lib/api/hooks/useValidationBCAnomalies';
 
 interface EnhancedDocumentDetailsModalProps {
   isOpen: boolean;
@@ -64,8 +72,39 @@ export function EnhancedDocumentDetailsModal({
   const [activeTab, setActiveTab] = useState<'bmo' | 'details' | 'document' | 'verification' | 'annotations' | 'history'>('bmo');
   const [showComplementModal, setShowComplementModal] = useState(false);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  
+  // React Query hooks pour anomalies et annotations (pour factures/avenants uniquement)
+  const documentId = document?.id || '';
+  const { data: queryAnomalies = [] } = useAnomalies(documentId, {
+    enabled: !!documentId && documentType !== 'bc', // Pour BC, on utilise les anomalies du document
+  });
+  const { data: queryAnnotations = [] } = useAnnotations(documentId, {
+    enabled: !!documentId && documentType !== 'bc', // Pour BC, on utilise les annotations du document
+  });
+  
+  // Mutations
+  const resolveAnomalyMutation = useResolveAnomaly();
+  const createAnnotationMutation = useCreateAnnotation();
+  const updateAnnotationMutation = useUpdateAnnotation();
+  const deleteAnnotationMutation = useDeleteAnnotation();
+  
+  // Utiliser les données du document si disponibles, sinon utiliser React Query
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>(document?.annotations || []);
   const [anomalies, setAnomalies] = useState<DocumentAnomaly[]>(document?.anomalies || []);
+  
+  // Mettre à jour les données si React Query retourne des données (pour factures/avenants)
+  useEffect(() => {
+    if (documentType !== 'bc' && documentId && queryAnomalies.length > 0) {
+      setAnomalies(queryAnomalies);
+    }
+  }, [queryAnomalies, documentType, documentId]);
+  
+  useEffect(() => {
+    if (documentType !== 'bc' && documentId && queryAnnotations.length > 0) {
+      setAnnotations(queryAnnotations);
+    }
+  }, [queryAnnotations, documentType, documentId]);
+  
   const [verificationResult, setVerificationResult] = useState<any>(null);
   const [signature, setSignature] = useState<DocumentSignature | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null); // WHY: Reset scroll au changement de document
@@ -103,14 +142,16 @@ export function EnhancedDocumentDetailsModal({
     let result;
     if (documentType === 'bc') {
       result = verifyBC(document as EnrichedBC);
+      // Pour BC, utiliser les anomalies de la vérification
+      setAnomalies(result.anomalies);
     } else if (documentType === 'facture') {
       result = verifyFacture(document as EnrichedFacture);
     } else {
       result = verifyAvenant(document as EnrichedAvenant);
     }
+    // Pour factures/avenants, les anomalies viennent de React Query (gérées dans useEffect précédent)
 
     setVerificationResult(result);
-    setAnomalies(result.anomalies);
   }, [document, documentType]);
 
   if (!isOpen || !document) return null;
@@ -182,23 +223,83 @@ export function EnhancedDocumentDetailsModal({
     setShowComplementModal(true);
   };
 
-  const handleAddAnnotation = (annotation: Omit<DocumentAnnotation, 'id' | 'createdAt'>) => {
-    const newAnnotation: DocumentAnnotation = {
-      ...annotation,
-      id: `ANN-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
-    setAnnotations([...annotations, newAnnotation]);
-    addToast('Annotation ajoutée', 'success');
+  const handleAddAnnotation = async (annotation: Omit<DocumentAnnotation, 'id' | 'createdAt'>) => {
+    try {
+      if (documentType === 'bc') {
+        // Pour BC, utiliser le state local
+        const newAnnotation: DocumentAnnotation = {
+          ...annotation,
+          id: `ANN-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+        };
+        setAnnotations([...annotations, newAnnotation]);
+        addToast('Annotation ajoutée', 'success');
+      } else {
+        // Pour factures/avenants, utiliser React Query
+        await createAnnotationMutation.mutateAsync(annotation);
+        addToast('Annotation ajoutée', 'success');
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout de l\'annotation:', error);
+      addToast('Erreur lors de l\'ajout de l\'annotation', 'error');
+    }
   };
 
-  const handleResolveAnomaly = (anomalyId: string) => {
-    setAnomalies(anomalies.map(a => 
-      a.id === anomalyId 
-        ? { ...a, resolved: true, resolvedAt: new Date().toISOString(), resolvedBy: 'BMO-USER' }
-        : a
-    ));
-    addToast('Anomalie marquée comme résolue', 'success');
+  const handleResolveAnomaly = async (anomalyId: string) => {
+    try {
+      if (documentType === 'bc') {
+        // Pour BC, utiliser le state local
+        setAnomalies(anomalies.map(a => 
+          a.id === anomalyId 
+            ? { ...a, resolved: true, resolvedAt: new Date().toISOString(), resolvedBy: 'BMO-USER' }
+            : a
+        ));
+        addToast('Anomalie marquée comme résolue', 'success');
+      } else {
+        // Pour factures/avenants, utiliser React Query
+        await resolveAnomalyMutation.mutateAsync({ anomalyId });
+        addToast('Anomalie marquée comme résolue', 'success');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la résolution de l\'anomalie:', error);
+      addToast('Erreur lors de la résolution de l\'anomalie', 'error');
+    }
+  };
+
+  const handleUpdateAnnotation = async (annotationId: string, comment: string) => {
+    try {
+      if (documentType === 'bc') {
+        // Pour BC, utiliser le state local
+        setAnnotations(annotations.map(a => 
+          a.id === annotationId ? { ...a, comment } : a
+        ));
+        addToast('Annotation mise à jour', 'success');
+      } else {
+        // Pour factures/avenants, utiliser React Query
+        await updateAnnotationMutation.mutateAsync({ id: annotationId, comment });
+        addToast('Annotation mise à jour', 'success');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de l\'annotation:', error);
+      addToast('Erreur lors de la mise à jour de l\'annotation', 'error');
+    }
+  };
+
+  const handleDeleteAnnotation = async (annotationId: string) => {
+    try {
+      if (documentType === 'bc') {
+        // Pour BC, utiliser le state local
+        setAnnotations(annotations.filter(a => a.id !== annotationId));
+        addToast('Annotation supprimée', 'success');
+      } else {
+        // Pour factures/avenants, utiliser React Query
+        await deleteAnnotationMutation.mutateAsync({ id: annotationId, documentId });
+        addToast('Annotation supprimée', 'success');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la suppression de l\'annotation:', error);
+      addToast('Erreur lors de la suppression de l\'annotation', 'error');
+    }
   };
 
   const getDocumentLabel = () => {
@@ -494,6 +595,8 @@ export function EnhancedDocumentDetailsModal({
                 annotations={annotations}
                 onAddAnnotation={handleAddAnnotation}
                 onResolveAnomaly={handleResolveAnomaly}
+                onUpdateAnnotation={handleUpdateAnnotation}
+                onDeleteAnnotation={handleDeleteAnnotation}
               />
             )}
 

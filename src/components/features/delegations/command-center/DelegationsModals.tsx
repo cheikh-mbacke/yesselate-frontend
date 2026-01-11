@@ -11,6 +11,8 @@ import { DelegationStatsModal } from '../workspace/DelegationStatsModal';
 import { DelegationExportModal } from '../workspace/DelegationExportModal';
 import { DelegationTimeline } from '../workspace/DelegationTimeline';
 import { DelegationBatchActions } from '../workspace/DelegationBatchActions';
+import { DelegationDetailModal } from './modals/DelegationDetailModal';
+import { DelegationsFiltersPanel } from './DelegationsFiltersPanel';
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { cn } from '@/lib/utils';
 
@@ -36,6 +38,17 @@ export function DelegationsModals() {
     );
   }
 
+  // Detail Modal (pattern overlay)
+  if (modal.type === 'delegation-detail') {
+    return (
+      <DelegationDetailModal
+        open={true}
+        delegationId={modal.data?.delegationId}
+        onClose={closeModal}
+      />
+    );
+  }
+
   // Timeline Modal
   if (modal.type === 'timeline') {
     return (
@@ -45,6 +58,11 @@ export function DelegationsModals() {
         onClose={closeModal}
       />
     );
+  }
+
+  // Filters Panel
+  if (modal.type === 'filters') {
+    return <DelegationsFiltersPanel />;
   }
 
   // Batch Actions Modal

@@ -44,6 +44,7 @@ export type DemandesRHModalType =
   | 'shortcuts'
   | 'help'
   | 'confirm'
+  | 'filters'
   | 'detail'; // Modal de détail avec pattern overlay
 
 // État des modals

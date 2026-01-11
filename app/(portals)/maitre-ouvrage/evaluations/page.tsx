@@ -24,9 +24,16 @@ import {
   EvaluationsCommandSidebar,
   EvaluationsSubNavigation,
   EvaluationsKPIBar,
+  EvaluationsContentRouter,
   evaluationsCategories,
+  EvaluationsFiltersPanel,
+  EvaluationsExportModal,
+  countActiveEvaluationsFilters,
+  type EvaluationsActiveFilters,
 } from '@/components/features/bmo/evaluations/command-center';
+import { EvaluationsBatchActionsBar } from '@/components/features/bmo/evaluations/command-center/EvaluationsBatchActionsBar';
 import { EvaluationDetailModal } from '@/components/features/bmo/evaluations/modals';
+import { EvaluationsCommandPalette } from '@/components/features/bmo/evaluations/workspace/EvaluationsCommandPalette';
 import { useBMOStore } from '@/lib/stores';
 import { evaluations } from '@/lib/data';
 import { usePageNavigation } from '@/hooks/usePageNavigation';
@@ -156,6 +163,12 @@ function EvaluationsPageContent() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  
+  // Selection state for batch actions
+  const [selectedEvaluationIds, setSelectedEvaluationIds] = useState<Set<string>>(new Set());
+  const [advancedFilters, setAdvancedFilters] = useState<EvaluationsActiveFilters | undefined>(undefined);
 
   // Refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -168,6 +181,9 @@ function EvaluationsPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const { updateFilters, getFilters } = usePageNavigation('evaluations');
+
+  // Liste des évaluations filtrées pour navigation prev/next
+  const [allFilteredEvaluations, setAllFilteredEvaluations] = useState<Evaluation[]>([]);
 
   // ================================
   // Computed values
@@ -266,6 +282,25 @@ function EvaluationsPageContent() {
     return `il y a ${Math.floor(diff / 3600)}h`;
   }, [lastUpdate]);
 
+  // Helper functions for date parsing
+  const parseFRDateToMs = useCallback((dateStr?: string): number => {
+    if (!dateStr) return 0;
+    const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return 0;
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yyyy = Number(m[3]);
+    const d = new Date(yyyy, mm - 1, dd);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  }, []);
+
+  const daysUntil = useCallback((dateStr?: string): number | null => {
+    const now = Date.now();
+    const ms = parseFRDateToMs(dateStr);
+    if (!ms) return null;
+    return Math.ceil((ms - now) / (1000 * 60 * 60 * 24));
+  }, [parseFRDateToMs]);
+
   // ================================
   // Callbacks
   // ================================
@@ -298,18 +333,33 @@ function EvaluationsPageContent() {
   }, [navigationHistory]);
 
   const handleExport = useCallback(() => {
+    setExportModalOpen(true);
+  }, []);
+
+  const handleApplyFilters = useCallback((filters: EvaluationsActiveFilters) => {
+    setAdvancedFilters(filters);
+    addToast(`${countActiveEvaluationsFilters(filters)} filtre(s) appliqué(s)`, 'success');
+  }, [addToast]);
+
+  const handleBatchAction = useCallback((action: string, ids: string[]) => {
+    const actualIds = Array.from(selectedEvaluationIds);
     addActionLog({
       userId: 'USR-001',
       userName: 'A. DIALLO',
       userRole: 'Directeur Général',
       module: 'evaluations',
-      action: 'export',
-      targetId: 'ALL',
+      action: `batch_${action}`,
+      targetId: actualIds.join(','),
       targetType: 'Evaluation',
-      details: `Export évaluations (${evaluations.length})`,
+      details: `Action groupée: ${action} sur ${actualIds.length} évaluation(s)`,
     });
-    addToast('Export évaluations généré', 'success');
-  }, [addActionLog, addToast]);
+    addToast(`Action "${action}" sur ${actualIds.length} évaluation(s)`, 'success');
+    setSelectedEvaluationIds(new Set());
+  }, [selectedEvaluationIds, addActionLog, addToast]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedEvaluationIds(new Set());
+  }, []);
 
   // Filtered evaluations based on category and subcategory
   const filteredEvaluations = useMemo(() => {
@@ -432,7 +482,7 @@ function EvaluationsPageContent() {
   }, [activeCategory, activeSubCategory, searchQuery, activeFilter, parseFRDateToMs, daysUntil]);
 
   // Handlers for modal
-  const handleSelect = useCallback((evaluation: Evaluation) => {
+  const handleOpenEvaluation = useCallback((evaluation: Evaluation) => {
     setSelectedEvaluation(evaluation);
     setDetailModalOpen(true);
     addActionLog({
@@ -447,28 +497,41 @@ function EvaluationsPageContent() {
     });
   }, [addActionLog]);
 
+  const handleSelect = handleOpenEvaluation; // Alias pour compatibilité
+
+  // Mettre à jour allFilteredEvaluations pour navigation prev/next
+  useEffect(() => {
+    setAllFilteredEvaluations(filteredEvaluations as Evaluation[]);
+  }, [filteredEvaluations]);
+
   // Navigation prev/next in modal
   const currentEvaluationIndex = useMemo(() => {
     if (!selectedEvaluation) return -1;
-    return filteredEvaluations.findIndex((e: any) => e.id === selectedEvaluation.id);
-  }, [selectedEvaluation, filteredEvaluations]);
+    return allFilteredEvaluations.findIndex((e) => e.id === selectedEvaluation.id);
+  }, [selectedEvaluation, allFilteredEvaluations]);
 
   const hasPreviousEvaluation = currentEvaluationIndex > 0;
-  const hasNextEvaluation = currentEvaluationIndex >= 0 && currentEvaluationIndex < filteredEvaluations.length - 1;
+  const hasNextEvaluation = currentEvaluationIndex >= 0 && currentEvaluationIndex < allFilteredEvaluations.length - 1;
 
   const handlePreviousEvaluation = useCallback(() => {
     if (hasPreviousEvaluation && currentEvaluationIndex > 0) {
-      const prevEvaluation = filteredEvaluations[currentEvaluationIndex - 1];
-      handleSelect(prevEvaluation as Evaluation);
+      const prevEvaluation = allFilteredEvaluations[currentEvaluationIndex - 1];
+      handleOpenEvaluation(prevEvaluation);
     }
-  }, [hasPreviousEvaluation, currentEvaluationIndex, filteredEvaluations, handleSelect]);
+  }, [hasPreviousEvaluation, currentEvaluationIndex, allFilteredEvaluations, handleOpenEvaluation]);
 
   const handleNextEvaluation = useCallback(() => {
-    if (hasNextEvaluation && currentEvaluationIndex < filteredEvaluations.length - 1) {
-      const nextEvaluation = filteredEvaluations[currentEvaluationIndex + 1];
-      handleSelect(nextEvaluation as Evaluation);
+    if (hasNextEvaluation && currentEvaluationIndex < allFilteredEvaluations.length - 1) {
+      const nextEvaluation = allFilteredEvaluations[currentEvaluationIndex + 1];
+      handleOpenEvaluation(nextEvaluation);
     }
-  }, [hasNextEvaluation, currentEvaluationIndex, filteredEvaluations, handleSelect]);
+  }, [hasNextEvaluation, currentEvaluationIndex, allFilteredEvaluations, handleOpenEvaluation]);
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailModalOpen(false);
+    setSelectedEvaluation(null);
+    handleRefresh(); // Reload automatique après fermeture
+  }, [handleRefresh]);
 
   const handleValidateRecommendation = useCallback((evalId: string, recId: string) => {
     addActionLog({
@@ -640,6 +703,25 @@ function EvaluationsPageContent() {
               )}
             </Button>
 
+            {/* Filters */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFiltersPanelOpen(true)}
+              className={cn(
+                'h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+                advancedFilters && countActiveEvaluationsFilters(advancedFilters) > 0 && 'text-blue-400'
+              )}
+              title="Filtres avancés"
+            >
+              <Filter className="h-4 w-4" />
+              {advancedFilters && countActiveEvaluationsFilters(advancedFilters) > 0 && (
+                <Badge variant="default" className="ml-1 h-4 px-1 text-[10px] bg-blue-500/20 text-blue-400 border-blue-500/30">
+                  {countActiveEvaluationsFilters(advancedFilters)}
+                </Badge>
+              )}
+            </Button>
+
             {/* Export */}
             <Button
               variant="ghost"
@@ -709,109 +791,25 @@ function EvaluationsPageContent() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto p-4">
-            <div className="max-w-7xl mx-auto">
-              {/* Search bar */}
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="🔍 Rechercher (agent, évaluateur, période, bureau, ID)..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={cn(
-                    'w-full px-4 py-2 rounded-lg text-sm',
-                    'bg-slate-800/50 border border-slate-700/50 text-slate-200 placeholder:text-slate-500',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50'
-                  )}
-                />
-              </div>
-
-              {/* Evaluations list */}
-              <div className="space-y-3">
-                {filteredEvaluations.map((evaluation: any) => {
-                  const pendingRecs = (evaluation.recommendations || []).filter((r: any) => r.status === 'pending').length;
-                  const statusConfig: Record<EvaluationStatus, { label: string; variant: 'success' | 'warning' | 'info' | 'default' }> = {
-                    completed: { label: 'Complétée', variant: 'success' },
-                    in_progress: { label: 'En cours', variant: 'warning' },
-                    scheduled: { label: 'Planifiée', variant: 'info' },
-                    cancelled: { label: 'Annulée', variant: 'default' },
-                  };
-                  const getScoreColor = (score: number) => {
-                    if (score >= 90) return 'text-emerald-400';
-                    if (score >= 75) return 'text-blue-400';
-                    if (score >= 60) return 'text-amber-400';
-                    return 'text-red-400';
-                  };
-
-                  return (
-                    <Card
-                      key={evaluation.id}
-                      className="cursor-pointer transition-all hover:border-blue-500/50 hover:bg-slate-800/30"
-                      onClick={() => handleSelect(evaluation as Evaluation)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            {/* Avatar */}
-                            <div className="relative flex-shrink-0">
-                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center font-bold text-white">
-                                {(evaluation.employeeName || '?')
-                                  .split(' ')
-                                  .filter(Boolean)
-                                  .map((n: string) => n[0])
-                                  .join('')}
-                              </div>
-                              {evaluation.status === 'completed' && (
-                                <div className={cn('absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white', getScoreColor(evaluation.scoreGlobal || 0))}>
-                                  {evaluation.scoreGlobal}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <Badge variant={statusConfig[evaluation.status as EvaluationStatus]?.variant || 'default'}>
-                                  {statusConfig[evaluation.status as EvaluationStatus]?.label || evaluation.status}
-                                </Badge>
-                                <Badge variant="outline">{evaluation.period}</Badge>
-                                <BureauTag bureau={evaluation.bureau} />
-                                {pendingRecs > 0 && <Badge variant="warning">⏳ {pendingRecs} reco</Badge>}
-                              </div>
-                              <h3 className="font-bold text-slate-200 mb-1">{evaluation.employeeName}</h3>
-                              <p className="text-xs text-slate-400 mb-2">{evaluation.employeeRole}</p>
-                              {evaluation.status === 'completed' && (
-                                <div className="flex items-center gap-2">
-                                  <span className={cn('text-sm font-bold', getScoreColor(evaluation.scoreGlobal || 0))}>
-                                    {evaluation.scoreGlobal}/100
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Date & Evaluator */}
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-xs text-slate-400">{evaluation.date}</p>
-                            <p className="text-xs text-slate-500">Par {evaluation.evaluatorName}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-
-                {filteredEvaluations.length === 0 && (
-                  <div className="bg-slate-800/50 rounded-lg p-8 text-center border border-slate-700/50">
-                    <ClipboardCheck className="h-12 w-12 text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400 mb-2">Aucune évaluation trouvée</p>
-                    <p className="text-xs text-slate-600">
-                      Catégorie: {activeCategory} • Sous-catégorie: {activeSubCategory || 'all'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="h-full overflow-y-auto">
+            <EvaluationsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+              onOpenEvaluation={handleOpenEvaluation}
+              selectedEvaluationIds={selectedEvaluationIds}
+              onToggleEvaluationSelection={(id) => {
+                setSelectedEvaluationIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(id)) {
+                    next.delete(id);
+                  } else {
+                    next.add(id);
+                  }
+                  return next;
+                });
+              }}
+              filteredEvaluations={filteredEvaluations as Evaluation[]}
+            />
           </div>
         </main>
 
@@ -848,33 +846,27 @@ function EvaluationsPageContent() {
         </footer>
       </div>
 
-      {/* Command Palette - Placeholder */}
-      {commandPaletteOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-[12vh]">
-          <div className="w-full max-w-2xl mx-4 rounded-2xl border border-slate-700 bg-slate-900 p-4">
-            <div className="flex items-center gap-3 mb-4">
-              <Search className="h-5 w-5 text-blue-400" />
-              <input
-                type="text"
-                placeholder="Rechercher une évaluation..."
-                className="flex-1 bg-transparent text-slate-200 outline-none"
-                autoFocus
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCommandPaletteOpen(false)}
-                className="h-8 w-8 p-0"
-              >
-                ×
-              </Button>
-            </div>
-            <p className="text-sm text-slate-500 text-center py-8">
-              Command Palette - À implémenter
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Command Palette */}
+      <EvaluationsCommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onNavigate={(category, subCategory) => {
+          handleCategoryChange(category);
+          if (subCategory) handleSubCategoryChange(subCategory);
+        }}
+        onOpenEvaluation={(id) => {
+          const evalItem = filteredEvaluations.find((e: any) => e.id === id) || evaluations.find((e: any) => e.id === id);
+          if (evalItem) handleSelect(evalItem as Evaluation);
+        }}
+        onExport={handleExport}
+        onRefresh={handleRefresh}
+        onCreate={() => addToast('Création d\'évaluation (à implémenter)', 'info')}
+        evaluations={evaluations.slice(0, 10).map((e: any) => ({
+          id: e.id,
+          employeeName: e.employeeName,
+          status: e.status,
+        }))}
+      />
 
       {/* Notifications Panel */}
       {notificationsPanelOpen && (
@@ -934,21 +926,43 @@ function EvaluationsPageContent() {
       )}
 
       {/* Evaluation Detail Modal */}
-      <EvaluationDetailModal
-        isOpen={detailModalOpen}
-        onClose={() => {
-          setDetailModalOpen(false);
-          setSelectedEvaluation(null);
-        }}
-        evaluation={selectedEvaluation}
-        onValidateRecommendation={handleValidateRecommendation}
-        onDownloadCR={handleDownloadCR}
-        onEdit={handleEdit}
-        onPrevious={handlePreviousEvaluation}
-        onNext={handleNextEvaluation}
-        hasNext={hasNextEvaluation}
-        hasPrevious={hasPreviousEvaluation}
-        darkMode={true}
+      {detailModalOpen && selectedEvaluation && (
+        <EvaluationDetailModal
+          isOpen={detailModalOpen}
+          onClose={handleCloseDetail}
+          evaluation={selectedEvaluation}
+          onValidateRecommendation={handleValidateRecommendation}
+          onDownloadCR={handleDownloadCR}
+          onEdit={handleEdit}
+          onPrevious={handlePreviousEvaluation}
+          onNext={handleNextEvaluation}
+          hasNext={hasNextEvaluation}
+          hasPrevious={hasPreviousEvaluation}
+          darkMode={true}
+        />
+      )}
+
+      {/* Filters Panel */}
+      <EvaluationsFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        currentFilters={advancedFilters}
+      />
+
+      {/* Export Modal */}
+      <EvaluationsExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        filteredCount={filteredEvaluations.length}
+        selectedCount={selectedEvaluationIds.size}
+      />
+
+      {/* Batch Actions Bar */}
+      <EvaluationsBatchActionsBar
+        selectedCount={selectedEvaluationIds.size}
+        onAction={handleBatchAction}
+        onClearSelection={handleClearSelection}
       />
     </div>
   );

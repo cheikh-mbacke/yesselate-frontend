@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useDelegationWorkspaceStore, DelegationTab } from '@/lib/stores/delegationWorkspaceStore';
+import { useDelegationsCommandCenterStore } from '@/lib/stores/delegationsCommandCenterStore';
 import { useDelegations } from '@/hooks/useDelegationAPI';
 import { useDelegationToast } from '../DelegationToast';
 import { 
@@ -59,6 +60,7 @@ export function DelegationInboxView({ tab }: { tab: DelegationTab }) {
   const QueueIcon = queueConfig.icon;
   
   const { openTab, updateTab } = useDelegationWorkspaceStore();
+  const { openModal } = useDelegationsCommandCenterStore();
   const toast = useDelegationToast();
   
   const [search, setSearch] = useState('');
@@ -388,13 +390,8 @@ export function DelegationInboxView({ tab }: { tab: DelegationTab }) {
                 idx % 2 === 0 ? '' : 'bg-slate-50/30 dark:bg-slate-900/20'
               )}
               onClick={() => {
-                openTab({
-                  type: 'delegation',
-                  id: `delegation:${d.id}`,
-                  title: `${d.id} — ${d.type.slice(0, 15)}${d.type.length > 15 ? '…' : ''}`,
-                  icon: d.status === 'active' ? '✅' : d.status === 'revoked' ? '⛔' : '📅',
-                  data: { delegationId: d.id },
-                });
+                // Pattern modal overlay (comme tickets-clients)
+                openModal('delegation-detail', { delegationId: d.id }, { size: 'xl' });
               }}
             >
               <div className="min-w-0 flex items-center gap-2">

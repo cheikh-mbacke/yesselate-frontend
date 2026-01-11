@@ -49,6 +49,9 @@ import {
   ArrowUpDown,
   Copy,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  Download,
 } from 'lucide-react';
 import type {
   DocumentAnomaly,
@@ -56,6 +59,10 @@ import type {
   DocumentType,
 } from '@/lib/types/document-validation.types';
 import { AnomalyDetailModal } from './AnomalyDetailModal';
+import { BatchActionsBar } from './components/BatchActionsBar';
+import { ExportModal, type ExportConfig } from './modals/ExportModal';
+import { AnnotationDetailModal } from './modals/AnnotationDetailModal';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface AnomalyAnnotationPanelProps {
   documentId: string;
@@ -117,6 +124,25 @@ export function AnomalyAnnotationPanel({
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedAnomalyId, setSelectedAnomalyId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  // Selection states
+  const [selectedAnomalyIds, setSelectedAnomalyIds] = useState<Set<string>>(new Set());
+  const [selectedAnnotationIds, setSelectedAnnotationIds] = useState<Set<string>>(new Set());
+  
+  // Pagination states
+  const [currentPageAnomalies, setCurrentPageAnomalies] = useState(1);
+  const [currentPageAnnotations, setCurrentPageAnnotations] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  
+  // Modal states
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [annotationDetailModalOpen, setAnnotationDetailModalOpen] = useState(false);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  
+  // Loading states for batch actions
+  const [isBulkResolving, setIsBulkResolving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // Refs for keyboard shortcuts
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -373,6 +399,142 @@ export function AnomalyAnnotationPanel({
       addToast('Erreur lors de la copie', 'error');
     }
   };
+
+  // Handlers pour sélection multiple
+  const handleToggleAnomalySelection = (anomalyId: string) => {
+    setSelectedAnomalyIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(anomalyId)) {
+        newSet.delete(anomalyId);
+      } else {
+        newSet.add(anomalyId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleToggleAnnotationSelection = (annotationId: string) => {
+    setSelectedAnnotationIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(annotationId)) {
+        newSet.delete(annotationId);
+      } else {
+        newSet.add(annotationId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllAnomalies = () => {
+    if (selectedAnomalyIds.size === filteredUnresolvedAnomalies.length) {
+      setSelectedAnomalyIds(new Set());
+    } else {
+      setSelectedAnomalyIds(new Set(filteredUnresolvedAnomalies.map(a => a.id)));
+    }
+  };
+
+  const handleSelectAllAnnotations = () => {
+    if (selectedAnnotationIds.size === filteredAnnotations.length) {
+      setSelectedAnnotationIds(new Set());
+    } else {
+      setSelectedAnnotationIds(new Set(filteredAnnotations.map(a => a.id)));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedAnomalyIds(new Set());
+    setSelectedAnnotationIds(new Set());
+  };
+
+  // Handlers pour batch actions
+  const handleBulkResolve = async (anomalyIds: string[]) => {
+    setIsBulkResolving(true);
+    try {
+      await Promise.all(anomalyIds.map(id => handleResolveAnomaly(id)));
+      handleClearSelection();
+      addToast(`${anomalyIds.length} anomalie(s) résolue(s)`, 'success');
+    } catch (error) {
+      console.error('Erreur lors de la résolution groupée:', error);
+      addToast('Erreur lors de la résolution groupée', 'error');
+    } finally {
+      setIsBulkResolving(false);
+    }
+  };
+
+  const handleBulkDelete = async (annotationIds: string[]) => {
+    if (!onDeleteAnnotation) return;
+    setIsBulkDeleting(true);
+    try {
+      await Promise.all(annotationIds.map(id => Promise.resolve(onDeleteAnnotation!(id))));
+      handleClearSelection();
+      addToast(`${annotationIds.length} annotation(s) supprimée(s)`, 'success');
+    } catch (error) {
+      console.error('Erreur lors de la suppression groupée:', error);
+      addToast('Erreur lors de la suppression groupée', 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleExportSelected = (anomalyIds?: string[], annotationIds?: string[]) => {
+    setExportModalOpen(true);
+    // Les IDs seront utilisés dans le modal d'export
+  };
+
+  const handleExport = async (config: ExportConfig) => {
+    setIsExporting(true);
+    try {
+      // Préparer les données à exporter selon le scope
+      let dataToExport: any[] = [];
+      
+      if (config.scope === 'selected') {
+        const selectedAnomalies = anomalies.filter(a => selectedAnomalyIds.has(a.id));
+        const selectedAnnotations = annotations.filter(a => selectedAnnotationIds.has(a.id));
+        dataToExport = [...selectedAnomalies, ...selectedAnnotations];
+      } else if (config.scope === 'filtered') {
+        dataToExport = [...filteredUnresolvedAnomalies, ...filteredAnnotations];
+        if (config.options.includeResolved) {
+          dataToExport = [...dataToExport, ...filteredResolvedAnomalies];
+        }
+      } else {
+        dataToExport = [...anomalies, ...annotations];
+        if (config.options.includeResolved) {
+          dataToExport = [...dataToExport, ...resolvedAnomalies];
+        }
+      }
+
+      // Simuler l'export (à remplacer par un vrai export)
+      console.log('Export config:', config);
+      console.log('Data to export:', dataToExport);
+      
+      // Ici, vous pouvez appeler votre service d'export
+      // await exportService.export(dataToExport, config);
+      
+      addToast(`Export ${config.format.toUpperCase()} réussi`, 'success');
+      setExportModalOpen(false);
+    } catch (error) {
+      console.error('Erreur lors de l\'export:', error);
+      addToast('Erreur lors de l\'export', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Pagination
+  const paginatedUnresolvedAnomalies = useMemo(() => {
+    const start = (currentPageAnomalies - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return filteredUnresolvedAnomalies.slice(start, end);
+  }, [filteredUnresolvedAnomalies, currentPageAnomalies, itemsPerPage]);
+
+  const paginatedAnnotations = useMemo(() => {
+    const start = (currentPageAnnotations - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return filteredAnnotations.slice(start, end);
+  }, [filteredAnnotations, currentPageAnnotations, itemsPerPage]);
+
+  const totalPagesAnomalies = Math.ceil(filteredUnresolvedAnomalies.length / itemsPerPage);
+  const totalPagesAnnotations = Math.ceil(filteredAnnotations.length / itemsPerPage);
 
   return (
     <div className="space-y-4">
@@ -638,20 +800,92 @@ export function AnomalyAnnotationPanel({
             {filteredUnresolvedAnomalies.length === 0 ? (
               <EmptyState message="Aucune anomalie ne correspond aux filtres" />
             ) : (
-              filteredUnresolvedAnomalies.map((anomaly) => (
-                <AnomalyCard
-                  key={anomaly.id}
-                  anomaly={anomaly}
-                  onResolve={handleResolveAnomaly}
-                  isResolving={resolvingAnomalyId === anomaly.id}
-                  onClick={() => {
-                    setSelectedAnomalyId(anomaly.id);
-                    setDetailModalOpen(true);
-                  }}
-                  onCopy={handleCopy}
-                  copiedId={copiedId}
-                />
-              ))
+              <>
+                {/* Sélection multiple */}
+                {filteredUnresolvedAnomalies.length > 0 && (
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-800/50">
+                    <Checkbox
+                      checked={selectedAnomalyIds.size === filteredUnresolvedAnomalies.length && filteredUnresolvedAnomalies.length > 0}
+                      onCheckedChange={handleSelectAllAnomalies}
+                      className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                    />
+                    <span className="text-xs text-slate-400">
+                      {selectedAnomalyIds.size > 0
+                        ? `${selectedAnomalyIds.size} sélectionnée(s)`
+                        : 'Tout sélectionner'}
+                    </span>
+                  </div>
+                )}
+                {paginatedUnresolvedAnomalies.map((anomaly) => (
+                  <div key={anomaly.id} className="flex items-start gap-2">
+                    <Checkbox
+                      checked={selectedAnomalyIds.has(anomaly.id)}
+                      onCheckedChange={() => handleToggleAnomalySelection(anomaly.id)}
+                      className="mt-3 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex-1">
+                      <AnomalyCard
+                        anomaly={anomaly}
+                        onResolve={handleResolveAnomaly}
+                        isResolving={resolvingAnomalyId === anomaly.id}
+                        onClick={() => {
+                          setSelectedAnomalyId(anomaly.id);
+                          setDetailModalOpen(true);
+                        }}
+                        onCopy={handleCopy}
+                        copiedId={copiedId}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {/* Pagination */}
+                {totalPagesAnomalies > 1 && (
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-800/50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">
+                        Page {currentPageAnomalies} sur {totalPagesAnomalies}
+                      </span>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPageAnomalies(1);
+                        }}
+                        className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300"
+                      >
+                        <option value={10}>10 par page</option>
+                        <option value={25}>25 par page</option>
+                        <option value={50}>50 par page</option>
+                        <option value={100}>100 par page</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCurrentPageAnomalies(prev => Math.max(1, prev - 1))}
+                        disabled={currentPageAnomalies === 1}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="text-xs text-slate-400 px-2">
+                        {currentPageAnomalies} / {totalPagesAnomalies}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCurrentPageAnomalies(prev => Math.min(totalPagesAnomalies, prev + 1))}
+                        disabled={currentPageAnomalies === totalPagesAnomalies}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </Section>
@@ -711,25 +945,97 @@ export function AnomalyAnnotationPanel({
               }
             />
           ) : (
-            filteredAnnotations.map((annotation) => (
-              <AnnotationCard
-                key={annotation.id}
-                annotation={annotation}
-                isEditing={editingAnnotationId === annotation.id}
-                editingComment={editingComment}
-                onEditingCommentChange={setEditingComment}
-                onStartEdit={handleStartEdit}
-                onSaveEdit={handleSaveEdit}
-                onCancelEdit={handleCancelEdit}
-                onDelete={handleDeleteClick}
-                canEdit={!!onUpdateAnnotation}
-                canDelete={!!onDeleteAnnotation}
-                isUpdating={isUpdating && editingAnnotationId === annotation.id}
-                editTextareaRef={editTextareaRef}
-                onCopy={handleCopy}
-                copiedId={copiedId}
-              />
-            ))
+            <>
+              {/* Sélection multiple */}
+              {filteredAnnotations.length > 0 && (
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-800/50">
+                  <Checkbox
+                    checked={selectedAnnotationIds.size === filteredAnnotations.length && filteredAnnotations.length > 0}
+                    onCheckedChange={handleSelectAllAnnotations}
+                    className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <span className="text-xs text-slate-400">
+                    {selectedAnnotationIds.size > 0
+                      ? `${selectedAnnotationIds.size} sélectionnée(s)`
+                      : 'Tout sélectionner'}
+                  </span>
+                </div>
+              )}
+              {paginatedAnnotations.map((annotation) => (
+                <div key={annotation.id} className="flex items-start gap-2">
+                  <Checkbox
+                    checked={selectedAnnotationIds.has(annotation.id)}
+                    onCheckedChange={() => handleToggleAnnotationSelection(annotation.id)}
+                    className="mt-3 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex-1">
+                    <AnnotationCard
+                      annotation={annotation}
+                      isEditing={editingAnnotationId === annotation.id}
+                      editingComment={editingComment}
+                      onEditingCommentChange={setEditingComment}
+                      onStartEdit={handleStartEdit}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                      onDelete={handleDeleteClick}
+                      canEdit={!!onUpdateAnnotation}
+                      canDelete={!!onDeleteAnnotation}
+                      isUpdating={isUpdating && editingAnnotationId === annotation.id}
+                      editTextareaRef={editTextareaRef}
+                      onCopy={handleCopy}
+                      copiedId={copiedId}
+                    />
+                  </div>
+                </div>
+              ))}
+              {/* Pagination */}
+              {totalPagesAnnotations > 1 && (
+                <div className="flex items-center justify-between pt-3 border-t border-slate-800/50">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">
+                      Page {currentPageAnnotations} sur {totalPagesAnnotations}
+                    </span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPageAnnotations(1);
+                      }}
+                      className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300"
+                    >
+                      <option value={10}>10 par page</option>
+                      <option value={25}>25 par page</option>
+                      <option value={50}>50 par page</option>
+                      <option value={100}>100 par page</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setCurrentPageAnnotations(prev => Math.max(1, prev - 1))}
+                      disabled={currentPageAnnotations === 1}
+                      className="h-7 w-7 p-0"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="text-xs text-slate-400 px-2">
+                      {currentPageAnnotations} / {totalPagesAnnotations}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setCurrentPageAnnotations(prev => Math.min(totalPagesAnnotations, prev + 1))}
+                      disabled={currentPageAnnotations === totalPagesAnnotations}
+                      className="h-7 w-7 p-0"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Section>
@@ -809,6 +1115,44 @@ export function AnomalyAnnotationPanel({
           }}
         />
       )}
+
+      {/* Annotation Detail Modal */}
+      {selectedAnnotationId && (
+        <AnnotationDetailModal
+          isOpen={annotationDetailModalOpen}
+          onClose={() => {
+            setAnnotationDetailModalOpen(false);
+            setSelectedAnnotationId(null);
+          }}
+          annotation={annotations.find(a => a.id === selectedAnnotationId) || null}
+          annotations={annotations}
+        />
+      )}
+
+      {/* Batch Actions Bar */}
+      <BatchActionsBar
+        selectedCount={selectedAnomalyIds.size + selectedAnnotationIds.size}
+        selectedAnomalyIds={selectedAnomalyIds}
+        selectedAnnotationIds={selectedAnnotationIds}
+        onResolveSelected={handleBulkResolve}
+        onExportSelected={handleExportSelected}
+        onDeleteSelected={handleBulkDelete}
+        onClear={handleClearSelection}
+        isResolving={isBulkResolving}
+        isExporting={isExporting}
+        isDeleting={isBulkDeleting}
+      />
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onExport={handleExport}
+        filteredCount={filteredUnresolvedAnomalies.length + filteredAnnotations.length}
+        selectedAnomalyCount={selectedAnomalyIds.size}
+        selectedAnnotationCount={selectedAnnotationIds.size}
+        hasFilters={severityFilter !== 'all' || searchQuery.length > 0}
+      />
     </div>
   );
 }

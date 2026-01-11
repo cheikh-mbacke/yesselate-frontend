@@ -25,6 +25,8 @@ import {
   DelegationsSubNavigation,
   DelegationsKPIBar,
   DelegationsContentRouter,
+  DelegationsModals,
+  DelegationsBatchActionsBar,
   ActionsMenu,
   delegationsCategories,
 } from '@/components/features/delegations/command-center';
@@ -393,6 +395,12 @@ function DelegationsPageContent() {
       {notificationsPanelOpen && (
         <NotificationsPanel onClose={toggleNotificationsPanel} />
       )}
+
+      {/* Modals System */}
+      <DelegationsModals />
+
+      {/* Batch Actions Bar */}
+      <DelegationsBatchActionsBar />
     </div>
   );
 }

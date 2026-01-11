@@ -605,3 +605,529 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
   );
 });
 
+// ================================
+// Alerts View
+// ================================
+const AlertsView = React.memo(function AlertsView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
+  const { data: alertsData, isLoading, error } = useAlerts();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-slate-300">Erreur de chargement des alertes</p>
+        </div>
+      </div>
+    );
+  }
+
+  const alerts = alertsData?.alerts || [];
+  const filteredAlerts =
+    subCategory === 'all'
+      ? alerts
+      : subCategory === 'critical'
+      ? alerts.filter((a) => a.severity === 'critical')
+      : subCategory === 'warning'
+      ? alerts.filter((a) => a.severity === 'warning')
+      : alerts.filter((a) => a.severity === 'info');
+
+  const handleAlertClick = (alert: any) => {
+    openDetailPanel('alert', alert.id, {
+      title: alert.title,
+      message: alert.message,
+      severity: alert.severity,
+      category: alert.category,
+      status: alert.status,
+      createdAt: alert.createdAt,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4">
+        {filteredAlerts.length === 0 ? (
+          <div className="text-center py-12">
+            <AlertTriangle className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">Aucune alerte disponible</p>
+          </div>
+        ) : (
+          filteredAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              onClick={() => handleAlertClick(alert)}
+              className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start gap-3 flex-1">
+                  <div
+                    className={cn(
+                      'p-2 rounded-lg',
+                      alert.severity === 'critical'
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/30'
+                        : alert.severity === 'warning'
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                    )}
+                  >
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-base font-semibold text-slate-200 mb-1">{alert.title}</h4>
+                    {alert.message && (
+                      <p className="text-sm text-slate-400 line-clamp-2">{alert.message}</p>
+                    )}
+                  </div>
+                </div>
+                <Badge
+                  variant={
+                    alert.severity === 'critical'
+                      ? 'destructive'
+                      : alert.severity === 'warning'
+                      ? 'warning'
+                      : 'default'
+                  }
+                >
+                  {alert.severity}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-slate-500">
+                {alert.category && <span>Catégorie: {alert.category}</span>}
+                {alert.createdAt && <span>{alert.createdAt}</span>}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// Financial View
+// ================================
+const FinancialView = React.memo(function FinancialView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
+  const { data: dashboardData, isLoading } = useAnalyticsDashboard();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const financialMetrics = [
+    {
+      id: 'budget',
+      label: 'Budget Total',
+      value: '€2.4M',
+      change: '+5.2%',
+      trend: 'up' as const,
+      icon: DollarSign,
+      color: 'emerald',
+    },
+    {
+      id: 'spent',
+      label: 'Dépensé',
+      value: '€1.8M',
+      change: '+2.1%',
+      trend: 'up' as const,
+      icon: Activity,
+      color: 'amber',
+    },
+    {
+      id: 'remaining',
+      label: 'Restant',
+      value: '€600K',
+      change: '-3.4%',
+      trend: 'down' as const,
+      icon: TrendingUp,
+      color: 'blue',
+    },
+    {
+      id: 'forecast',
+      label: 'Prévision',
+      value: '€2.1M',
+      change: '+1.8%',
+      trend: 'up' as const,
+      icon: BarChart3,
+      color: 'purple',
+    },
+  ];
+
+  const handleMetricClick = (metric: any) => {
+    openDetailPanel('kpi', metric.id, {
+      name: metric.label,
+      value: metric.value,
+      trend: metric.trend,
+      change: metric.change,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {financialMetrics.map((metric) => {
+          const Icon = metric.icon;
+          const isPositive = metric.trend === 'up';
+          const colorClasses = {
+            blue: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+            emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+            amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+            purple: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+          };
+
+          return (
+            <div
+              key={metric.id}
+              onClick={() => handleMetricClick(metric)}
+              className="p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer group"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div
+                  className={cn(
+                    'p-2 rounded-lg border',
+                    colorClasses[metric.color as keyof typeof colorClasses]
+                  )}
+                >
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="flex items-center gap-1 text-sm font-medium">
+                  {isPositive ? (
+                    <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-red-400" />
+                  )}
+                  <span
+                    className={cn(
+                      'text-xs',
+                      isPositive ? 'text-emerald-400' : 'text-red-400'
+                    )}
+                  >
+                    {metric.change}
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mb-1">{metric.label}</p>
+              <p className="text-2xl font-bold text-slate-200">{metric.value}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// Trends View
+// ================================
+const TrendsView = React.memo(function TrendsView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel } = useAnalyticsCommandCenterStore();
+  const { data: trendsData, isLoading } = useTrends();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const trends = trendsData?.trends || [];
+
+  const handleTrendClick = (trend: any) => {
+    openDetailPanel('kpi', trend.id, {
+      name: trend.metric,
+      value: trend.current,
+      unit: trend.unit,
+      trend: trend.trend,
+      previous: trend.previous,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4">
+        {trends.length === 0 ? (
+          <div className="text-center py-12">
+            <TrendingUp className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">Aucune tendance disponible</p>
+          </div>
+        ) : (
+          trends.map((trend) => {
+            const isPositive = trend.trend === 'up';
+            const diff = Math.abs(trend.current - trend.previous);
+            const percentChange = trend.previous > 0
+              ? ((diff / trend.previous) * 100).toFixed(1)
+              : '0';
+
+            return (
+              <div
+                key={trend.id}
+                onClick={() => handleTrendClick(trend)}
+                className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-base font-semibold text-slate-200">{trend.metric}</p>
+                  <div className="flex items-center gap-2">
+                    {isPositive ? (
+                      <ArrowUpRight className="w-5 h-5 text-emerald-400" />
+                    ) : (
+                      <ArrowDownRight className="w-5 h-5 text-red-400" />
+                    )}
+                    <span
+                      className={cn(
+                        'text-sm font-medium',
+                        isPositive ? 'text-emerald-400' : 'text-red-400'
+                      )}
+                    >
+                      {percentChange}%
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-slate-200">
+                    {trend.current}
+                    {trend.unit && <span className="text-sm text-slate-500 ml-1">{trend.unit}</span>}
+                  </span>
+                  <span className="text-sm text-slate-500">
+                    vs {trend.previous}
+                    {trend.unit}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// Reports View
+// ================================
+const ReportsView = React.memo(function ReportsView({ subCategory }: { subCategory: string }) {
+  const { openModal } = useAnalyticsCommandCenterStore();
+
+  const reports = [
+    {
+      id: '1',
+      title: 'Rapport Hebdomadaire Performance',
+      date: 'Il y a 2 heures',
+      status: 'success' as const,
+      category: 'performance',
+    },
+    {
+      id: '2',
+      title: 'Analyse Budgétaire Q4',
+      date: 'Il y a 1 jour',
+      status: 'warning' as const,
+      category: 'financial',
+    },
+    {
+      id: '3',
+      title: 'Comparaison Bureaux - Décembre',
+      date: 'Il y a 2 jours',
+      status: 'success' as const,
+      category: 'comparison',
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4">
+        {reports.map((report) => (
+          <div
+            key={report.id}
+            onClick={() => openModal('report', { reportId: report.id })}
+            className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <h4 className="text-base font-semibold text-slate-200 mb-1">{report.title}</h4>
+                <p className="text-sm text-slate-500">{report.date}</p>
+                {report.category && (
+                  <Badge variant="outline" className="mt-2 text-xs">
+                    {report.category}
+                  </Badge>
+                )}
+              </div>
+              <Badge
+                variant={report.status === 'success' ? 'default' : 'warning'}
+                className="text-xs"
+              >
+                {report.status === 'success' ? 'Complet' : 'En cours'}
+              </Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// KPIs View
+// ================================
+const KPIsView = React.memo(function KPIsView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel } = useAnalyticsCommandCenterStore();
+  const { data: kpisData, isLoading } = useKpis();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const kpis = kpisData?.kpis || [];
+
+  const handleKPIClick = (kpi: any) => {
+    openDetailPanel('kpi', kpi.id, {
+      name: kpi.name || kpi.label,
+      value: kpi.value,
+      unit: kpi.unit,
+      target: kpi.target,
+      status: kpi.status,
+      category: kpi.category,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {kpis.map((kpi) => {
+          const value = typeof kpi.value === 'number' ? kpi.value.toLocaleString() : kpi.value;
+
+          return (
+            <div
+              key={kpi.id}
+              onClick={() => handleKPIClick(kpi)}
+              className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <p className="text-sm font-medium text-slate-300">{kpi.name || kpi.label}</p>
+                <Badge
+                  variant={kpi.status === 'success' ? 'default' : 'warning'}
+                  className="text-xs"
+                >
+                  {kpi.status === 'success'
+                    ? 'OK'
+                    : kpi.status === 'warning'
+                    ? 'Attention'
+                    : 'Critique'}
+                </Badge>
+              </div>
+              <div className="flex items-baseline gap-2 mb-3">
+                <span className="text-3xl font-bold text-slate-200">{value}</span>
+                {kpi.unit && <span className="text-sm text-slate-500">{kpi.unit}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// Comparison View
+// ================================
+const ComparisonView = React.memo(function ComparisonView({ subCategory }: { subCategory: string }) {
+  const { openModal } = useAnalyticsCommandCenterStore();
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center py-12">
+        <BarChart3 className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-slate-300 mb-2">Comparaisons</h3>
+        <p className="text-slate-500 mb-4">Fonctionnalité de comparaison en développement</p>
+        <button
+          onClick={() => openModal('comparison')}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          Ouvrir la comparaison
+        </button>
+      </div>
+    </div>
+  );
+});
+
+// ================================
+// Bureaux View
+// ================================
+const BureauxView = React.memo(function BureauxView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel } = useAnalyticsCommandCenterStore();
+  const { data: bureauxData, isLoading } = useBureauxPerformance();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const bureaux = bureauxData?.bureaux || [];
+
+  const handleBureauClick = (bureau: any) => {
+    openDetailPanel('kpi', bureau.id, {
+      name: bureau.name,
+      performance: bureau.performance,
+      kpis: bureau.kpis,
+      alerts: bureau.alerts,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {bureaux.length === 0 ? (
+          <div className="col-span-full text-center py-12">
+            <Users className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">Aucun bureau disponible</p>
+          </div>
+        ) : (
+          bureaux.map((bureau) => (
+            <div
+              key={bureau.id}
+              onClick={() => handleBureauClick(bureau)}
+              className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <h4 className="text-base font-semibold text-slate-200">{bureau.name}</h4>
+                <Badge variant="default" className="text-xs">
+                  {bureau.performance}%
+                </Badge>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">KPIs</span>
+                  <span className="text-slate-300 font-medium">{bureau.kpis || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Alertes</span>
+                  <span className="text-slate-300 font-medium">{bureau.alerts || 0}</span>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+});
+

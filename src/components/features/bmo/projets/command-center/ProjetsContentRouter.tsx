@@ -19,6 +19,7 @@ import {
   ProjetsTypeDistributionChart,
   ProjetsTimelineChart,
   ProjetsTeamUtilizationChart,
+  ProjetsAnalyticsCharts,
 } from './analytics/ProjetsAnalyticsCharts';
 import {
   StatCard,
@@ -297,33 +298,11 @@ function OverviewView({ onViewProject, onEditProject, onDeleteProject }: Projets
         </section>
       </div>
 
-      {/* Analytics Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
-          <ProjetsTrendChart
-            data={[
-              { date: 'Jan', value: 45, label: 'Jan' },
-              { date: 'Fév', value: 52, label: 'Fév' },
-              { date: 'Mar', value: 48, label: 'Mar' },
-              { date: 'Avr', value: 55, label: 'Avr' },
-              { date: 'Mai', value: 58, label: 'Mai' },
-              { date: 'Juin', value: 54, label: 'Juin' },
-            ]}
-            height={180}
-          />
-        </section>
-
-        <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
-          <ProjetsStatusChart
-            data={[
-              { label: 'En cours', value: stats?.active ?? 0, color: 'bg-emerald-500' },
-              { label: 'Planification', value: stats?.planning ?? 0, color: 'bg-blue-500' },
-              { label: 'En retard', value: stats?.delayed ?? 0, color: 'bg-rose-500' },
-              { label: 'Complétés', value: stats?.completed ?? 0, color: 'bg-slate-500' },
-            ]}
-          />
-        </section>
-      </div>
+      {/* Analytics Charts */}
+      <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
+        <h2 className="text-lg font-semibold text-slate-200 mb-4">Analytics & Tendances</h2>
+        <ProjetsAnalyticsCharts />
+      </section>
     </div>
   );
 }

@@ -234,6 +234,14 @@ export function ValidationTrendChart({ data, color = CHART_COLORS.pending, class
 // Dashboard graphique complet
 // ============================================
 export function ValidationDashboardCharts({ data, className }: ChartProps) {
+  if (!data) {
+    return (
+      <div className={cn('flex items-center justify-center h-64 text-slate-400', className)}>
+        Aucune donnée disponible
+      </div>
+    );
+  }
+
   return (
     <div className={cn('grid grid-cols-1 md:grid-cols-2 gap-6', className)}>
       {/* Graphique statuts */}

@@ -9,4 +9,8 @@ export { EchangesSubNavigation } from './EchangesSubNavigation';
 export { EchangesKPIBar } from './EchangesKPIBar';
 export { EchangesActionsMenu } from './EchangesActionsMenu';
 export { EchangesContentRouter } from './EchangesContentRouter';
+export { EchangesModals } from './EchangesModals';
+export { EchangesDetailPanel } from './EchangesDetailPanel';
+export { EchangesBatchActionsBar } from './EchangesBatchActionsBar';
+export { EchangesFiltersPanel } from './EchangesFiltersPanel';
 

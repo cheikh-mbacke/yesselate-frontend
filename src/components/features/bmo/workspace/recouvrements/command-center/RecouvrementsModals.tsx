@@ -20,6 +20,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { RecouvrementsStatsModal } from '../RecouvrementsStatsModal';
+import { RecouvrementsFiltersPanel } from './RecouvrementsFiltersPanel';
 import { recouvrementsApiService, type RecouvrementsStats } from '@/lib/services/recouvrementsApiService';
 import { useState, useEffect } from 'react';
 
@@ -29,6 +30,7 @@ export type RecouvrementsModalType =
   | 'shortcuts' 
   | 'help' 
   | 'confirm'
+  | 'filters'
   | null;
 
 interface RecouvrementsModalState {
@@ -40,14 +42,26 @@ interface RecouvrementsModalState {
 interface RecouvrementsModalsProps {
   modal: RecouvrementsModalState;
   onClose: () => void;
+  onApplyFilters?: (filters: Record<string, string[]>) => void;
 }
 
-export function RecouvrementsModals({ modal, onClose }: RecouvrementsModalsProps) {
+export function RecouvrementsModals({ modal, onClose, onApplyFilters }: RecouvrementsModalsProps) {
   if (!modal.isOpen || !modal.type) return null;
 
   // Stats Modal
   if (modal.type === 'stats') {
     return <RecouvrementsStatsModal open={true} onClose={onClose} />;
+  }
+
+  // Filters Panel
+  if (modal.type === 'filters') {
+    return (
+      <RecouvrementsFiltersPanel
+        isOpen={true}
+        onClose={onClose}
+        onApplyFilters={onApplyFilters || (() => {})}
+      />
+    );
   }
 
   // Export Modal

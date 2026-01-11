@@ -41,13 +41,11 @@ export interface IANavigationState {
 
 // État des modals
 export type IAModalType =
-  | 'filters'
   | 'export'
   | 'settings'
-  | 'module-detail'
-  | 'analysis-detail'
   | 'help'
   | 'shortcuts'
+  | 'confirm'
   | null;
 
 export interface IAModalState {

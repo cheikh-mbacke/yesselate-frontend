@@ -5,4 +5,5 @@ export { DecisionsLiveCounters } from './DecisionsLiveCounters';
 export { DecisionsCommandPalette } from './DecisionsCommandPalette';
 export { DecisionsStatsModal } from './DecisionsStatsModal';
 export { DecisionsDirectionPanel } from './DecisionsDirectionPanel';
+export { DecisionDetailModal } from './DecisionDetailModal';
 

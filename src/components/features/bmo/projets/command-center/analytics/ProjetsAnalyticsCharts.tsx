@@ -530,3 +530,53 @@ export function ProjetsTeamUtilizationChart({
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ANALYTICS CHARTS WRAPPER - Composant wrapper pour afficher plusieurs graphiques
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function ProjetsAnalyticsCharts() {
+  // Données mock pour les graphiques (à remplacer par des données réelles)
+  const trendData = [
+    { date: '2024-01', value: 45, label: 'Janv' },
+    { date: '2024-02', value: 52, label: 'Févr' },
+    { date: '2024-03', value: 48, label: 'Mars' },
+    { date: '2024-04', value: 55, label: 'Avr' },
+    { date: '2024-05', value: 58, label: 'Mai' },
+    { date: '2024-06', value: 62, label: 'Juin' },
+  ];
+
+  const statusData = [
+    { label: 'En cours', value: 18, color: 'bg-emerald-500' },
+    { label: 'Planification', value: 8, color: 'bg-blue-500' },
+    { label: 'En retard', value: 5, color: 'bg-rose-500' },
+    { label: 'Terminés', value: 32, color: 'bg-slate-500' },
+  ];
+
+  const typeData = [
+    { label: 'Infrastructure', value: 12 },
+    { label: 'Bâtiment', value: 18 },
+    { label: 'Réhabilitation', value: 8 },
+    { label: 'Urbanisme', value: 6 },
+    { label: 'Environnement', value: 4 },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Trend Chart */}
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
+        <ProjetsTrendChart data={trendData} />
+      </div>
+
+      {/* Status Distribution */}
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
+        <ProjetsStatusChart data={statusData} />
+      </div>
+
+      {/* Type Distribution */}
+      <div className="lg:col-span-2 rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
+        <ProjetsTypeDistributionChart data={typeData} />
+      </div>
+    </div>
+  );
+}
+

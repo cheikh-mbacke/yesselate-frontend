@@ -16,10 +16,17 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 import {
+  useEmployesCommandCenterStore,
+  type EmployesMainCategory,
+} from '@/lib/stores/employesCommandCenterStore';
+import {
   EmployesCommandSidebar,
   EmployesSubNavigation,
   EmployesKPIBar,
   EmployesContentRouter,
+  EmployesDetailPanel,
+  EmployesFiltersPanel,
+  EmployesBatchActionsBar,
   ActionsMenu,
   employesCategories,
 } from '@/components/features/bmo/workspace/employes/command-center';
@@ -28,6 +35,8 @@ import { EmployesStatsModal } from '@/components/features/bmo/workspace/employes
 import { EmployesNotificationPanel } from '@/components/features/bmo/workspace/employes/EmployesNotificationPanel';
 import { EmployesModals, type EmployeModalType } from '@/components/features/bmo/workspace/employes/EmployesModals';
 import { EmployeesHelpModal } from '@/components/features/bmo/workspace/employes/modals/EmployeesHelpModal';
+import { EmployeeDetailModal } from '@/components/features/bmo/workspace/employes/modals/EmployeeDetailModal';
+import { employesApiService, type Employe } from '@/lib/services/employesApiService';
 
 // ================================
 // Types
@@ -97,6 +106,83 @@ const subCategoriesMap: Record<string, SubCategory[]> = {
 };
 
 // ================================
+// Employee Detail Modal Wrapper
+// ================================
+function EmployeeDetailModalWrapper({
+  employeeId,
+  onClose,
+}: {
+  employeeId?: string;
+  onClose: () => void;
+}) {
+  const [employee, setEmployee] = useState<Employe | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (employeeId) {
+      setLoading(true);
+      employesApiService
+        .getById(employeeId)
+        .then((emp) => {
+          setEmployee(emp || null);
+        })
+        .catch(() => {
+          setEmployee(null);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [employeeId]);
+
+  if (loading || !employee) {
+    return null;
+  }
+
+  // Convertir Employe vers Employee (interface du modal)
+  const employeeData = {
+    id: employee.id,
+    name: employee.name,
+    email: employee.email,
+    phone: employee.phone,
+    position: employee.poste,
+    bureau: employee.bureau,
+    status: employee.status === 'actif' ? 'active' : employee.status === 'inactif' ? 'inactive' : employee.status === 'conges' ? 'on_leave' : 'terminated',
+    contractType: employee.contrat as 'CDI' | 'CDD' | 'Stage' | 'Intérim',
+    startDate: employee.dateEmbauche,
+    endDate: employee.dateFinContrat,
+    salary: employee.salaire,
+    skills: employee.competences,
+    performance: employee.scoreEvaluation ? { rating: employee.scoreEvaluation } : undefined,
+    isSPOF: employee.spof,
+  };
+
+  return (
+    <EmployeeDetailModal
+      isOpen={true}
+      onClose={onClose}
+      employee={employeeData}
+      onEdit={(emp) => {
+        console.log('Edit employee', emp);
+        // TODO: Implémenter édition
+      }}
+      onDelete={(emp) => {
+        console.log('Delete employee', emp);
+        // TODO: Implémenter suppression
+      }}
+      onAssign={(emp) => {
+        console.log('Assign employee', emp);
+        // TODO: Implémenter assignation
+      }}
+      onEvaluate={(emp) => {
+        console.log('Evaluate employee', emp);
+        // TODO: Implémenter évaluation
+      }}
+    />
+  );
+}
+
+// ================================
 // Main Component
 // ================================
 export default function EmployesPage() {
@@ -104,30 +190,30 @@ export default function EmployesPage() {
 }
 
 function EmployesPageContent() {
-  // Navigation state
-  const [activeCategory, setActiveCategory] = useState('overview');
-  const [activeSubCategory, setActiveSubCategory] = useState<string | null>('all');
-  const [navigationHistory, setNavigationHistory] = useState<Array<{ category: string; subCategory: string | null }>>([]);
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useEmployesCommandCenterStore();
 
-  // UI state
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
-  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
-  const [kpiBarVisible, setKpiBarVisible] = useState(true);
-
-  // Modal state
-  const [modal, setModal] = useState<{
-    isOpen: boolean;
-    type: EmployeModalType | null;
-    data?: any;
-  }>({
-    isOpen: false,
-    type: null,
-  });
-
-  // Refresh state
+  // État local pour refresh
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
@@ -136,6 +222,10 @@ function EmployesPageContent() {
 
   // Stats modal state (handled separately)
   const [statsModalOpen, setStatsModalOpen] = useState(false);
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
 
   // ================================
   // Computed values
@@ -168,30 +258,47 @@ function EmployesPageContent() {
   }, []);
 
   const handleCategoryChange = useCallback((category: string) => {
-    setNavigationHistory((prev) => [...prev, { category: activeCategory, subCategory: activeSubCategory }].slice(-20));
-    setActiveCategory(category);
-    setActiveSubCategory('all');
-  }, [activeCategory, activeSubCategory]);
+    navigate(category as EmployesMainCategory, 'all', null);
+  }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
-    setActiveSubCategory(subCategory);
-  }, []);
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
 
-  const goBack = useCallback(() => {
-    if (navigationHistory.length === 0) return;
-    const previous = navigationHistory[navigationHistory.length - 1];
-    setNavigationHistory((prev) => prev.slice(0, -1));
-    setActiveCategory(previous.category);
-    setActiveSubCategory(previous.subCategory);
-  }, [navigationHistory]);
-
-  const openModal = useCallback((type: EmployeModalType, data?: any) => {
-    setModal({ isOpen: true, type, data });
-  }, []);
-
-  const closeModal = useCallback(() => {
-    setModal({ isOpen: false, type: null });
-  }, []);
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        if (ids.length > 0) {
+          openModal('employee-detail', { employeeId: ids[0] });
+        }
+        break;
+      case 'assign':
+        // TODO: Implémenter assignation
+        console.log('Assigner', ids);
+        break;
+      case 'evaluate':
+        // TODO: Implémenter évaluation
+        console.log('Évaluer', ids);
+        break;
+      case 'mark-spof':
+        // TODO: Implémenter marquage SPOF
+        console.log('Marquer SPOF', ids);
+        break;
+      case 'archive':
+        // TODO: Implémenter archivage
+        console.log('Archiver', ids);
+        break;
+      case 'delete':
+        // TODO: Implémenter suppression
+        console.log('Supprimer', ids);
+        break;
+      default:
+        break;
+    }
+  }, [openModal]);
 
   // ================================
   // Keyboard shortcuts
@@ -206,7 +313,14 @@ function EmployesPageContent() {
       // Ctrl+K : Command Palette
       if (isMod && e.key === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen((prev) => !prev);
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
         return;
       }
 
@@ -220,7 +334,7 @@ function EmployesPageContent() {
       // F11 : Fullscreen
       if (e.key === 'F11') {
         e.preventDefault();
-        setFullscreen((prev) => !prev);
+        toggleFullscreen();
         return;
       }
 
@@ -234,7 +348,7 @@ function EmployesPageContent() {
       // Ctrl+B : Toggle sidebar
       if (isMod && e.key === 'b') {
         e.preventDefault();
-        setSidebarCollapsed((prev) => !prev);
+        toggleSidebar();
         return;
       }
 
@@ -257,16 +371,16 @@ function EmployesPageContent() {
         if (modal.isOpen) {
           closeModal();
         } else if (commandPaletteOpen) {
-          setCommandPaletteOpen(false);
+          toggleCommandPalette();
         } else if (notificationsPanelOpen) {
-          setNotificationsPanelOpen(false);
+          toggleNotificationsPanel();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, modal.isOpen, notificationsPanelOpen, goBack, openModal, closeModal]);
+  }, [commandPaletteOpen, modal.isOpen, notificationsPanelOpen, goBack, openModal, closeModal, toggleCommandPalette, toggleFullscreen, toggleSidebar, toggleNotificationsPanel]);
 
   // ================================
   // Render
@@ -283,8 +397,8 @@ function EmployesPageContent() {
         activeCategory={activeCategory}
         collapsed={sidebarCollapsed}
         onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
       />
 
       {/* Main Content Area */}
@@ -324,7 +438,7 @@ function EmployesPageContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCommandPaletteOpen(true)}
+              onClick={toggleCommandPalette}
               className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
               <Search className="h-4 w-4 mr-2" />
@@ -340,7 +454,7 @@ function EmployesPageContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              onClick={toggleNotificationsPanel}
               className={cn(
                 'h-8 w-8 p-0 relative',
                 notificationsPanelOpen
@@ -359,16 +473,17 @@ function EmployesPageContent() {
             <ActionsMenu
               onRefresh={handleRefresh}
               isRefreshing={isRefreshing}
-              onSearch={() => setCommandPaletteOpen(true)}
+              onSearch={toggleCommandPalette}
+              onFilters={() => openModal('filters')}
               onExport={() => openModal('export')}
               onStats={() => setStatsModalOpen(true)}
               onSettings={() => openModal('settings')}
               onShortcuts={() => openModal('shortcuts')}
               onHelp={() => setHelpOpen(true)}
-              onToggleFullscreen={() => setFullscreen((prev) => !prev)}
+              onToggleFullscreen={toggleFullscreen}
               fullscreen={fullscreen}
-              onToggleKPIs={() => setKpiBarVisible((prev) => !prev)}
-              kpisVisible={kpiBarVisible}
+              onToggleKPIs={() => setKPIConfig({ visible: !kpiConfig.visible })}
+              kpisVisible={kpiConfig.visible}
             />
           </div>
         </header>
@@ -383,11 +498,11 @@ function EmployesPageContent() {
         />
 
         {/* KPI Bar */}
-        {kpiBarVisible && (
+        {kpiConfig.visible && (
           <EmployesKPIBar
             visible={true}
-            collapsed={kpiBarCollapsed}
-            onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
             onRefresh={handleRefresh}
           />
         )}
@@ -431,14 +546,29 @@ function EmployesPageContent() {
       {commandPaletteOpen && (
         <EmployesCommandPalette
           open={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
+          onClose={toggleCommandPalette}
           onOpenStats={() => setStatsModalOpen(true)}
           onRefresh={handleRefresh}
         />
       )}
 
       {/* Modals */}
-      <EmployesModals modal={modal} onClose={closeModal} />
+      <EmployesModals
+        modal={{
+          isOpen: modal.isOpen && modal.type !== 'employee-detail' && modal.type !== 'filters',
+          type: modal.type !== 'employee-detail' && modal.type !== 'filters' ? modal.type as EmployeModalType : null,
+          data: modal.data,
+        }}
+        onClose={closeModal}
+      />
+
+      {/* Employee Detail Modal */}
+      {modal.type === 'employee-detail' && modal.isOpen && (
+        <EmployeeDetailModalWrapper
+          employeeId={modal.data?.employeeId}
+          onClose={closeModal}
+        />
+      )}
 
       {/* Stats Modal */}
       <EmployesStatsModal
@@ -446,15 +576,36 @@ function EmployesPageContent() {
         onClose={() => setStatsModalOpen(false)}
       />
 
+      {/* Detail Panel */}
+      <EmployesDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <EmployesBatchActionsBar onAction={handleBatchAction} />
+
       {/* Notification Panel */}
       <EmployesNotificationPanel
         isOpen={notificationsPanelOpen}
-        onClose={() => setNotificationsPanelOpen(false)}
+        onClose={toggleNotificationsPanel}
       />
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <EmployesFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value as any);
+              }
+            });
+            closeModal();
+          }}
+        />
+      )}
 
       {/* Help Modal */}
       <EmployeesHelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
-

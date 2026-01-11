@@ -30,7 +30,9 @@ import {
   List,
   Columns,
   GanttChart,
+  HelpCircle,
 } from 'lucide-react';
+import { ProjetsHelpModal } from '@/components/features/bmo/projets/modals/ProjetsHelpModal';
 
 // Command Center Components
 import {
@@ -147,6 +149,7 @@ export default function ProjetsEnCoursPage() {
   // Local UI state
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
   
   // Pattern Modal Overlay - Détails projet
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -305,6 +308,13 @@ export default function ProjetsEnCoursPage() {
         return;
       }
 
+      // F1 : Help Modal
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+        return;
+      }
+
       // F11 : Fullscreen
       if (e.key === 'F11') {
         e.preventDefault();
@@ -321,6 +331,11 @@ export default function ProjetsEnCoursPage() {
 
       // Escape : Close panels
       if (e.key === 'Escape') {
+        if (helpModalOpen) {
+          e.preventDefault();
+          setHelpModalOpen(false);
+          return;
+        }
         if (commandPaletteOpen) toggleCommandPalette();
         if (notificationsPanelOpen) toggleNotificationsPanel();
       }
@@ -328,7 +343,7 @@ export default function ProjetsEnCoursPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleCommandPalette, toggleSidebar, toggleFullscreen, goBack, commandPaletteOpen, notificationsPanelOpen, toggleNotificationsPanel]);
+  }, [toggleCommandPalette, toggleSidebar, toggleFullscreen, goBack, commandPaletteOpen, notificationsPanelOpen, toggleNotificationsPanel, helpModalOpen]);
 
   // Custom events
   useEffect(() => {
@@ -512,6 +527,10 @@ export default function ProjetsEnCoursPage() {
                   )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setHelpModalOpen(true)}>
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Aide
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => openModal('export')}>
                   <Download className="h-4 w-4 mr-2" />
                   Exporter
@@ -582,6 +601,12 @@ export default function ProjetsEnCoursPage() {
 
       {/* Modals */}
       <ProjetsModals />
+
+      {/* Help Modal */}
+      <ProjetsHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
 
       {/* Command Palette */}
       <ProjetsCommandPalette

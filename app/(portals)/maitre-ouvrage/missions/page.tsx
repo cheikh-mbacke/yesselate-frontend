@@ -3,7 +3,7 @@
 /**
  * Centre de Commandement Missions - Version 2.0
  * Plateforme de gestion des missions terrain
- * Architecture cohérente avec Gouvernance et Analytics
+ * Architecture cohérente avec la page Gouvernance et Analytics
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -35,19 +35,15 @@ import {
 } from '@/components/features/bmo/missions/command-center';
 import { MissionsCommandPalette } from '@/components/features/bmo/workspace/missions/MissionsCommandPalette';
 
-// ================================
-// Types
-// ================================
-
-// Mock KPI Data (à remplacer par des vraies données)
+// Mock KPI Data (à remplacer par des données réelles)
 const mockKPIData: MissionsKPIData = {
-  totalMissions: 58,
+  totalMissions: 45,
   activeMissions: 12,
   teamsOnField: 8,
   avgDuration: 4.2,
   completionRate: 87,
   onTimeDelivery: 82,
-  avgCost: 245000,
+  avgCost: 450000,
   satisfactionScore: 4.3,
   trends: {
     total: 'up',
@@ -60,7 +56,6 @@ const mockKPIData: MissionsKPIData = {
 // ================================
 // Main Component
 // ================================
-
 export default function MissionsPage() {
   return <MissionsPageContent />;
 }
@@ -84,9 +79,6 @@ function MissionsPageContent() {
     closeModal,
     navigate,
     setKPIConfig,
-    filters,
-    setFilter,
-    resetFilters,
   } = useMissionsCommandCenterStore();
 
   // État local pour refresh (comme Governance)
@@ -145,16 +137,11 @@ function MissionsPageContent() {
           openModal('mission-detail', { missionId: ids[0] });
         }
         break;
-      case 'delete':
-        openModal('confirm', {
-          title: 'Supprimer les missions',
-          message: `Êtes-vous sûr de vouloir supprimer ${ids.length} mission(s) ?`,
-          variant: 'danger',
-          onConfirm: async () => {
-            // TODO: Implémenter suppression
-            console.log('Suppression de', ids);
-          },
-        });
+      case 'start':
+        // TODO: Implémenter démarrage batch
+        break;
+      case 'cancel':
+        // TODO: Implémenter annulation batch
         break;
       default:
         break;
@@ -315,7 +302,7 @@ function MissionsPageContent() {
             >
               <Bell className="h-4 w-4" />
               <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                3
+                5
               </span>
             </Button>
 
@@ -358,7 +345,7 @@ function MissionsPageContent() {
             <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
             <span className="text-slate-700">•</span>
             <span className="text-slate-600">
-              58 missions • 12 actives • 8 équipes sur site
+              45 missions • 12 actives • 8 équipes terrain
             </span>
           </div>
           <div className="flex items-center gap-4">
@@ -378,7 +365,7 @@ function MissionsPageContent() {
       </div>
 
       {/* Command Palette */}
-      {commandPaletteOpen && <MissionsCommandPalette open={commandPaletteOpen} onClose={toggleCommandPalette} />}
+      {commandPaletteOpen && <MissionsCommandPalette open={true} onClose={toggleCommandPalette} onOpenStats={() => openModal('stats')} onRefresh={handleRefresh} />}
 
       {/* Modals */}
       <MissionsModals />

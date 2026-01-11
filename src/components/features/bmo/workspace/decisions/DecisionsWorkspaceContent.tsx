@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useDecisionsWorkspaceStore } from '@/lib/stores/decisionsWorkspaceStore';
+import { useDecisionsCommandCenterStore } from '@/lib/stores/decisionsCommandCenterStore';
 import { decisionsApiService, type Decision } from '@/lib/services/decisionsApiService';
 import { FileText, Target, Settings, History, BarChart3, Search, ChevronRight, Eye, Star, StarOff, Gavel, User, Clock, Zap, DollarSign, CheckCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -8,10 +9,64 @@ const STATUS_STYLES = { draft: { border: 'border-l-slate-500', badge: 'bg-slate-
 const IMPACT_STYLES = { critical: { badge: 'bg-red-500/20 text-red-600', icon: Zap }, high: { badge: 'bg-amber-500/20 text-amber-600', icon: Zap }, medium: { badge: 'bg-blue-500/20 text-blue-600', icon: Clock }, low: { badge: 'bg-slate-500/20 text-slate-600', icon: Clock } };
 export function DecisionsWorkspaceContent() {
   const { tabs, activeTabId, openTab, currentFilter, watchlist, addToWatchlist, removeFromWatchlist } = useDecisionsWorkspaceStore();
+  const { openModal, openDetailPanel } = useDecisionsCommandCenterStore();
   const activeTab = tabs.find(t => t.id === activeTabId); const [decisions, setDecisions] = useState<Decision[]>([]); const [loading, setLoading] = useState(true); const [searchQuery, setSearchQuery] = useState(''); const [expandedId, setExpandedId] = useState<string | null>(null);
   const queue = activeTab?.data?.queue as string | undefined;
   useEffect(() => { const load = async () => { setLoading(true); try { const filter = { ...currentFilter }; if (queue && queue !== 'all') { if (['draft', 'pending', 'approved', 'rejected', 'executed'].includes(queue)) filter.status = queue; else if (['strategique', 'operationnel', 'financier', 'rh', 'technique'].includes(queue)) filter.type = queue; else if (queue === 'critical') filter.status = 'pending'; } if (searchQuery) filter.search = searchQuery; const r = await decisionsApiService.getAll(filter, 'impact', 1, 50); setDecisions(r.data); } catch (e) { console.error(e); } finally { setLoading(false); } }; load(); }, [currentFilter, queue, searchQuery]);
-  const handleOpenDetail = (dec: Decision) => openTab({ type: 'detail', id: `detail:${dec.id}`, title: dec.ref, icon: '⚖️', data: { decisionId: dec.id } });
+  const handleOpenDetail = (dec: Decision, event?: React.MouseEvent) => {
+    event?.stopPropagation();
+    // Pattern modal overlay - ouvrir la modal au lieu de naviguer
+    const currentIndex = decisions.findIndex(d => d.id === dec.id);
+    const hasNext = currentIndex < decisions.length - 1;
+    const hasPrevious = currentIndex > 0;
+    
+    openModal('decision-detail', {
+      decisionId: dec.id,
+      onNext: hasNext ? () => {
+        const nextDecision = decisions[currentIndex + 1];
+        if (nextDecision) {
+          openModal('decision-detail', {
+            decisionId: nextDecision.id,
+            onNext: currentIndex + 1 < decisions.length - 1 ? () => {
+              const next = decisions[currentIndex + 2];
+              if (next) openModal('decision-detail', { decisionId: next.id });
+            } : undefined,
+            onPrevious: () => openModal('decision-detail', { decisionId: dec.id }),
+            hasNext: currentIndex + 1 < decisions.length - 1,
+            hasPrevious: true,
+          });
+        }
+      } : undefined,
+      onPrevious: hasPrevious ? () => {
+        const prevDecision = decisions[currentIndex - 1];
+        if (prevDecision) {
+          openModal('decision-detail', {
+            decisionId: prevDecision.id,
+            onNext: () => openModal('decision-detail', { decisionId: dec.id }),
+            onPrevious: currentIndex - 1 > 0 ? () => {
+              const prev = decisions[currentIndex - 2];
+              if (prev) openModal('decision-detail', { decisionId: prev.id });
+            } : undefined,
+            hasNext: true,
+            hasPrevious: currentIndex - 1 > 0,
+          });
+        }
+      } : undefined,
+      hasNext,
+      hasPrevious,
+    });
+  };
+  
+  const handleQuickView = (dec: Decision, event?: React.MouseEvent) => {
+    event?.stopPropagation();
+    // Ouvrir le panel latéral pour vue rapide
+    openDetailPanel('decision', dec.id, {
+      ref: dec.ref,
+      titre: dec.titre,
+      status: dec.status,
+      impact: dec.impact,
+    });
+  };
   if (!activeTab) return <div className="flex items-center justify-center h-64 text-slate-500"><Gavel className="w-12 h-12 opacity-30" /></div>;
   if (activeTab.type === 'strategique') return <PlaceholderView icon={<Target className="w-12 h-12" />} title="Décisions stratégiques" />;
   if (activeTab.type === 'operationnel') return <PlaceholderView icon={<Settings className="w-12 h-12" />} title="Décisions opérationnelles" />;

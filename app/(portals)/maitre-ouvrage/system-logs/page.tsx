@@ -14,9 +14,13 @@ import {
   SystemLogsCommandSidebar,
   SystemLogsSubNavigation,
   SystemLogsKPIBar,
+  SystemLogsCommandPalette,
+  SystemLogsModals,
+  SystemLogsDetailPanel,
   systemLogsCategories,
 } from '@/components/features/bmo/system-logs/command-center';
 import { Terminal, Search, Bell, ChevronLeft, MoreHorizontal, Download, FileCheck } from 'lucide-react';
+import { useSystemLogsCommandCenterStore } from '@/lib/stores/systemLogsCommandCenterStore';
 
 /* --------------------------------------------
    TYPES (tolérants: tes logs peuvent avoir + de champs)
@@ -646,12 +650,13 @@ export default function SystemLogsPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
 
-  // Navigation state
+  // Store pour modals/navigation
+  const { openModal, navigation, navigate, sidebarCollapsed, toggleSidebar, toggleCommandPalette } = useSystemLogsCommandCenterStore();
+
+  // Navigation state local (pour compatibilité)
   const [activeCategory, setActiveCategory] = useState<string>('overview');
   const [activeSubCategory, setActiveSubCategory] = useState<string>('all');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
   // Quick filters
@@ -708,7 +713,7 @@ export default function SystemLogsPage() {
   useEffect(() => {
     try {
       updateFilters?.({
-        selectedLogId,
+        // selectedLogId n'est plus utilisé (modal overlay)
         levelFilter,
         categoryFilter,
         query,
@@ -1195,6 +1200,22 @@ export default function SystemLogsPage() {
     setActiveSubCategory(subCategory);
   }, []);
 
+  // Helper pour ouvrir un log dans la modal avec navigation prev/next
+  const handleOpenLogModal = useCallback((log: DerivedLog) => {
+    const currentIndex = visibleLogs.findIndex(l => l.id === log.id);
+    const prevLog = currentIndex > 0 ? visibleLogs[currentIndex - 1] : null;
+    const nextLog = currentIndex < visibleLogs.length - 1 ? visibleLogs[currentIndex + 1] : null;
+
+    openModal('log-detail', {
+      logId: log.id,
+      logData: log,
+      onNext: nextLog ? () => handleOpenLogModal(nextLog) : undefined,
+      onPrevious: prevLog ? () => handleOpenLogModal(prevLog) : undefined,
+      canNavigateNext: !!nextLog,
+      canNavigatePrevious: !!prevLog,
+    });
+  }, [visibleLogs, openModal]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1575,7 +1596,7 @@ export default function SystemLogsPage() {
                     styles.left,
                     selected ? 'ring-2 ring-blue-400/60' : 'hover:border-blue-400/30'
                   )}
-                  onClick={() => setSelectedLogId(log.id)}
+                  onClick={() => handleOpenLogModal(log)}
                 >
                   <CardContent className="p-2 sm:p-3">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
@@ -1947,6 +1968,15 @@ export default function SystemLogsPage() {
           </div>
         </footer>
       </div>
+
+      {/* Command Palette */}
+      <SystemLogsCommandPalette />
+
+      {/* Modals */}
+      <SystemLogsModals />
+
+      {/* Detail Panel */}
+      <SystemLogsDetailPanel />
     </div>
   );
 }

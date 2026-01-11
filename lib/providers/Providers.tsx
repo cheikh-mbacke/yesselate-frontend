@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { AuthProvider } from '@/lib/contexts/AuthContext';
-import { ToastProvider } from '@/src/components/features/bmo/ToastProvider';
-import { ModalManager } from '@/src/components/shared/ModalManager';
-import { ErrorBoundary } from '@/src/components/features/bmo/ErrorBoundary';
+import { AuthProvider } from '../contexts/AuthContext';
+import { ToastProvider } from '@/components/features/bmo/ToastProvider';
+import { ModalManager } from '@/components/shared/ModalManager';
+import { ErrorBoundary } from '@/components/features/bmo/ErrorBoundary';
 
 /**
  * Providers - Wrapper centralisé pour tous les providers

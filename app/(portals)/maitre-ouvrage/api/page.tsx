@@ -1,1109 +1,595 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+/**
+ * Centre de Commandement Analytics - Version 2.0
+ * Plateforme de pilotage et analyse des KPIs
+ * Architecture cohérente avec la page Gouvernance
+ * 
+ * Note: Cette page utilise l'architecture Analytics pour la page API
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { usePageNavigation } from '@/hooks/usePageNavigation';
-import { useAutoSyncCounts } from '@/hooks/useAutoSync';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { apiEndpoints, apiIntegrations } from '@/lib/data';
-import { ApiRequestWorkbench } from '@/components/features/bmo/api';
+import { Badge } from '@/components/ui/badge';
+import {
+  BarChart3,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useAnalyticsCommandCenterStore,
+  type AnalyticsMainCategory,
+} from '@/lib/stores/analyticsCommandCenterStore';
+import {
+  AnalyticsCommandSidebar,
+  AnalyticsSubNavigation,
+  AnalyticsKPIBar,
+  AnalyticsContentRouter,
+  AnalyticsFiltersPanel,
+  AnalyticsModals,
+  AnalyticsDetailPanel,
+  AnalyticsBatchActionsBar,
+  ActionsMenu,
+  analyticsCategories,
+} from '@/components/features/bmo/analytics/command-center';
+import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
+import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
+import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
 
-type ViewTab = 'endpoints' | 'integrations';
-
-type ApiEndpoint = (typeof apiEndpoints)[number];
-type ApiIntegration = (typeof apiIntegrations)[number];
-
-const STATUS_BORDER: Record<string, string> = {
-  active: 'border-l-emerald-500',
-  connected: 'border-l-emerald-500',
-  ok: 'border-l-emerald-500',
-
-  degraded: 'border-l-amber-500',
-  warning: 'border-l-amber-500',
-  disconnected: 'border-l-amber-500',
-
-  error: 'border-l-red-500',
-  failing: 'border-l-red-500',
-
-  maintenance: 'border-l-blue-500',
-  disabled: 'border-l-slate-500',
-};
-
-const badgeVariantForStatus = (status: string) => {
-  const s = (status || '').toLowerCase();
-  if (['active', 'connected', 'ok'].includes(s)) return 'success';
-  if (['degraded', 'warning', 'disconnected'].includes(s)) return 'warning';
-  if (['maintenance'].includes(s)) return 'info';
-  if (['error', 'failing'].includes(s)) return 'urgent';
-  if (['disabled'].includes(s)) return 'default';
-  return 'default';
-};
-
-const borderClassForStatus = (status: string) =>
-  STATUS_BORDER[(status || '').toLowerCase()] || 'border-l-slate-500';
-
-const getTypeIcon = (type: string) => {
-  const icons: Record<string, string> = {
-    payment: '💳',
-    banking: '🏦',
-    sms: '📱',
-    email: '📧',
-    storage: '☁️',
-    erp: '🏢',
-  };
-  return icons[type] || '🔌';
-};
-
-const isEndpointIssue = (e: ApiEndpoint) =>
-  e.status === 'error' || e.status === 'degraded';
-
-const isIntegrationIssue = (i: ApiIntegration) =>
-  // WHY: Vérifier les statuts possibles avec cast pour 'degraded' qui n'est pas dans le type
-  i.status === 'error' || (i as any)?.status === 'degraded' || (i as any)?.status === 'disconnected' || Boolean(i.credentials?.rotationRequired);
-
-const safeCopy = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-function CmdItem({
-  label,
-  hint,
-  onClick,
-}: {
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
   label: string;
-  hint: string;
-  onClick: () => void;
-}) {
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  performance: [
+    { id: 'all', label: 'Tous les KPIs' },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'warning', label: 'Attention', badge: 5, badgeType: 'warning' },
+    { id: 'success', label: 'OK' },
+  ],
+  financial: [
+    { id: 'budget', label: 'Budget' },
+    { id: 'expenses', label: 'Dépenses' },
+    { id: 'forecasts', label: 'Prévisions' },
+  ],
+  trends: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'positive', label: 'Positives' },
+    { id: 'negative', label: 'Négatives', badge: 4, badgeType: 'warning' },
+    { id: 'stable', label: 'Stables' },
+  ],
+  alerts: [
+    { id: 'all', label: 'Toutes', badge: 8 },
+    { id: 'critical', label: 'Critiques', badge: 2, badgeType: 'critical' },
+    { id: 'warning', label: 'Avertissements', badge: 6, badgeType: 'warning' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  reports: [
+    { id: 'all', label: 'Tous' },
+    { id: 'recent', label: 'Récents' },
+    { id: 'scheduled', label: 'Planifiés' },
+    { id: 'favorites', label: 'Favoris' },
+  ],
+  kpis: [
+    { id: 'all', label: 'Tous' },
+    { id: 'operational', label: 'Opérationnels' },
+    { id: 'strategic', label: 'Stratégiques' },
+    { id: 'custom', label: 'Personnalisés' },
+  ],
+  comparison: [
+    { id: 'bureaux', label: 'Par bureau' },
+    { id: 'period', label: 'Par période' },
+    { id: 'category', label: 'Par catégorie' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous' },
+    { id: 'btp', label: 'BTP' },
+    { id: 'bj', label: 'BJ' },
+    { id: 'bs', label: 'BS' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
+export default function ApiPage() {
   return (
-    <button
-      onClick={onClick}
-      className="text-left p-3 rounded-lg border border-slate-700/30 hover:bg-blue-500/5 transition-colors"
-    >
-      <p className="text-sm font-semibold">{label}</p>
-      <p className="text-[10px] text-slate-400">{hint}</p>
-    </button>
+    <AnalyticsToastProvider>
+      <ApiPageContent />
+    </AnalyticsToastProvider>
   );
 }
 
-export default function ApiPage() {
-  const router = useRouter();
-  const sp = useSearchParams();
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
+function ApiPageContent() {
+  const toast = useAnalyticsToast();
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useAnalyticsCommandCenterStore();
 
-  // Navigation persistée (si votre hook stocke des filtres)
-  const { updateFilters, getFilters } = usePageNavigation('api');
+  // Activer les notifications temps réel
+  const { isConnected, subscriptionsCount } = useRealtimeAnalytics({
+    autoConnect: true,
+    showToasts: true,
+    autoInvalidateQueries: true,
+  });
 
-  const [viewTab, setViewTab] = useState<ViewTab>('endpoints');
+  // État local pour refresh (comme Governance)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
-  const [selectedEndpointId, setSelectedEndpointId] = useState<string | null>(null);
-  const [selectedIntegrationId, setSelectedIntegrationId] = useState<string | null>(null);
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
 
-  // UX "pro"
-  const [q, setQ] = useState('');
-  const search = q.trim().toLowerCase();
-  const searchRef = useRef<HTMLInputElement | null>(null);
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return analyticsCategories.find((c) => c.id === activeCategory)?.label || 'Analytics';
+  }, [activeCategory]);
 
-  const [showOnlyIssues, setShowOnlyIssues] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
 
-  const [cmdOpen, setCmdOpen] = useState(false);
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
-  // Init depuis URL + store navigation
-  useEffect(() => {
-    const tab = sp.get('tab') as ViewTab | null;
-    const endpoint = sp.get('endpoint');
-    const integration = sp.get('integration');
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      toast.dataRefreshed();
+    }, 1500);
+  }, [toast]);
 
-    if (tab === 'endpoints' || tab === 'integrations') setViewTab(tab);
-    if (endpoint) setSelectedEndpointId(endpoint);
-    if (integration) setSelectedIntegrationId(integration);
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as AnalyticsMainCategory, 'all', null);
+  }, [navigate]);
 
-    const stored = (getFilters?.() ?? {}) as any;
-    if (stored && typeof stored === 'object') {
-      setViewTab((prev) => (tab ? prev : stored.viewTab ?? prev));
-      setSelectedEndpointId((prev) => (endpoint ? prev : stored.selectedEndpointId ?? prev));
-      setSelectedIntegrationId((prev) => (integration ? prev : stored.selectedIntegrationId ?? prev));
-      setQ((prev) => (prev ? prev : stored.q ?? ''));
-      setShowOnlyIssues((prev) => (prev ? prev : stored.showOnlyIssues ?? false));
-      setStatusFilter((prev) => (prev !== 'ALL' ? prev : stored.statusFilter ?? 'ALL'));
-      setTypeFilter((prev) => (prev !== 'ALL' ? prev : stored.typeFilter ?? 'ALL'));
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        // Ouvrir le premier item sélectionné
+        if (ids.length > 0) {
+          // TODO: Détecter le type (KPI, Alerte, Rapport) et ouvrir le modal approprié
+          openModal('kpi-detail', { kpiId: ids[0] });
+        }
+        break;
+      case 'delete':
+        // TODO: Implémenter suppression batch
+        toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
+        break;
+      case 'archive':
+        // TODO: Implémenter archivage batch
+        toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
+        break;
+      default:
+        break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [openModal, toast]);
 
-  // Sync URL + store navigation
+  // ================================
+  // Keyboard shortcuts
+  // ================================
   useEffect(() => {
-    try {
-      updateFilters?.({
-        viewTab,
-        selectedEndpointId,
-        selectedIntegrationId,
-        q,
-        showOnlyIssues,
-        statusFilter,
-        typeFilter,
-      });
-    } catch {
-      // ignore
-    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-    const params = new URLSearchParams();
-    params.set('tab', viewTab);
-    if (selectedEndpointId && viewTab === 'endpoints') params.set('endpoint', selectedEndpointId);
-    if (selectedIntegrationId && viewTab === 'integrations') params.set('integration', selectedIntegrationId);
-    router.replace(`?${params.toString()}`, { scroll: false } as any);
-  }, [
-    viewTab,
-    selectedEndpointId,
-    selectedIntegrationId,
-    q,
-    showOnlyIssues,
-    statusFilter,
-    typeFilter,
-    router,
-    updateFilters,
-  ]);
+      const isMod = e.metaKey || e.ctrlKey;
 
-  // Raccourcis clavier : "/" focus recherche, Ctrl/⌘+K palette
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && k === 'k') {
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
         e.preventDefault();
-        setCmdOpen(true);
+        toggleCommandPalette();
+        return;
       }
-      if (!e.ctrlKey && !e.metaKey && k === '/') {
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
         e.preventDefault();
-        searchRef.current?.focus();
+        openModal('filters');
+        return;
       }
-      if (k === 'escape') setCmdOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
-  // Stats "système"
-  const stats = useMemo(() => {
-    const endpointsActive = apiEndpoints.filter((e) => e.status === 'active').length;
-    const endpointsError = apiEndpoints.filter((e) => e.status === 'error' || e.status === 'degraded').length;
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
 
-    const integrationsActive = apiIntegrations.filter((i: any) => i.status === 'connected').length;
-    const integrationsError = apiIntegrations.filter((i: any) => i.status === 'error' || i.status === 'degraded' || i.status === 'disconnected').length;
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
 
-    const rotationRequired = apiIntegrations.filter((i) => Boolean(i.credentials?.rotationRequired)).length;
-    const totalCalls = apiEndpoints.reduce((acc, e) => acc + Number(e.callsToday ?? 0), 0);
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
 
-    const avgLatency =
-      apiEndpoints.length > 0
-        ? Math.round(apiEndpoints.reduce((acc, e) => acc + Number(e.avgResponseTime ?? 0), 0) / apiEndpoints.length)
-        : 0;
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
 
-    const avgErrRate =
-      apiEndpoints.length > 0
-        ? Number(
-            (
-              apiEndpoints.reduce((acc, e) => acc + Number(e.errorRate ?? 0), 0) / apiEndpoints.length
-            ).toFixed(1)
-          )
-        : 0;
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
 
-    const issuesTotal = endpointsError + integrationsError + rotationRequired;
-
-    return {
-      endpointsActive,
-      endpointsError,
-      integrationsActive,
-      integrationsError,
-      rotationRequired,
-      totalCalls,
-      avgLatency,
-      avgErrRate,
-      issuesTotal,
-    };
-  }, []);
-
-  // Auto-sync sidebar counts (ex: badge "API")
-  useAutoSyncCounts(
-    'api',
-    () => {
-      return stats.issuesTotal;
-    },
-    { interval: 15000, immediate: true }
-  );
-
-  // Filtres + recherche
-  const filteredEndpoints = useMemo(() => {
-    let list = [...apiEndpoints];
-
-    if (showOnlyIssues) list = list.filter((e) => isEndpointIssue(e));
-    if (statusFilter !== 'ALL') list = list.filter((e) => (e.status || '').toLowerCase() === statusFilter.toLowerCase());
-
-    if (search) {
-      list = list.filter((e) => {
-        const hay = `${e.id} ${e.name} ${e.method} ${e.path} ${e.status}`.toLowerCase();
-        return hay.includes(search);
-      });
-    }
-
-    // Tri : problèmes d'abord, puis latence, puis erreurs
-    return list.sort((a, b) => {
-      const aIssue = isEndpointIssue(a) ? 0 : 1;
-      const bIssue = isEndpointIssue(b) ? 0 : 1;
-      if (aIssue !== bIssue) return aIssue - bIssue;
-
-      const lat = Number(b.avgResponseTime ?? 0) - Number(a.avgResponseTime ?? 0);
-      if (lat !== 0) return lat;
-
-      return Number(b.errorRate ?? 0) - Number(a.errorRate ?? 0);
-    });
-  }, [showOnlyIssues, statusFilter, search]);
-
-  const filteredIntegrations = useMemo(() => {
-    let list = [...apiIntegrations];
-
-    if (showOnlyIssues) list = list.filter((i) => isIntegrationIssue(i));
-    if (statusFilter !== 'ALL') list = list.filter((i: any) => (i.status || '').toLowerCase() === statusFilter.toLowerCase());
-    if (typeFilter !== 'ALL') list = list.filter((i) => (i.type || '').toLowerCase() === typeFilter.toLowerCase());
-
-    if (search) {
-      list = list.filter((i: any) => {
-        const hay = `${i.id} ${i.provider} ${i.type} ${i.status} ${i.lastSync} ${i.lastError ?? ''}`.toLowerCase();
-        return hay.includes(search);
-      });
-    }
-
-    // Tri : erreurs/rotation d'abord
-    return list.sort((a: any, b: any) => {
-      const aRank = (a.status === 'error' ? 0 : a.credentials?.rotationRequired ? 1 : 2);
-      const bRank = (b.status === 'error' ? 0 : b.credentials?.rotationRequired ? 1 : 2);
-      if (aRank !== bRank) return aRank - bRank;
-      return String(b.lastSync ?? '').localeCompare(String(a.lastSync ?? ''));
-    });
-  }, [showOnlyIssues, statusFilter, typeFilter, search]);
-
-  const selectedEndpoint = selectedEndpointId
-    ? apiEndpoints.find((e) => e.id === selectedEndpointId) || null
-    : null;
-
-  const selectedIntegration = selectedIntegrationId
-    ? apiIntegrations.find((i) => i.id === selectedIntegrationId) || null
-    : null;
-
-  // Actions (loguées)
-  const handleRotateCredentials = (integration: ApiIntegration) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'api',
-      action: 'modification',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Rotation credentials ${integration.provider}`,
-    });
-    addToast('Credentials rotés - Action loguée', 'success');
-  };
-
-  const handleTestConnection = (integration: ApiIntegration) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'api',
-      action: 'validation',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Test connexion ${integration.provider}`,
-    });
-    addToast(`Test ${integration.provider} en cours...`, 'info');
-  };
-
-  const handleDisable = (integration: ApiIntegration) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'api',
-      action: 'modification',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Désactivation ${integration.provider}`,
-    });
-    addToast('Intégration désactivée', 'warning');
-  };
-
-  const handleCopyEndpoint = async (endpoint: ApiEndpoint) => {
-    const ok = await safeCopy(`${endpoint.method} ${endpoint.path}`);
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'api',
-      action: 'validation',
-      targetId: endpoint.id,
-      targetType: 'ApiEndpoint',
-      details: `Copie endpoint ${endpoint.method} ${endpoint.path}`,
-    });
-    addToast(ok ? 'Endpoint copié' : 'Impossible de copier (clipboard)', ok ? 'success' : 'warning');
-  };
-
-  const handleSimulateCall = (endpoint: ApiEndpoint) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      module: 'api',
-      action: 'validation',
-      targetId: endpoint.id,
-      targetType: 'ApiEndpoint',
-      details: `Simulation call ${endpoint.method} ${endpoint.path}`,
-    });
-    addToast(`Simulation ${endpoint.name}…`, 'info');
-  };
-
-  const handleExportHealthJson = () => {
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      stats,
-      endpoints: apiEndpoints,
-      integrations: apiIntegrations,
-      filters: {
-        viewTab,
-        showOnlyIssues,
-        q,
-        statusFilter,
-        typeFilter,
-      },
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `api-health-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
 
-    addToast('📤 Export Health JSON généré', 'success');
-  };
-
-  const rotateAllRequired = () => {
-    const targets = apiIntegrations.filter((i) => Boolean(i.credentials?.rotationRequired));
-    if (targets.length === 0) return addToast('Aucune rotation requise', 'info');
-
-    targets.forEach((t) => handleRotateCredentials(t));
-    addToast(`🔑 Rotations déclenchées: ${targets.length}`, 'success');
-  };
-
-  const testAllErrors = () => {
-    const targets = apiIntegrations.filter((i: any) => i.status === 'error' || i.status === 'degraded' || i.status === 'disconnected');
-    if (targets.length === 0) return addToast('Aucune intégration en erreur', 'info');
-
-    targets.forEach((t) => handleTestConnection(t));
-    addToast(`🔍 Tests lancés: ${targets.length}`, 'info');
-  };
-
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🔌 API & Intégrations
-            <Badge variant="info">{apiIntegrations.length} intégrations</Badge>
-            <Badge variant="default">{apiEndpoints.length} endpoints</Badge>
-            {stats.issuesTotal > 0 && (
-              <Badge variant="warning" className="ml-1">
-                {stats.issuesTotal} issues
-              </Badge>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <AnalyticsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
-          </h1>
-          <p className="text-sm text-slate-400">
-            Monitoring endpoints • Intégrations externes • Rotation credentials • "/" recherche • "Ctrl/⌘+K" commandes
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={handleExportHealthJson}>
-            📤 Health JSON
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setCmdOpen(true)}>
-            ⌘K
-          </Button>
-        </div>
-      </div>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Analytics</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
 
-      {/* Recherche + filtres rapides */}
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          ref={searchRef}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Rechercher (provider, path, méthode, status)…"
-          className={cn(
-            'flex-1 min-w-[240px] px-3 py-2 rounded text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-          )}
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <AnalyticsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
         />
 
-        <select
-          className={cn(
-            'px-2 py-2 rounded text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-          )}
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="ALL">Status: Tous</option>
-          <option value="active">active</option>
-          <option value="degraded">degraded</option>
-          <option value="error">error</option>
-          <option value="maintenance">maintenance</option>
-          <option value="connected">connected</option>
-          <option value="disconnected">disconnected</option>
-          <option value="disabled">disabled</option>
-        </select>
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <AnalyticsKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
 
-        <select
-          className={cn(
-            'px-2 py-2 rounded text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-          )}
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          disabled={viewTab !== 'integrations'}
-          title={viewTab !== 'integrations' ? 'Filtre type disponible uniquement sur Intégrations' : ''}
-        >
-          <option value="ALL">Type: Tous</option>
-          <option value="payment">payment</option>
-          <option value="banking">banking</option>
-          <option value="sms">sms</option>
-          <option value="email">email</option>
-          <option value="storage">storage</option>
-          <option value="erp">erp</option>
-        </select>
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <AnalyticsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
 
-        <Button size="sm" variant={showOnlyIssues ? 'default' : 'secondary'} onClick={() => setShowOnlyIssues((v) => !v)}>
-          🚨 {showOnlyIssues ? 'Issues: ON' : 'Issues: OFF'}
-        </Button>
-
-        <Button size="sm" variant="ghost" onClick={() => setQ('')}>
-          Effacer
-        </Button>
-      </div>
-
-      {/* Alertes */}
-      {(stats.endpointsError > 0 || stats.integrationsError > 0 || stats.rotationRequired > 0) && (
-        <Card className="border-red-500/50 bg-red-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🚨</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-red-400">Alertes système</h3>
-                <p className="text-sm text-slate-400">
-                  {stats.endpointsError > 0 && `${stats.endpointsError} endpoint(s) en erreur • `}
-                  {stats.integrationsError > 0 && `${stats.integrationsError} intégration(s) en erreur • `}
-                  {stats.rotationRequired > 0 && `${stats.rotationRequired} rotation(s) requise(s)`}
-                </p>
-
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <Button size="sm" variant="warning" onClick={rotateAllRequired}>
-                    🔑 Rotation en masse
-                  </Button>
-                  <Button size="sm" variant="info" onClick={testAllErrors}>
-                    🔍 Tester intégrations KO
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setShowOnlyIssues(true)}>
-                    👁️ Voir uniquement problèmes
-                  </Button>
-                </div>
-              </div>
-
-              <div className="text-right text-[10px] text-slate-400">
-                <p>Latence moy.: <span className="font-mono">{stats.avgLatency}ms</span></p>
-                <p>Taux err. moy.: <span className="font-mono">{stats.avgErrRate}%</span></p>
-              </div>
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              24 KPIs • 8 alertes • 45 rapports
+            </span>
+            {isConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Temps réel ({subscriptionsCount} abonnements)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-8 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.totalCalls.toLocaleString()}</p>
-            <p className="text-[10px] text-slate-400">Appels aujourd&apos;hui</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-500/10 border-slate-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-slate-300">{stats.avgLatency}ms</p>
-            <p className="text-[10px] text-slate-400">Latence moy.</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-500/10 border-slate-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-slate-300">{stats.avgErrRate}%</p>
-            <p className="text-[10px] text-slate-400">Erreurs moy.</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.endpointsActive}</p>
-            <p className="text-[10px] text-slate-400">Endpoints OK</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.endpointsError}</p>
-            <p className="text-[10px] text-slate-400">Endpoints KO</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.integrationsActive}</p>
-            <p className="text-[10px] text-slate-400">Intégrations OK</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.integrationsError}</p>
-            <p className="text-[10px] text-slate-400">Intégrations KO</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.rotationRequired}</p>
-            <p className="text-[10px] text-slate-400">Rotations</p>
-          </CardContent>
-        </Card>
+          </div>
+        </footer>
       </div>
 
-      {/* Onglets */}
-      <div className="flex gap-2 flex-wrap">
-        <Button
-          size="sm"
-          variant={viewTab === 'endpoints' ? 'default' : 'secondary'}
-          onClick={() => {
-            setViewTab('endpoints');
-            setSelectedIntegrationId(null);
-          }}
-        >
-          📡 Endpoints ({apiEndpoints.length})
-        </Button>
-        <Button
-          size="sm"
-          variant={viewTab === 'integrations' ? 'default' : 'secondary'}
-          onClick={() => {
-            setViewTab('integrations');
-            setSelectedEndpointId(null);
-          }}
-        >
-          🔗 Intégrations ({apiIntegrations.length})
-        </Button>
-      </div>
+      {/* Command Palette */}
+      {commandPaletteOpen && <AnalyticsCommandPalette />}
 
-      {/* VUE: Endpoints (liste + panneau détail) */}
-      {viewTab === 'endpoints' ? (
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-3">
-            {filteredEndpoints.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-slate-400">
-                  Aucun endpoint ne correspond aux filtres.
-                </CardContent>
-              </Card>
-            ) : (
-              filteredEndpoints.map((endpoint) => {
-                const isSelected = selectedEndpointId === endpoint.id;
-                const leftBorder = borderClassForStatus(endpoint.status);
+      {/* Modals */}
+      <AnalyticsModals />
 
-                return (
-                  <Card
-                    key={endpoint.id}
-                    className={cn(
-                      'cursor-pointer transition-all border-l-4',
-                      leftBorder,
-                      isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50'
-                    )}
-                    onClick={() => setSelectedEndpointId(endpoint.id)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant={badgeVariantForStatus(endpoint.status)}>{endpoint.status}</Badge>
-                            <span className="font-mono text-xs text-slate-400">{endpoint.method}</span>
-                            <span className="font-mono text-[10px] text-slate-500">{endpoint.id}</span>
-                          </div>
-                          <h3 className="font-bold mt-1">{endpoint.name}</h3>
-                          <p className="text-xs text-slate-400 font-mono">{endpoint.path}</p>
-                        </div>
+      {/* Detail Panel */}
+      <AnalyticsDetailPanel />
 
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyEndpoint(endpoint);
-                            }}
-                          >
-                            📋 Copier
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="info"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSimulateCall(endpoint);
-                            }}
-                          >
-                            ▶️ Tester
-                          </Button>
-                        </div>
-                      </div>
+      {/* Batch Actions Bar */}
+      <AnalyticsBatchActionsBar onAction={handleBatchAction} />
 
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <p className="text-lg font-bold text-blue-400">
-                            {Number(endpoint.callsToday ?? 0).toLocaleString()}
-                          </p>
-                          <p className="text-[10px] text-slate-400">Appels/jour</p>
-                        </div>
-
-                        <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <p
-                            className={cn(
-                              'text-lg font-bold',
-                              endpoint.avgResponseTime < 200
-                                ? 'text-emerald-400'
-                                : endpoint.avgResponseTime < 500
-                                ? 'text-amber-400'
-                                : 'text-red-400'
-                            )}
-                          >
-                            {endpoint.avgResponseTime}ms
-                          </p>
-                          <p className="text-[10px] text-slate-400">Temps moy.</p>
-                        </div>
-
-                        <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <p
-                            className={cn(
-                              'text-lg font-bold',
-                              endpoint.errorRate < 1
-                                ? 'text-emerald-400'
-                                : endpoint.errorRate < 5
-                                ? 'text-amber-400'
-                                : 'text-red-400'
-                            )}
-                          >
-                            {endpoint.errorRate}%
-                          </p>
-                          <p className="text-[10px] text-slate-400">Erreurs</p>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-400 flex justify-between">
-                        <span>Rate limit: {endpoint.rateLimit}/min</span>
-                        <span>{Number(endpoint.callsMonth ?? 0).toLocaleString()} ce mois</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-
-          <div className="lg:col-span-1">
-            {selectedEndpoint ? (
-              <Card className="sticky top-4">
-                <CardContent className="p-4">
-                  <div className="mb-4 pb-4 border-b border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant={badgeVariantForStatus(selectedEndpoint.status)}>{selectedEndpoint.status}</Badge>
-                      <span className="font-mono text-xs text-slate-400">{selectedEndpoint.method}</span>
-                    </div>
-                    <h3 className="font-bold">{selectedEndpoint.name}</h3>
-                    <p className="text-xs text-slate-400 font-mono">{selectedEndpoint.path}</p>
-                    <p className="text-[10px] text-slate-500 mt-1">ID: {selectedEndpoint.id}</p>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                      <p className="text-xs text-slate-400 mb-2">📊 Santé endpoint</p>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span>Appels aujourd&apos;hui</span>
-                          <span className="font-mono">{Number(selectedEndpoint.callsToday ?? 0).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Latence moyenne</span>
-                          <span className="font-mono">{selectedEndpoint.avgResponseTime}ms</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Taux d&apos;erreur</span>
-                          <span className="font-mono">{selectedEndpoint.errorRate}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Rate limit</span>
-                          <span className="font-mono">{selectedEndpoint.rateLimit}/min</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                      <p className="text-xs text-slate-400 mb-2">🛡️ Recommandations auto</p>
-                      <ul className="text-xs text-slate-300 space-y-1 list-disc pl-4">
-                        {selectedEndpoint.errorRate >= 5 && <li>Erreur élevée : vérifier auth, payload et timeouts</li>}
-                        {selectedEndpoint.avgResponseTime >= 500 && <li>Latence : activer cache, profiler DB, réduire payload</li>}
-                        {selectedEndpoint.status === 'degraded' && <li>Mode dégradé : surveiller quotas et retry/backoff</li>}
-                        {selectedEndpoint.status === 'error' && <li>En erreur : basculer sur circuit breaker / fallback</li>}
-                        {selectedEndpoint.errorRate < 1 && selectedEndpoint.avgResponseTime < 200 && <li>Tout est propre : RAS ✅</li>}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                    <Button size="sm" variant="secondary" onClick={() => handleCopyEndpoint(selectedEndpoint)}>
-                      📋 Copier méthode + path
-                    </Button>
-                    <Button size="sm" variant="info" onClick={() => handleSimulateCall(selectedEndpoint)}>
-                      ▶️ Tester (simulation)
-                    </Button>
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-slate-700/50">
-                    <ApiRequestWorkbench
-                      endpoint={{
-                        id: selectedEndpoint.id,
-                        name: selectedEndpoint.name,
-                        method: selectedEndpoint.method,
-                        path: selectedEndpoint.path,
-                        avgResponseTime: selectedEndpoint.avgResponseTime,
-                        errorRate: selectedEndpoint.errorRate,
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="sticky top-4">
-                <CardContent className="p-8 text-center">
-                  <span className="text-4xl mb-4 block">📡</span>
-                  <p className="text-slate-400">Sélectionnez un endpoint</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* VUE: Integrations (liste + panneau détail) */
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-3">
-            {filteredIntegrations.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-slate-400">
-                  Aucune intégration ne correspond aux filtres.
-                </CardContent>
-              </Card>
-            ) : (
-              filteredIntegrations.map((integration) => {
-                const isSelected = selectedIntegrationId === integration.id;
-                const leftBorder = borderClassForStatus((integration as any).status);
-
-                return (
-                  <Card
-                    key={integration.id}
-                    className={cn(
-                      'cursor-pointer transition-all border-l-4',
-                      leftBorder,
-                      isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50'
-                    )}
-                    onClick={() => setSelectedIntegrationId(integration.id)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xl">{getTypeIcon(integration.type)}</span>
-                            <Badge variant={badgeVariantForStatus((integration as any).status)}>
-                              {(integration as any).status}
-                            </Badge>
-                            <Badge variant="default">{integration.type}</Badge>
-                            {integration.credentials.rotationRequired && (
-                              <Badge variant="warning" pulse>
-                                Rotation requise
-                              </Badge>
-                            )}
-                            <span className="font-mono text-[10px] text-slate-500">{integration.id}</span>
-                          </div>
-                          <h3 className="font-bold mt-1">{integration.provider}</h3>
-                        </div>
-
-                        <div className="text-right text-xs text-slate-400">
-                          <p>Dernière sync: {(integration as any).lastSync}</p>
-                        </div>
-                      </div>
-
-                      {(integration as any).status === 'error' && (integration as any).lastError && (
-                        <div className="p-2 rounded bg-red-500/10 border border-red-500/30 mb-3">
-                          <p className="text-xs text-red-400">⚠️ {(integration as any).lastError}</p>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2 flex-wrap">
-                        <Button
-                          size="sm"
-                          variant="info"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTestConnection(integration);
-                          }}
-                        >
-                          🔍 Tester
-                        </Button>
-
-                        {integration.credentials.rotationRequired && (
-                          <Button
-                            size="sm"
-                            variant="warning"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRotateCredentials(integration);
-                            }}
-                          >
-                            🔑 Rotation
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-
-          <div className="lg:col-span-1">
-            {selectedIntegration ? (
-              <Card className="sticky top-4">
-                <CardContent className="p-4">
-                  <div className="mb-4 pb-4 border-b border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-2xl">{getTypeIcon(selectedIntegration.type)}</span>
-                      <Badge variant={badgeVariantForStatus((selectedIntegration as any).status)}>
-                        {(selectedIntegration as any).status}
-                      </Badge>
-                    </div>
-                    <h3 className="font-bold">{selectedIntegration.provider}</h3>
-                    <p className="text-[10px] text-slate-500 mt-1">ID: {selectedIntegration.id}</p>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-xs text-slate-400">Type</p>
-                          <p className="capitalize">{selectedIntegration.type}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Dernière sync</p>
-                          <p>{(selectedIntegration as any).lastSync}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      className={cn(
-                        'p-3 rounded',
-                        selectedIntegration.credentials.rotationRequired
-                          ? 'bg-amber-500/10 border border-amber-500/30'
-                          : darkMode
-                          ? 'bg-slate-700/30'
-                          : 'bg-gray-100'
-                      )}
-                    >
-                      <p className="text-xs text-slate-400 mb-2">🔑 Credentials</p>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span>Dernière rotation</span>
-                          <span className="font-mono">{selectedIntegration.credentials.lastRotation}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Expiration</span>
-                          <span
-                            className={cn(
-                              'font-mono',
-                              selectedIntegration.credentials.rotationRequired ? 'text-amber-400' : 'text-slate-300'
-                            )}
-                          >
-                            {selectedIntegration.credentials.expiresAt}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {(selectedIntegration as any).webhooks && (selectedIntegration as any).webhooks.length > 0 && (
-                      <div>
-                        <p className="text-xs text-slate-400 mb-2">
-                          🔔 Webhooks ({(selectedIntegration as any).webhooks.length})
-                        </p>
-                        <div className="space-y-1">
-                          {(selectedIntegration as any).webhooks.map((wh: any, idx: number) => (
-                            <div
-                              key={idx}
-                              className={cn(
-                                'p-2 rounded text-xs flex justify-between items-center',
-                                darkMode ? 'bg-slate-700/30' : 'bg-gray-100'
-                              )}
-                            >
-                              <span>{wh.event}</span>
-                              <Badge variant={badgeVariantForStatus(wh.status)}>{wh.status}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {(selectedIntegration as any).status === 'error' && (selectedIntegration as any).lastError && (
-                      <div className="p-3 rounded bg-red-500/10 border border-red-500/30">
-                        <p className="text-xs text-slate-400 mb-1">🧾 Dernière erreur</p>
-                        <p className="text-xs text-red-400">⚠️ {(selectedIntegration as any).lastError}</p>
-                      </div>
-                    )}
-
-                    <div className={cn('p-3 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                      <p className="text-xs text-slate-400 mb-2">🛡️ Checklist sécurité</p>
-                      <ul className="text-xs text-slate-300 space-y-1 list-disc pl-4">
-                        <li>Rotation régulière + alerte J-7 avant expiration</li>
-                        <li>Principe du moindre privilège (scopes minimaux)</li>
-                        <li>Journalisation actions DG (audit) + horodatage</li>
-                        <li>Webhooks : signatures + retry/backoff</li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                    <Button size="sm" variant="info" onClick={() => handleTestConnection(selectedIntegration)}>
-                      🔍 Tester connexion
-                    </Button>
-                    {selectedIntegration.credentials.rotationRequired && (
-                      <Button size="sm" variant="warning" onClick={() => handleRotateCredentials(selectedIntegration)}>
-                        🔑 Rotation credentials
-                      </Button>
-                    )}
-                    <Button size="sm" variant="destructive" onClick={() => handleDisable(selectedIntegration)}>
-                      ⛔ Désactiver
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="sticky top-4">
-                <CardContent className="p-8 text-center">
-                  <span className="text-4xl mb-4 block">🔗</span>
-                  <p className="text-slate-400">Sélectionnez une intégration</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
       )}
 
-      {/* Command palette */}
-      {cmdOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-xl">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-sm">⌘K — Commandes rapides</p>
-                  <p className="text-xs text-slate-400">Astuce : "/" pour focus la recherche</p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => setCmdOpen(false)}>
-                  Fermer
-                </Button>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-2">
-                <CmdItem
-                  label="📡 Voir Endpoints"
-                  hint="Liste + détail endpoint"
-                  onClick={() => {
-                    setViewTab('endpoints');
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🔗 Voir Intégrations"
-                  hint="Liste + détail intégration"
-                  onClick={() => {
-                    setViewTab('integrations');
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🚨 Afficher uniquement les issues"
-                  hint="Filtre problèmes"
-                  onClick={() => {
-                    setShowOnlyIssues(true);
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🔑 Rotation en masse"
-                  hint='Toutes les intégrations "rotationRequired"'
-                  onClick={() => {
-                    rotateAllRequired();
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="🔍 Tester intégrations KO"
-                  hint="Test sur error/degraded/disconnected"
-                  onClick={() => {
-                    testAllErrors();
-                    setCmdOpen(false);
-                  }}
-                />
-                <CmdItem
-                  label="📤 Export Health JSON"
-                  hint="Stats + endpoints + integrations + filtres"
-                  onClick={() => {
-                    handleExportHealthJson();
-                    setCmdOpen(false);
-                  }}
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-700/40 flex items-center justify-between text-[10px] text-slate-400">
-                <span>ESC : fermer</span>
-                <span>Ctrl/⌘+K : ouvrir</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <AnalyticsFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            // Convertir les filtres au format du store
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value);
+              }
+            });
+            closeModal();
+            toast.info('Filtres appliqués', `${Object.keys(newFilters).length} filtre(s) actif(s)`);
+          }}
+        />
       )}
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'KPI Performance critique',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Tendance négative détectée',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Rapport hebdomadaire disponible',
+      time: 'il y a 3h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: 'Seuil budget atteint à 80%',
+      time: 'il y a 5h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Nouvelle analyse disponible',
+      time: 'hier',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

@@ -20,7 +20,9 @@ import {
   Download,
   Settings,
   MoreHorizontal,
+  HelpCircle,
 } from 'lucide-react';
+import { ArbitragesHelpModal } from '@/components/features/bmo/workspace/arbitrages/modals/ArbitragesHelpModal';
 import { useArbitragesWorkspaceStore } from '@/lib/stores/arbitragesWorkspaceStore';
 import { useBMOStore } from '@/lib/stores';
 import {
@@ -118,6 +120,7 @@ export default function ArbitragesVivantsPage() {
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
 
   // Navigation history for back button
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
@@ -200,6 +203,13 @@ export default function ArbitragesVivantsPage() {
         return;
       }
 
+      // F1 : Help Modal
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+        return;
+      }
+
       // F11 : Fullscreen
       if (e.key === 'F11') {
         e.preventDefault();
@@ -231,7 +241,7 @@ export default function ArbitragesVivantsPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setCommandPaletteOpen, handleToggleFullscreen, handleGoBack, handleRefresh]);
+  }, [setCommandPaletteOpen, handleToggleFullscreen, handleGoBack, handleRefresh, helpModalOpen]);
 
   // ================================
   // Render
@@ -358,6 +368,10 @@ export default function ArbitragesVivantsPage() {
                   Vue Direction
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setHelpModalOpen(true)}>
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Aide
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleToggleFullscreen}>
                   <Settings className="h-4 w-4 mr-2" />
                   {fullscreen ? 'Quitter' : 'Mode'} Plein écran
@@ -443,6 +457,12 @@ export default function ArbitragesVivantsPage() {
       {notificationsPanelOpen && (
         <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
       )}
+
+      {/* Help Modal */}
+      <ArbitragesHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
   );
 }

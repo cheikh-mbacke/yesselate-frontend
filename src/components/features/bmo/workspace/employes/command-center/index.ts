@@ -8,5 +8,8 @@ export type { SidebarCategory } from './EmployesCommandSidebar';
 export { EmployesSubNavigation } from './EmployesSubNavigation';
 export { EmployesKPIBar } from './EmployesKPIBar';
 export { EmployesContentRouter } from './EmployesContentRouter';
+export { EmployesDetailPanel } from './EmployesDetailPanel';
+export { EmployesFiltersPanel } from './EmployesFiltersPanel';
+export { EmployesBatchActionsBar } from './EmployesBatchActionsBar';
 export { ActionsMenu } from './ActionsMenu';
 

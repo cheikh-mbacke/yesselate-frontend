@@ -15,6 +15,7 @@ import {
   Bell,
   ChevronLeft,
 } from 'lucide-react';
+import { useDemandesRHCommandCenterStore } from '@/lib/stores/demandesRHCommandCenterStore';
 import {
   DemandesRHCommandSidebar,
   DemandesRHSubNavigation,
@@ -22,6 +23,8 @@ import {
   DemandesRHContentRouter,
   demandesRHCategories,
   ActionsMenu,
+  DemandesRHDetailModal,
+  DemandesRHFiltersPanel,
 } from '@/components/features/bmo/demandes-rh/command-center';
 
 // ================================
@@ -100,21 +103,40 @@ export default function DemandesRHPage() {
 }
 
 function DemandesRHPageContent() {
-  // Navigation state
-  const [activeCategory, setActiveCategory] = useState('overview');
-  const [activeSubCategory, setActiveSubCategory] = useState('all');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // Store Zustand
+  const {
+    navigation,
+    navigationHistory,
+    sidebarCollapsed,
+    fullscreen,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    detailModalOpen,
+    selectedDemandeId,
+    isRefreshing,
+    modal,
+    navigate,
+    goBack,
+    toggleSidebar,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    setKPIConfig,
+    openDetailModal,
+    closeDetailModal,
+    openModal,
+    closeModal,
+    startRefresh,
+    endRefresh,
+  } = useDemandesRHCommandCenterStore();
 
-  // UI state
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  // Navigation state (from store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // UI state local
   const [lastUpdate, setLastUpdate] = useState(new Date());
-  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
-  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
-
-  // Navigation history for back button
-  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
 
   // ================================
   // Computed values
@@ -139,31 +161,24 @@ function DemandesRHPageContent() {
   // Callbacks
   // ================================
   const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
+    startRefresh();
     setTimeout(() => {
-      setIsRefreshing(false);
+      endRefresh();
       setLastUpdate(new Date());
     }, 1500);
-  }, []);
+  }, [startRefresh, endRefresh]);
 
   const handleCategoryChange = useCallback((category: string) => {
-    setNavigationHistory((prev) => [...prev, activeCategory]);
-    setActiveCategory(category);
-    setActiveSubCategory('all');
-  }, [activeCategory]);
+    navigate(category as any, 'all');
+  }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
-    setActiveSubCategory(subCategory);
-  }, []);
+    navigate(activeCategory, subCategory);
+  }, [activeCategory, navigate]);
 
   const handleGoBack = useCallback(() => {
-    if (navigationHistory.length > 0) {
-      const previousCategory = navigationHistory[navigationHistory.length - 1];
-      setNavigationHistory((prev) => prev.slice(0, -1));
-      setActiveCategory(previousCategory);
-      setActiveSubCategory('all');
-    }
-  }, [navigationHistory]);
+    goBack();
+  }, [goBack]);
 
   // ================================
   // Keyboard shortcuts
@@ -178,14 +193,14 @@ function DemandesRHPageContent() {
       // Ctrl+K : Command Palette
       if (isMod && e.key === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen(true);
+        toggleCommandPalette();
         return;
       }
 
       // F11 : Fullscreen
       if (e.key === 'F11') {
         e.preventDefault();
-        setIsFullScreen((prev) => !prev);
+        toggleFullscreen();
         return;
       }
 
@@ -199,14 +214,14 @@ function DemandesRHPageContent() {
       // Ctrl+B : Toggle sidebar
       if (isMod && e.key === 'b') {
         e.preventDefault();
-        setSidebarCollapsed((prev) => !prev);
+        toggleSidebar();
         return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleGoBack]);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, handleGoBack]);
 
   // ================================
   // Render
@@ -215,7 +230,7 @@ function DemandesRHPageContent() {
     <div
       className={cn(
         'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
-        isFullScreen && 'fixed inset-0 z-50'
+        fullscreen && 'fixed inset-0 z-50'
       )}
     >
       {/* Sidebar Navigation */}
@@ -223,8 +238,8 @@ function DemandesRHPageContent() {
         activeCategory={activeCategory}
         collapsed={sidebarCollapsed}
         onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
       />
 
       {/* Main Content Area */}
@@ -264,7 +279,7 @@ function DemandesRHPageContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCommandPaletteOpen(true)}
+              onClick={toggleCommandPalette}
               className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
               <Search className="h-4 w-4 mr-2" />
@@ -280,7 +295,7 @@ function DemandesRHPageContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              onClick={toggleNotificationsPanel}
               className={cn(
                 'h-8 w-8 p-0 relative',
                 notificationsPanelOpen
@@ -299,11 +314,12 @@ function DemandesRHPageContent() {
             <ActionsMenu
               onRefresh={handleRefresh}
               isRefreshing={isRefreshing}
-              onFullscreen={() => setIsFullScreen((prev) => !prev)}
-              fullscreen={isFullScreen}
-              onCommandPalette={() => setCommandPaletteOpen(true)}
-              onToggleKPI={() => setKpiBarCollapsed((prev) => !prev)}
-              kpiVisible={!kpiBarCollapsed}
+              onFullscreen={toggleFullscreen}
+              fullscreen={fullscreen}
+              onCommandPalette={toggleCommandPalette}
+              onToggleKPI={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+              kpiVisible={!kpiConfig.collapsed}
+              onFilters={() => openModal('filters')}
             />
           </div>
         </header>
@@ -318,12 +334,14 @@ function DemandesRHPageContent() {
         />
 
         {/* KPI Bar */}
-        <DemandesRHKPIBar
-          visible={true}
-          collapsed={kpiBarCollapsed}
-          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
-          onRefresh={handleRefresh}
-        />
+        {kpiConfig.visible && (
+          <DemandesRHKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
@@ -362,7 +380,26 @@ function DemandesRHPageContent() {
 
       {/* Notifications Panel */}
       {notificationsPanelOpen && (
-        <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Detail Modal (Pattern Overlay) */}
+      {detailModalOpen && selectedDemandeId && (
+        <DemandesRHDetailModal
+          demandeId={selectedDemandeId}
+          onClose={closeDetailModal}
+          // TODO: Implémenter navigation précédent/suivant
+          hasPrevious={false}
+          hasNext={false}
+        />
+      )}
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <DemandesRHFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+        />
       )}
     </div>
   );

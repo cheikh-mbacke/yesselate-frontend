@@ -1,7 +1,7 @@
 'use client';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { mockEmployes } from '@/lib/mocks';
-import type { User } from '@/lib/types';
+import type { User } from '@/lib/types/index';
 
 // ============================================
 // TYPES
@@ -266,4 +266,5 @@ export function ProtectedRoute({ children, requiredRole, fallback }: ProtectedRo
 
   return <>{children}</>;
 }
+
 

@@ -16,6 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 
 interface KPIItem {
   id: string;
@@ -107,13 +108,14 @@ export const AnalyticsKPIBar = React.memo(function AnalyticsKPIBar({
   onRefresh,
 }: AnalyticsKPIBarProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdate] = useState(new Date());
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     onRefresh?.();
     await new Promise((r) => setTimeout(r, 1000));
     setIsRefreshing(false);
+    setLastUpdate(new Date()); // ✅ Mettre à jour le timestamp
   };
 
   const formatLastUpdate = useMemo(() => {
@@ -169,6 +171,8 @@ export const AnalyticsKPIBar = React.memo(function AnalyticsKPIBar({
 });
 
 const KPICard = React.memo(function KPICard({ kpi }: { kpi: KPIItem }) {
+  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
+  
   const TrendIcon =
     kpi.trend === 'up' ? TrendingUp : kpi.trend === 'down' ? TrendingDown : Minus;
 
@@ -185,8 +189,26 @@ const KPICard = React.memo(function KPICard({ kpi }: { kpi: KPIItem }) {
     stable: 'text-slate-500',
   };
 
+  const handleClick = () => {
+    // Ouvrir le panneau latéral pour vue rapide
+    openDetailPanel('kpi', kpi.id, {
+      name: kpi.label,
+      value: kpi.value,
+      trend: kpi.trend,
+      trendValue: kpi.trendValue,
+      status: kpi.status,
+      sparkline: kpi.sparkline,
+    });
+    
+    // Ou ouvrir directement la modal complète:
+    // openModal('kpi-detail', { kpiId: kpi.id });
+  };
+
   return (
-    <div className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors cursor-pointer group">
+    <div 
+      onClick={handleClick}
+      className="bg-slate-900/60 px-3 py-2 hover:bg-slate-800/40 transition-colors cursor-pointer group"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-xs text-slate-500 truncate mb-0.5 group-hover:text-slate-400 transition-colors">

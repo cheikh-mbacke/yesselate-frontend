@@ -140,7 +140,8 @@ export async function POST(
       ] : [],
     });
   } catch (error) {
-    console.error(`[paiements/${params.id}/reconcile] Error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}/reconcile] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to reconcile paiement', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -151,7 +152,7 @@ export async function POST(
 // GET pour voir l'état du rapprochement
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
@@ -182,7 +183,8 @@ export async function GET(
 
     return NextResponse.json(reconciliationData);
   } catch (error) {
-    console.error(`[paiements/${params.id}/reconcile] Get error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}/reconcile] Get error:`, error);
     return NextResponse.json(
       { error: 'Failed to get reconciliation data' },
       { status: 500 }

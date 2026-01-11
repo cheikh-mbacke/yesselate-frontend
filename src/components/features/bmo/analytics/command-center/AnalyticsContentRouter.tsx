@@ -30,6 +30,7 @@ import {
   useBureauxPerformance,
 } from '@/lib/api/hooks/useAnalytics';
 import { InteractiveChart, ChartGrid, ChartGridItem } from '../charts';
+import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 
 interface ContentRouterProps {
   category: string;
@@ -50,6 +51,41 @@ export const AnalyticsContentRouter = React.memo(function AnalyticsContentRouter
     return <PerformanceView subCategory={subCategory} />;
   }
 
+  // Alerts view
+  if (category === 'alerts') {
+    return <AlertsView subCategory={subCategory} />;
+  }
+
+  // Financial view
+  if (category === 'financial') {
+    return <FinancialView subCategory={subCategory} />;
+  }
+
+  // Trends view
+  if (category === 'trends') {
+    return <TrendsView subCategory={subCategory} />;
+  }
+
+  // Reports view
+  if (category === 'reports') {
+    return <ReportsView subCategory={subCategory} />;
+  }
+
+  // KPIs view
+  if (category === 'kpis') {
+    return <KPIsView subCategory={subCategory} />;
+  }
+
+  // Comparison view
+  if (category === 'comparison') {
+    return <ComparisonView subCategory={subCategory} />;
+  }
+
+  // Bureaux view
+  if (category === 'bureaux') {
+    return <BureauxView subCategory={subCategory} />;
+  }
+
   // Autres vues (placeholder)
   return (
     <div className="flex items-center justify-center h-full">
@@ -68,6 +104,7 @@ export const AnalyticsContentRouter = React.memo(function AnalyticsContentRouter
 // Overview Dashboard
 // ================================
 const OverviewDashboard = React.memo(function OverviewDashboard() {
+  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
   const { data: dashboardData, isLoading, error } = useAnalyticsDashboard();
   const { data: kpisData } = useKpis();
   const { data: alertsData } = useAlerts({ status: ['critical', 'warning'] });
@@ -184,9 +221,25 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
             purple: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
           };
 
+          const handleMetricClick = () => {
+            if (metric.id === 'kpis-total') {
+              // Naviguer vers la vue KPIs
+              // ou ouvrir stats modal
+              openModal('stats');
+            } else if (metric.id === 'alerts') {
+              // Naviguer vers la vue Alertes ou ouvrir directement
+              openModal('stats');
+            } else if (metric.id === 'performance') {
+              openModal('stats');
+            } else if (metric.id === 'trends') {
+              openModal('stats');
+            }
+          };
+
           return (
             <div
               key={metric.id}
+              onClick={handleMetricClick}
               className="p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer group"
             >
               <div className="flex items-start justify-between mb-3">
@@ -233,6 +286,7 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
             {recentReports.map((report) => (
               <div
                 key={report.id}
+                onClick={() => openModal('report', { reportId: report.id })}
                 className="p-3 rounded-lg border border-slate-700/30 bg-slate-800/30 hover:bg-slate-800/50 transition-colors cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -271,8 +325,23 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
                   ? ((diff / trend.previous) * 100).toFixed(1)
                   : '0';
 
+                const handleTrendClick = () => {
+                  // Ouvrir le panneau latéral ou modal pour voir les détails de la tendance
+                  openDetailPanel('kpi', trend.id, {
+                    name: trend.metric,
+                    value: trend.current,
+                    unit: trend.unit,
+                    trend: trend.trend,
+                    previous: trend.previous,
+                  });
+                };
+
                 return (
-                  <div key={trend.id} className="space-y-2">
+                  <div 
+                    key={trend.id} 
+                    onClick={handleTrendClick}
+                    className="space-y-2 cursor-pointer hover:bg-slate-800/30 p-2 rounded-lg transition-colors"
+                  >
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-slate-400">{trend.metric}</p>
                       <div className="flex items-center gap-2">
@@ -344,6 +413,7 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
 // Performance View
 // ================================
 const PerformanceView = React.memo(function PerformanceView({ subCategory }: { subCategory: string }) {
+  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
   const { data: kpisData, isLoading, error } = useKpis();
 
   if (isLoading) {
@@ -403,10 +473,26 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
             const percentage = target > 0 ? (value / target) * 100 : 100;
             const isAboveTarget = value >= target;
 
+            const handleKPIClick = () => {
+              // Ouvrir le panneau latéral pour vue rapide
+              openDetailPanel('kpi', kpi.id, {
+                name: kpi.name,
+                value: kpi.value,
+                unit: kpi.unit,
+                target: kpi.target,
+                status: kpi.status,
+                category: kpi.category,
+              });
+              
+              // Ou ouvrir directement la modal complète:
+              // openModal('kpi-detail', { kpiId: kpi.id });
+            };
+
             return (
               <div
                 key={kpi.id}
-                className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all"
+                onClick={handleKPIClick}
+                className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
               >
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-slate-300">{kpi.name}</p>

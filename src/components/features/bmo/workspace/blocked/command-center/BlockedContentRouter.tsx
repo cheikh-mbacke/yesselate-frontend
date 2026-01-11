@@ -57,33 +57,33 @@ import { BlockedDetailModal, useBlockedListNavigation } from '../BlockedDetailMo
 
 // Utility: Convert store filters to API filters
 function convertFiltersToApi(filters: {
-  impact: ('critical' | 'high' | 'medium' | 'low')[];
-  bureaux: string[];
-  types: string[];
-  status: ('pending' | 'escalated' | 'resolved' | 'substituted')[];
-  delayRange: { min?: number; max?: number };
+  impact?: ('critical' | 'high' | 'medium' | 'low')[];
+  bureaux?: string[];
+  types?: string[];
+  status?: ('pending' | 'escalated' | 'resolved' | 'substituted')[];
+  delayRange?: { min?: number; max?: number };
   amountRange?: { min?: number; max?: number };
   dateRange?: { start: string; end: string };
 }): BlockedFilter {
   const apiFilter: BlockedFilter = {};
 
   // Impact - prend le premier si plusieurs
-  if (filters.impact.length === 1) {
+  if (filters.impact?.length === 1) {
     apiFilter.impact = filters.impact[0];
   }
 
   // Bureau - prend le premier si plusieurs
-  if (filters.bureaux.length === 1) {
+  if (filters.bureaux?.length === 1) {
     apiFilter.bureau = filters.bureaux[0];
   }
 
   // Status - prend le premier si plusieurs
-  if (filters.status.length === 1) {
+  if (filters.status?.length === 1) {
     apiFilter.status = filters.status[0];
   }
 
   // Type - prend le premier si plusieurs
-  if (filters.types.length === 1) {
+  if (filters.types?.length === 1) {
     apiFilter.type = filters.types[0];
   }
 

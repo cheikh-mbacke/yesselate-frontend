@@ -41,8 +41,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { DocumentDetailsModal, ValidationModal } from '@/components/features/validation-bc/modals';
+import { ValidationModal } from '@/components/features/validation-bc/modals';
 import type { ValidationAction, ValidationData } from '@/components/features/validation-bc/modals';
+import { ValidationBCDetailModal, useValidationBCListNavigation } from '@/components/features/validation-bc/workspace';
 
 interface ValidationBCDocumentsListProps {
   filters?: {
@@ -71,11 +72,21 @@ export function ValidationBCDocumentsList({
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
-  // État des modals
-  const [selectedDocument, setSelectedDocument] = useState<ValidationDocument | null>(null);
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  // Navigation et modals
+  const documentsList = data?.items || [];
+  const {
+    selectedId,
+    handleOpen,
+    handleClose,
+    handleNext,
+    handlePrevious,
+  } = useValidationBCListNavigation(documentsList);
+
+  const selectedDocument = documentsList.find((d) => d.id === selectedId) || null;
+  
   const [validationAction, setValidationAction] = useState<ValidationAction | null>(null);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
+  const [documentForValidation, setDocumentForValidation] = useState<ValidationDocument | null>(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -106,50 +117,52 @@ export function ValidationBCDocumentsList({
 
   // Handlers pour les modals
   const handleDocumentClick = (doc: ValidationDocument) => {
-    setSelectedDocument(doc);
-    setDetailsModalOpen(true);
+    handleOpen(doc.id);
     onDocumentClick?.(doc);
   };
 
   const handleValidate = (doc: ValidationDocument) => {
-    setSelectedDocument(doc);
+    setDocumentForValidation(doc);
     setValidationAction('validate');
     setValidationModalOpen(true);
+    handleClose(); // Close detail modal to show validation modal
     onValidate?.(doc);
   };
 
   const handleReject = (doc: ValidationDocument) => {
-    setSelectedDocument(doc);
+    setDocumentForValidation(doc);
     setValidationAction('reject');
     setValidationModalOpen(true);
+    handleClose(); // Close detail modal to show validation modal
     onReject?.(doc);
   };
 
   const handleRequestInfo = (doc: ValidationDocument) => {
-    setSelectedDocument(doc);
+    setDocumentForValidation(doc);
     setValidationAction('request_info');
     setValidationModalOpen(true);
+    handleClose(); // Close detail modal to show validation modal
   };
 
   const handleValidationConfirm = async (data: ValidationData) => {
-    if (!selectedDocument) return;
+    if (!documentForValidation) return;
 
     try {
       // Appel API selon l'action
       if (data.action === 'validate') {
-        await fetch(`/api/validation-bc/documents/${selectedDocument.id}/validate`, {
+        await fetch(`/api/validation-bc/documents/${documentForValidation.id}/validate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         });
       } else if (data.action === 'reject') {
-        await fetch(`/api/validation-bc/documents/${selectedDocument.id}/reject`, {
+        await fetch(`/api/validation-bc/documents/${documentForValidation.id}/reject`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         });
       } else if (data.action === 'request_info') {
-        await fetch(`/api/validation-bc/documents/${selectedDocument.id}/request-info`, {
+        await fetch(`/api/validation-bc/documents/${documentForValidation.id}/request-info`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
@@ -158,6 +171,11 @@ export function ValidationBCDocumentsList({
 
       // Recharger la liste
       await loadDocuments();
+
+      // Fermer les modals
+      setValidationModalOpen(false);
+      setValidationAction(null);
+      setDocumentForValidation(null);
 
       // Log success
       console.log('Action effectuée avec succès:', data.action);
@@ -434,41 +452,45 @@ export function ValidationBCDocumentsList({
       </div>
     </div>
 
-    {/* Modals */}
-    <DocumentDetailsModal
-      document={selectedDocument}
-      isOpen={detailsModalOpen}
-      onClose={() => {
-        setDetailsModalOpen(false);
-        setSelectedDocument(null);
-      }}
-      onValidate={() => {
-        setDetailsModalOpen(false);
+    {/* Detail Modal with Navigation */}
+    <ValidationBCDetailModal
+      documents={documentsList}
+      selectedId={selectedId}
+      onClose={handleClose}
+      onPrevious={handlePrevious}
+      onNext={handleNext}
+      onValidate={(doc) => {
+        handleClose();
         setValidationAction('validate');
         setValidationModalOpen(true);
+        onValidate?.(doc);
       }}
-      onReject={() => {
-        setDetailsModalOpen(false);
+      onReject={(doc) => {
+        handleClose();
         setValidationAction('reject');
         setValidationModalOpen(true);
+        onReject?.(doc);
       }}
-      onRequestInfo={() => {
-        setDetailsModalOpen(false);
+      onRequestInfo={(doc) => {
+        handleClose();
         setValidationAction('request_info');
         setValidationModalOpen(true);
       }}
     />
 
-    <ValidationModal
-      document={selectedDocument}
-      action={validationAction}
-      isOpen={validationModalOpen}
-      onClose={() => {
-        setValidationModalOpen(false);
-        setValidationAction(null);
-      }}
-      onConfirm={handleValidationConfirm}
-    />
+    {documentForValidation && (
+      <ValidationModal
+        document={documentForValidation}
+        action={validationAction}
+        isOpen={validationModalOpen}
+        onClose={() => {
+          setValidationModalOpen(false);
+          setValidationAction(null);
+          setDocumentForValidation(null);
+        }}
+        onConfirm={handleValidationConfirm}
+      />
+    )}
   </>
   );
 }

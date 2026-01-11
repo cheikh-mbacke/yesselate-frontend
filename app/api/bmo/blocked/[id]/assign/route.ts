@@ -113,7 +113,8 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/assign] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/assign] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to assign dossier', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -124,10 +125,10 @@ export async function POST(
 // GET pour voir historique assignations
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // TODO: Récupérer historique assignations
     const assignmentHistory = [
@@ -155,7 +156,8 @@ export async function GET(
       history: assignmentHistory,
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/assign] Get error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/assign] Get error:`, error);
     return NextResponse.json(
       { error: 'Failed to get assignment history' },
       { status: 500 }

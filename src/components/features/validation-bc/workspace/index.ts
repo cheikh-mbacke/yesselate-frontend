@@ -17,6 +17,10 @@ export { ValidationBCBatchActions } from './ValidationBCBatchActions';
 export { ValidationBCTimeline } from './ValidationBCTimeline';
 export { ValidationBCSearchPanel } from './ValidationBCSearchPanel';
 export { ValidationBCQuickCreateModal } from './ValidationBCQuickCreate';
+export { ValidationBCModals, type ValidationBCModalType } from './ValidationBCModals';
+export { ValidationBCNotificationPanel } from './ValidationBCNotificationPanel';
+export { ValidationBCDetailModal } from './ValidationBCDetailModal';
+export { useValidationBCListNavigation } from './useValidationBCListNavigation';
 
 // Favorites system
 export { ValidationBCFavoritesProvider, useValidationBCFavorites, ValidationBCFavoritesPanel, ValidationBCQuickFavorites } from './ValidationBCFavorites';

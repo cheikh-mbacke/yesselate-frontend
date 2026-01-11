@@ -15,38 +15,26 @@ import {
   Search,
   Bell,
   ChevronLeft,
-  RefreshCw,
-  Plus,
-  Download,
-  Settings,
-  MoreHorizontal,
 } from 'lucide-react';
-import { useAnalyticsWorkspaceStore } from '@/lib/stores/analyticsWorkspaceStore';
+import {
+  useAnalyticsCommandCenterStore,
+  type AnalyticsMainCategory,
+} from '@/lib/stores/analyticsCommandCenterStore';
 import {
   AnalyticsCommandSidebar,
   AnalyticsSubNavigation,
   AnalyticsKPIBar,
   AnalyticsContentRouter,
   AnalyticsFiltersPanel,
+  AnalyticsModals,
+  AnalyticsDetailPanel,
+  AnalyticsBatchActionsBar,
+  ActionsMenu,
   analyticsCategories,
 } from '@/components/features/bmo/analytics/command-center';
 import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
-import { AnalyticsStatsModal } from '@/components/features/bmo/analytics/workspace/AnalyticsStatsModal';
-import { AnalyticsExportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsExportModal';
-import { AnalyticsAlertConfigModal } from '@/components/features/bmo/analytics/workspace/AnalyticsAlertConfigModal';
-import { AnalyticsReportModal } from '@/components/features/bmo/analytics/workspace/AnalyticsReportModal';
 import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
-import { KPIDetailModal } from '@/components/features/bmo/analytics/workspace/KPIDetailModal';
-import { AlertDetailModal } from '@/components/features/bmo/analytics/workspace/AlertDetailModal';
-import { GlobalSearch } from '@/components/features/bmo/analytics/search';
 import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 // ================================
 // Types
@@ -127,12 +115,27 @@ export default function AnalyticsPage() {
 function AnalyticsPageContent() {
   const toast = useAnalyticsToast();
   const {
-    openTab,
-    tabs,
-    isFullScreen,
-    toggleFullScreen,
-    openCommandPalette,
-  } = useAnalyticsWorkspaceStore();
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useAnalyticsCommandCenterStore();
 
   // Activer les notifications temps réel
   const { isConnected, subscriptionsCount } = useRealtimeAnalytics({
@@ -141,31 +144,13 @@ function AnalyticsPageContent() {
     autoInvalidateQueries: true,
   });
 
-  // Navigation state
-  const [activeCategory, setActiveCategory] = useState('overview');
-  const [activeSubCategory, setActiveSubCategory] = useState('all');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // UI state
+  // État local pour refresh (comme Governance)
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
-  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
-  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
-  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
 
-  // Modals state
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [alertConfigModalOpen, setAlertConfigModalOpen] = useState(false);
-  const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [kpiDetailModalOpen, setKpiDetailModalOpen] = useState(false);
-  const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null);
-  const [alertDetailModalOpen, setAlertDetailModalOpen] = useState(false);
-  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
-
-  // Navigation history for back button
-  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
 
   // ================================
   // Computed values
@@ -199,33 +184,37 @@ function AnalyticsPageContent() {
   }, [toast]);
 
   const handleCategoryChange = useCallback((category: string) => {
-    setNavigationHistory((prev) => [...prev, activeCategory]);
-    setActiveCategory(category);
-    setActiveSubCategory('all');
-  }, [activeCategory]);
+    navigate(category as AnalyticsMainCategory, 'all', null);
+  }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
-    setActiveSubCategory(subCategory);
-  }, []);
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
 
-  const handleGoBack = useCallback(() => {
-    if (navigationHistory.length > 0) {
-      const previousCategory = navigationHistory[navigationHistory.length - 1];
-      setNavigationHistory((prev) => prev.slice(0, -1));
-      setActiveCategory(previousCategory);
-      setActiveSubCategory('all');
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        // Ouvrir le premier item sélectionné
+        if (ids.length > 0) {
+          // TODO: Détecter le type (KPI, Alerte, Rapport) et ouvrir le modal approprié
+          openModal('kpi-detail', { kpiId: ids[0] });
+        }
+        break;
+      case 'delete':
+        // TODO: Implémenter suppression batch
+        toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
+        break;
+      case 'archive':
+        // TODO: Implémenter archivage batch
+        toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
+        break;
+      default:
+        break;
     }
-  }, [navigationHistory]);
-
-  const handleApplyFilters = useCallback((filters: Record<string, string[]>) => {
-    setActiveFilters(filters);
-    const totalFilters = Object.values(filters).reduce((acc, arr) => acc + arr.length, 0);
-    if (totalFilters > 0) {
-      toast.info('Filtres appliqués', `${totalFilters} filtre(s) actif(s)`);
-    }
-    console.log('Filtres appliqués:', filters);
-    // Ici, vous pouvez ajouter la logique pour filtrer les données
-  }, [toast]);
+  }, [openModal, toast]);
 
   // ================================
   // Keyboard shortcuts
@@ -240,62 +229,63 @@ function AnalyticsPageContent() {
       // Ctrl+K : Command Palette
       if (isMod && e.key === 'k') {
         e.preventDefault();
-        openCommandPalette();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
         return;
       }
 
       // Ctrl+E : Export
       if (isMod && e.key === 'e') {
         e.preventDefault();
-        setExportModalOpen(true);
+        openModal('export');
         return;
       }
 
       // F11 : Fullscreen
       if (e.key === 'F11') {
         e.preventDefault();
-        toggleFullScreen();
+        toggleFullscreen();
         return;
       }
 
       // Alt+Left : Back
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
-        handleGoBack();
+        goBack();
         return;
       }
 
       // Ctrl+B : Toggle sidebar
       if (isMod && e.key === 'b') {
         e.preventDefault();
-        setSidebarCollapsed((prev) => !prev);
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
         return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openCommandPalette, toggleFullScreen, handleGoBack]);
-
-  // Custom events
-  useEffect(() => {
-    const handleOpenStats = () => setStatsModalOpen(true);
-    const handleOpenExport = () => setExportModalOpen(true);
-    const handleOpenAlerts = () => setAlertConfigModalOpen(true);
-    const handleOpenReport = () => setReportModalOpen(true);
-
-    window.addEventListener('analytics:open-stats', handleOpenStats);
-    window.addEventListener('analytics:open-export', handleOpenExport);
-    window.addEventListener('analytics:open-alerts', handleOpenAlerts);
-    window.addEventListener('analytics:open-report', handleOpenReport);
-
-    return () => {
-      window.removeEventListener('analytics:open-stats', handleOpenStats);
-      window.removeEventListener('analytics:open-export', handleOpenExport);
-      window.removeEventListener('analytics:open-alerts', handleOpenAlerts);
-      window.removeEventListener('analytics:open-report', handleOpenReport);
-    };
-  }, []);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
 
   // ================================
   // Render
@@ -304,7 +294,7 @@ function AnalyticsPageContent() {
     <div
       className={cn(
         'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
-        isFullScreen && 'fixed inset-0 z-50'
+        fullscreen && 'fixed inset-0 z-50'
       )}
     >
       {/* Sidebar Navigation */}
@@ -312,8 +302,8 @@ function AnalyticsPageContent() {
         activeCategory={activeCategory}
         collapsed={sidebarCollapsed}
         onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
-        onOpenCommandPalette={openCommandPalette}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
       />
 
       {/* Main Content Area */}
@@ -326,7 +316,7 @@ function AnalyticsPageContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleGoBack}
+                onClick={goBack}
                 className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
                 title="Retour (Alt+←)"
               >
@@ -347,40 +337,29 @@ function AnalyticsPageContent() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions - Consolidated */}
           <div className="flex items-center gap-1">
-            {/* Global Search */}
-            <div className="w-64 hidden lg:block">
-              <GlobalSearch
-                placeholder="Rechercher..."
-                onSearch={async (query, filters) => {
-                  // Ici, vous pouvez implémenter la recherche via API
-                  console.log('Recherche:', query, filters);
-                  return [];
-                }}
-                showFilters={false}
-                maxResults={5}
-              />
-            </div>
-
-            <div className="w-px h-4 bg-slate-700/50 mx-1 hidden lg:block" />
-
-            {/* New Report Button */}
+            {/* Search */}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setReportModalOpen(true)}
+              onClick={toggleCommandPalette}
               className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
-              <Plus className="h-4 w-4 mr-1" />
-              <span className="text-xs hidden sm:inline">Nouveau</span>
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
             </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
             {/* Notifications */}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              onClick={toggleNotificationsPanel}
               className={cn(
                 'h-8 w-8 p-0 relative',
                 notificationsPanelOpen
@@ -390,46 +369,13 @@ function AnalyticsPageContent() {
               title="Notifications"
             >
               <Bell className="h-4 w-4" />
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full text-xs text-white flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
                 8
               </span>
             </Button>
 
-            {/* Actions Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={handleRefresh}>
-                  <RefreshCw className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')} />
-                  Rafraîchir
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFiltersPanelOpen(true)}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Filtres avancés
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setExportModalOpen(true)}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Exporter
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setAlertConfigModalOpen(true)}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Configurer alertes
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Statistiques
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
           </div>
         </header>
 
@@ -443,16 +389,18 @@ function AnalyticsPageContent() {
         />
 
         {/* KPI Bar */}
-        <AnalyticsKPIBar
-          visible={true}
-          collapsed={kpiBarCollapsed}
-          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
-          onRefresh={handleRefresh}
-        />
+        {kpiConfig.visible && (
+          <AnalyticsKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto p-4">
+          <div className="h-full overflow-y-auto">
             <AnalyticsContentRouter
               category={activeCategory}
               subCategory={activeSubCategory}
@@ -494,44 +442,39 @@ function AnalyticsPageContent() {
       </div>
 
       {/* Command Palette */}
-      <AnalyticsCommandPalette />
+      {commandPaletteOpen && <AnalyticsCommandPalette />}
 
       {/* Modals */}
-      <AnalyticsStatsModal open={statsModalOpen} onClose={() => setStatsModalOpen(false)} />
-      <AnalyticsExportModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} />
-      <AnalyticsAlertConfigModal
-        open={alertConfigModalOpen}
-        onClose={() => setAlertConfigModalOpen(false)}
-      />
-      <AnalyticsReportModal open={reportModalOpen} onClose={() => setReportModalOpen(false)} />
-      <KPIDetailModal
-        open={kpiDetailModalOpen}
-        onClose={() => {
-          setKpiDetailModalOpen(false);
-          setSelectedKpiId(null);
-        }}
-        kpiId={selectedKpiId}
-      />
-      <AlertDetailModal
-        open={alertDetailModalOpen}
-        onClose={() => {
-          setAlertDetailModalOpen(false);
-          setSelectedAlertId(null);
-        }}
-        alertId={selectedAlertId}
-      />
+      <AnalyticsModals />
+
+      {/* Detail Panel */}
+      <AnalyticsDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <AnalyticsBatchActionsBar onAction={handleBatchAction} />
 
       {/* Notifications Panel */}
       {notificationsPanelOpen && (
-        <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
       )}
 
       {/* Filters Panel */}
-      <AnalyticsFiltersPanel
-        isOpen={filtersPanelOpen}
-        onClose={() => setFiltersPanelOpen(false)}
-        onApplyFilters={handleApplyFilters}
-      />
+      {modal.type === 'filters' && modal.isOpen && (
+        <AnalyticsFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            // Convertir les filtres au format du store
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value);
+              }
+            });
+            closeModal();
+            toast.info('Filtres appliqués', `${Object.keys(newFilters).length} filtre(s) actif(s)`);
+          }}
+        />
+      )}
     </div>
   );
 }

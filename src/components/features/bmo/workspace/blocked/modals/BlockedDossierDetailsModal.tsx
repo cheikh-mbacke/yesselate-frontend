@@ -154,9 +154,6 @@ export function BlockedDossierDetailsModal({
   const [documentCategory, setDocumentCategory] = useState<'bc' | 'facture' | 'contrat' | 'justificatif' | 'rib' | 'autre'>('autre');
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; type: string } | null>(null);
-  const [uploadingDocument, setUploadingDocument] = useState(false);
-  const [previewDocument, setPreviewDocument] = useState<string | null>(null);
-  const [documentCategory, setDocumentCategory] = useState<'bc' | 'facture' | 'contrat' | 'justificatif' | 'rib' | 'autre'>('autre');
 
   // Charger dossier enrichi
   useEffect(() => {

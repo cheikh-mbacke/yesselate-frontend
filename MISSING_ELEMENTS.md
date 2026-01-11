@@ -248,3 +248,4 @@ Cela ajoutera ~5 fichiers et rendra l'application vraiment opérationnelle pour:
 
 **Version 2.0.0 - 10 Janvier 2026**
 
+

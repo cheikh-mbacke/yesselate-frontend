@@ -175,7 +175,8 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/sla] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/sla] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to modify SLA', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -186,10 +187,10 @@ export async function POST(
 // GET pour voir historique modifications SLA
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // TODO: Récupérer historique SLA
     const slaHistory = [
@@ -233,7 +234,8 @@ export async function GET(
       history: slaHistory,
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/sla] Get error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/sla] Get error:`, error);
     return NextResponse.json(
       { error: 'Failed to get SLA history' },
       { status: 500 }

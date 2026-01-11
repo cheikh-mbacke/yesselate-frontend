@@ -135,7 +135,8 @@ export async function DELETE(
       note: 'Le paiement est archivé et peut être restauré par un administrateur',
     });
   } catch (error) {
-    console.error(`[paiements/${params.id}] Delete error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}] Delete error:`, error);
     return NextResponse.json(
       { error: 'Failed to delete paiement', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -163,7 +164,7 @@ export async function GET(
     // TODO: Récupérer paiement annulé
 
     const cancelledPaiement = {
-      id: params.id,
+      id,
       status: 'cancelled',
       deletedAt: '2024-01-18T10:00:00.000Z',
       deleteReason: 'error',
@@ -173,7 +174,8 @@ export async function GET(
 
     return NextResponse.json(cancelledPaiement);
   } catch (error) {
-    console.error(`[paiements/${params.id}] Get cancelled error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}] Get cancelled error:`, error);
     return NextResponse.json(
       { error: 'Failed to retrieve cancelled paiement' },
       { status: 500 }
@@ -184,10 +186,10 @@ export async function GET(
 // PUT pour restaurer un paiement annulé (ADMIN)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     if (!body.restore) {
@@ -221,7 +223,8 @@ export async function PUT(
       },
     });
   } catch (error) {
-    console.error(`[paiements/${params.id}] Restore error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}] Restore error:`, error);
     return NextResponse.json(
       { error: 'Failed to restore paiement' },
       { status: 500 }

@@ -1,157 +1,497 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * Centre de Commandement Missions - Version 2.0
+ * Plateforme de gestion des missions terrain
+ * Architecture cohérente avec Gouvernance et Analytics
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useMissionsWorkspaceStore } from '@/lib/stores/missionsWorkspaceStore';
-import { missionsApiService } from '@/lib/services/missionsApiService';
-import { useBMOStore } from '@/lib/stores';
-import { MissionsWorkspaceTabs, MissionsLiveCounters, MissionsCommandPalette, MissionsWorkspaceContent } from '@/components/features/bmo/workspace/missions';
-import { Plane, Search, RefreshCw, BarChart3, MoreHorizontal, Download, Keyboard, Command } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Plane,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useMissionsCommandCenterStore,
+  type MissionsMainCategory,
+} from '@/lib/stores/missionsCommandCenterStore';
+import {
+  MissionsCommandSidebar,
+  MissionsSubNavigation,
+  MissionsKPIBar,
+  MissionsContentRouter,
+  MissionsModals,
+  MissionsDetailPanel,
+  MissionsBatchActionsBar,
+  ActionsMenu,
+  missionsCategories,
+  missionsSubCategoriesMap,
+  type MissionsKPIData,
+} from '@/components/features/bmo/missions/command-center';
+import { MissionsCommandPalette } from '@/components/features/bmo/workspace/missions/MissionsCommandPalette';
+
+// ================================
+// Types
+// ================================
+
+// Mock KPI Data (à remplacer par des vraies données)
+const mockKPIData: MissionsKPIData = {
+  totalMissions: 58,
+  activeMissions: 12,
+  teamsOnField: 8,
+  avgDuration: 4.2,
+  completionRate: 87,
+  onTimeDelivery: 82,
+  avgCost: 245000,
+  satisfactionScore: 4.3,
+  trends: {
+    total: 'up',
+    active: 'stable',
+    completion: 'up',
+    satisfaction: 'up',
+  },
+};
+
+// ================================
+// Main Component
+// ================================
 
 export default function MissionsPage() {
-  const { openTab, commandPaletteOpen, setCommandPaletteOpen, statsModalOpen, setStatsModalOpen } = useMissionsWorkspaceStore();
-  const { addToast, addActionLog, currentUser } = useBMOStore();
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  return <MissionsPageContent />;
+}
 
+function MissionsPageContent() {
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useMissionsCommandCenterStore();
+
+  // État local pour refresh (comme Governance)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return missionsCategories.find((c) => c.id === activeCategory)?.label || 'Missions';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return missionsSubCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
   const handleRefresh = useCallback(() => {
-    setRefreshKey(k => k + 1);
-    addToast('Données rafraîchies', 'success');
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'audit',
-      module: 'missions',
-      targetId: 'REFRESH',
-      targetType: 'system',
-      targetLabel: 'Rafraîchissement',
-      details: 'Rafraîchissement manuel des missions',
-      bureau: 'RH',
-    });
-  }, [addToast, addActionLog, currentUser]);
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
+  }, []);
 
-  const handleOpenQueue = useCallback((queue: string, title: string, icon: string) => {
-    const tabId = queue === 'all' ? 'inbox:all' : `inbox:${queue}`;
-    openTab({ type: 'inbox', id: tabId, title, icon, data: { queue } });
-  }, [openTab]);
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as MissionsMainCategory, 'all', null);
+  }, [navigate]);
 
-  const handleExport = useCallback(async () => {
-    addToast('Export des missions en cours...', 'info');
-    setTimeout(() => addToast('Export généré avec succès', 'success'), 1500);
-  }, [addToast]);
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
 
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        if (ids.length > 0) {
+          openModal('mission-detail', { missionId: ids[0] });
+        }
+        break;
+      case 'delete':
+        openModal('confirm', {
+          title: 'Supprimer les missions',
+          message: `Êtes-vous sûr de vouloir supprimer ${ids.length} mission(s) ?`,
+          variant: 'danger',
+          onConfirm: async () => {
+            // TODO: Implémenter suppression
+            console.log('Suppression de', ids);
+          },
+        });
+        break;
+      default:
+        break;
+    }
+  }, [openModal]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setCommandPaletteOpen(true); }
-      if (e.key === 'Escape' && commandPaletteOpen) { setCommandPaletteOpen(false); }
-      if (e.key === 'r' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRefresh(); }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh]);
 
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="flex-none border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 rounded-xl bg-cyan-500/20">
-                <Plane className="w-5 h-5 text-cyan-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-200">Gestion des Missions</h1>
-                <p className="text-sm text-slate-400">Déplacements et frais professionnels</p>
-              </div>
-            </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <MissionsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-            <div className="flex items-center gap-3">
-              <button onClick={() => setCommandPaletteOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400 hover:border-cyan-500/50 hover:bg-slate-800 transition-colors">
-                <Search className="w-4 h-4" />
-                <span className="hidden md:inline">Rechercher...</span>
-                <kbd className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-xs font-mono text-slate-500">⌘K</kbd>
-              </button>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
 
-              <button onClick={handleRefresh} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors" title="Rafraîchir">
-                <RefreshCw className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <button onClick={() => setStatsModalOpen(true)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors" title="Statistiques">
-                <BarChart3 className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <div className="relative">
-                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)} className="p-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">
-                  <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                </button>
-                {moreMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
-                    <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-700/50 bg-slate-900 shadow-xl z-20 py-2">
-                      <button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3">
-                        <Download className="w-4 h-4 text-slate-400" />Exporter les missions
-                      </button>
-                      <button onClick={() => { setCommandPaletteOpen(true); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3">
-                        <Command className="w-4 h-4 text-slate-400" />Palette de commande
-                      </button>
-                      <div className="border-t border-slate-700/50 my-2" />
-                      <div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div>
-                    </div>
-                  </>
-                )}
-              </div>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Plane className="h-5 w-5 text-indigo-400" />
+              <h1 className="text-base font-semibold text-slate-200">Missions</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
-        </div>
 
-        <div className="px-6 pb-2">
-          <MissionsWorkspaceTabs />
-        </div>
-      </header>
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-      {/* Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-6 space-y-6">
-          <MissionsLiveCounters key={refreshKey} onOpenQueue={handleOpenQueue} />
-          <MissionsWorkspaceContent />
-        </div>
-      </main>
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                3
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <MissionsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <MissionsKPIBar
+            data={mockKPIData}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <MissionsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              58 missions • 12 actives • 8 équipes sur site
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
 
       {/* Command Palette */}
-      <MissionsCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenStats={() => setStatsModalOpen(true)} onRefresh={handleRefresh} />
+      {commandPaletteOpen && <MissionsCommandPalette open={commandPaletteOpen} onClose={toggleCommandPalette} />}
 
-      {/* Stats Modal */}
-      {statsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setStatsModalOpen(false)}>
-          <div className="w-full max-w-3xl mx-4 rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-slate-700/50 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-cyan-500/10"><BarChart3 className="w-5 h-5 text-cyan-400" /></div>
-                <h2 className="text-lg font-bold text-slate-200">Statistiques Missions</h2>
-              </div>
-              <button onClick={() => setStatsModalOpen(false)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-800">✕</button>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
-                  <p className="text-3xl font-bold text-cyan-400">5</p>
-                  <p className="text-sm text-slate-500 mt-1">Total missions</p>
-                </div>
-                <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-center">
-                  <p className="text-3xl font-bold text-purple-400">2.45 M</p>
-                  <p className="text-sm text-slate-500 mt-1">Budget total</p>
-                </div>
-                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
-                  <p className="text-3xl font-bold text-amber-400">320 K</p>
-                  <p className="text-sm text-slate-500 mt-1">Frais déclarés</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Modals */}
+      <MissionsModals />
+
+      {/* Detail Panel */}
+      <MissionsDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <MissionsBatchActionsBar onAction={handleBatchAction} />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
       )}
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Mission en retard',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Budget dépassé',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Nouvelle mission assignée',
+      time: 'il y a 3h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-indigo-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

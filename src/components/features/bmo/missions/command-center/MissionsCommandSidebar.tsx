@@ -128,6 +128,7 @@ interface MissionsCommandSidebarProps {
   onCategoryChange: (categoryId: string) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onOpenCommandPalette?: () => void;
   stats?: {
     planned: number;
     inProgress: number;
@@ -148,6 +149,7 @@ export function MissionsCommandSidebar({
   onCategoryChange,
   collapsed = false,
   onToggleCollapse,
+  onOpenCommandPalette,
   stats,
 }: MissionsCommandSidebarProps) {
   const categoriesWithStats = useMemo(() => {
@@ -225,17 +227,28 @@ export function MissionsCommandSidebar({
         </div>
 
         {!collapsed && (
-          <div className="mt-3 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Rechercher... ⌘K"
-              className="w-full pl-9 pr-3 py-1.5 text-sm bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              readOnly
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('missions:open-command-palette'));
-              }}
-            />
+          <div className="mt-3">
+            <Button
+              variant="ghost"
+              onClick={onOpenCommandPalette}
+              className="w-full justify-start gap-2 h-9 px-3 text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50"
+            >
+              <Search className="h-4 w-4" />
+              <span className="text-sm">Rechercher...</span>
+              <kbd className="ml-auto text-xs bg-slate-700/50 px-1.5 py-0.5 rounded">⌘K</kbd>
+            </Button>
+          </div>
+        )}
+        {collapsed && (
+          <div className="mt-3 px-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onOpenCommandPalette}
+              className="w-full h-9 p-0 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
           </div>
         )}
       </div>

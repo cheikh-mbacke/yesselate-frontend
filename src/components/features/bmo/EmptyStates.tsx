@@ -263,3 +263,4 @@ export function EmptyFilters({ onClearFilters }: EmptyFiltersProps) {
   );
 }
 
+

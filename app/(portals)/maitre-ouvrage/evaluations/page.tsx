@@ -1,166 +1,192 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { evaluations, employees } from '@/lib/data';
-import type { EvaluationStatus } from '@/lib/types/bmo.types';
+/**
+ * Centre de Commandement Évaluations - Version 2.0
+ * Plateforme de gestion des évaluations RH
+ * Architecture cohérente avec Analytics/Gouvernance
+ */
 
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  ClipboardCheck,
+  Search,
+  Bell,
+  ChevronLeft,
+  MoreVertical,
+  Download,
+  Filter,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  EvaluationsCommandSidebar,
+  EvaluationsSubNavigation,
+  EvaluationsKPIBar,
+  evaluationsCategories,
+} from '@/components/features/bmo/evaluations/command-center';
+import { EvaluationDetailModal } from '@/components/features/bmo/evaluations/modals';
+import { useBMOStore } from '@/lib/stores';
+import { evaluations } from '@/lib/data';
 import { usePageNavigation } from '@/hooks/usePageNavigation';
 import { useAutoSyncCounts } from '@/hooks/useAutoSync';
+import type { Evaluation, EvaluationStatus } from '@/lib/types/bmo.types';
+import { Card, CardContent } from '@/components/ui/card';
+import { BureauTag } from '@/components/features/bmo/BureauTag';
 
-type StatusFilter = 'all' | EvaluationStatus;
-type SortMode = 'date_desc' | 'date_asc' | 'score_desc' | 'score_asc' | 'pending_desc' | 'name_asc';
-type ScoreBucket = 'all' | 'excellent' | 'bon' | 'moyen' | 'faible';
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical' | 'success';
+}
 
-const normalize = (s: string) =>
-  (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-
-const parseFRDateToMs = (dateStr?: string): number => {
-  if (!dateStr) return 0;
-  const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return 0;
-  const dd = Number(m[1]);
-  const mm = Number(m[2]);
-  const yyyy = Number(m[3]);
-  const d = new Date(yyyy, mm - 1, dd);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'upcoming', label: 'À venir', badge: 0, badgeType: 'warning' },
+  ],
+  scheduled: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'due-soon', label: '≤ 14 jours', badge: 0, badgeType: 'warning' },
+    { id: 'overdue', label: 'En retard', badge: 0, badgeType: 'critical' },
+  ],
+  in_progress: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'delayed', label: 'Retardées', badge: 0, badgeType: 'warning' },
+  ],
+  completed: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'excellent', label: 'Excellent (≥90)', badge: 0, badgeType: 'success' },
+    { id: 'good', label: 'Bon (75-89)', badge: 0 },
+    { id: 'needs-improvement', label: 'À améliorer (<75)', badge: 0, badgeType: 'warning' },
+  ],
+  recommendations: [
+    { id: 'all', label: 'Toutes', badge: 0 },
+    { id: 'pending', label: 'En attente', badge: 0, badgeType: 'warning' },
+    { id: 'approved', label: 'Approuvées', badge: 0, badgeType: 'success' },
+    { id: 'implemented', label: 'Implémentées', badge: 0, badgeType: 'success' },
+  ],
+  scores: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'distribution', label: 'Distribution' },
+    { id: 'trends', label: 'Tendances' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous' },
+    { id: 'btp', label: 'BTP' },
+    { id: 'bj', label: 'BJ' },
+    { id: 'bs', label: 'BS' },
+  ],
+  analytics: [
+    { id: 'dashboard', label: 'Tableau de bord' },
+    { id: 'reports', label: 'Rapports' },
+    { id: 'comparison', label: 'Comparaison' },
+  ],
+  archive: [
+    { id: 'all', label: 'Tout' },
+    { id: 'by-year', label: 'Par année' },
+    { id: 'by-period', label: 'Par période' },
+  ],
 };
 
-const daysUntil = (dateStr?: string) => {
-  const ms = parseFRDateToMs(dateStr);
-  if (!ms) return null;
-  const now = Date.now();
-  return Math.ceil((ms - now) / (1000 * 60 * 60 * 24));
+// Filtres niveau 3 par sous-catégorie
+const filtersMap: Record<string, SubCategory[]> = {
+  'scheduled:due-soon': [
+    { id: 'all', label: 'Tous' },
+    { id: 'today', label: "Aujourd'hui", badge: 0 },
+    { id: 'this-week', label: 'Cette semaine', badge: 0 },
+    { id: 'next-week', label: 'Semaine prochaine', badge: 0 },
+  ],
+  'scheduled:overdue': [
+    { id: 'all', label: 'Tous' },
+    { id: '1-7days', label: '1-7 jours', badge: 0, badgeType: 'warning' },
+    { id: '8-30days', label: '8-30 jours', badge: 0, badgeType: 'critical' },
+    { id: '30+days', label: '30+ jours', badge: 0, badgeType: 'critical' },
+  ],
+  'completed:excellent': [
+    { id: 'all', label: 'Tous' },
+    { id: '95+', label: '95+', badge: 0, badgeType: 'success' },
+    { id: '90-94', label: '90-94', badge: 0, badgeType: 'success' },
+  ],
+  'completed:good': [
+    { id: 'all', label: 'Tous' },
+    { id: '80-89', label: '80-89', badge: 0 },
+    { id: '75-79', label: '75-79', badge: 0 },
+  ],
+  'completed:needs-improvement': [
+    { id: 'all', label: 'Tous' },
+    { id: '60-74', label: '60-74', badge: 0, badgeType: 'warning' },
+    { id: 'below-60', label: '<60', badge: 0, badgeType: 'critical' },
+  ],
+  'recommendations:pending': [
+    { id: 'all', label: 'Toutes' },
+    { id: 'formation', label: 'Formation', badge: 0 },
+    { id: 'promotion', label: 'Promotion', badge: 0 },
+    { id: 'augmentation', label: 'Augmentation', badge: 0 },
+    { id: 'recadrage', label: 'Recadrage', badge: 0, badgeType: 'critical' },
+  ],
 };
 
-const getScoreColor = (score: number) => {
-  if (score >= 90) return 'text-emerald-400';
-  if (score >= 75) return 'text-blue-400';
-  if (score >= 60) return 'text-amber-400';
-  return 'text-red-400';
-};
-
-const getScoreBg = (score: number) => {
-  if (score >= 90) return 'bg-emerald-500';
-  if (score >= 75) return 'bg-blue-500';
-  if (score >= 60) return 'bg-amber-500';
-  return 'bg-red-500';
-};
-
+// ================================
+// Main Component
+// ================================
 export default function EvaluationsPage() {
-  const { darkMode } = useAppStore();
+  return <EvaluationsPageContent />;
+}
+
+function EvaluationsPageContent() {
   const { addToast, addActionLog } = useBMOStore();
 
-  const [filter, setFilter] = useState<StatusFilter>('all');
-  const [selectedEvaluation, setSelectedEvaluation] = useState<string | null>(null);
+  // Navigation state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState<string | null>('all');
+  const [navigationHistory, setNavigationHistory] = useState<Array<{ category: string; subCategory: string | null }>>([]);
 
-  // "même travail" : recherche + filtres + tri + toggles préventifs + persistance
+  // UI State
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+
+  // Refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [isConnected] = useState(true);
+
+  // Modal state
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortMode, setSortMode] = useState<SortMode>('date_desc');
-  const [bureauFilter, setBureauFilter] = useState<string>('all');
-  const [periodFilter, setPeriodFilter] = useState<string>('all');
-  const [scoreBucket, setScoreBucket] = useState<ScoreBucket>('all');
-
-  const [pendingRecsOnly, setPendingRecsOnly] = useState(false);
-  const [dueSoonOnly, setDueSoonOnly] = useState(false);
-  const [overdueOnly, setOverdueOnly] = useState(false);
-
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const { updateFilters, getFilters } = usePageNavigation('evaluations');
 
-  useEffect(() => {
-    try {
-      const saved = getFilters?.();
-      if (!saved) return;
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return evaluationsCategories.find((c) => c.id === activeCategory)?.label || 'Évaluations';
+  }, [activeCategory]);
 
-      if (saved.filter) setFilter(saved.filter);
-      if (typeof saved.selectedEvaluation === 'string') setSelectedEvaluation(saved.selectedEvaluation);
-      if (typeof saved.searchQuery === 'string') setSearchQuery(saved.searchQuery);
-      if (saved.sortMode) setSortMode(saved.sortMode);
-      if (typeof saved.bureauFilter === 'string') setBureauFilter(saved.bureauFilter);
-      if (typeof saved.periodFilter === 'string') setPeriodFilter(saved.periodFilter);
-      if (saved.scoreBucket) setScoreBucket(saved.scoreBucket);
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
 
-      if (typeof saved.pendingRecsOnly === 'boolean') setPendingRecsOnly(saved.pendingRecsOnly);
-      if (typeof saved.dueSoonOnly === 'boolean') setDueSoonOnly(saved.dueSoonOnly);
-      if (typeof saved.overdueOnly === 'boolean') setOverdueOnly(saved.overdueOnly);
-    } catch {
-      // silent
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const currentFilters = useMemo(() => {
+    if (!activeSubCategory) return [];
+    const key = `${activeCategory}:${activeSubCategory}`;
+    return filtersMap[key] || [];
+  }, [activeCategory, activeSubCategory]);
 
-  useEffect(() => {
-    try {
-      updateFilters?.({
-        filter,
-        selectedEvaluation,
-        searchQuery,
-        sortMode,
-        bureauFilter,
-        periodFilter,
-        scoreBucket,
-        pendingRecsOnly,
-        dueSoonOnly,
-        overdueOnly,
-      });
-    } catch {
-      // silent
-    }
-  }, [
-    filter,
-    selectedEvaluation,
-    searchQuery,
-    sortMode,
-    bureauFilter,
-    periodFilter,
-    scoreBucket,
-    pendingRecsOnly,
-    dueSoonOnly,
-    overdueOnly,
-    updateFilters,
-  ]);
-
-  const statusConfig: Record<
-    EvaluationStatus,
-    { label: string; variant: 'success' | 'warning' | 'info' | 'default' }
-  > = {
-    completed: { label: 'Complétée', variant: 'success' },
-    in_progress: { label: 'En cours', variant: 'warning' },
-    scheduled: { label: 'Planifiée', variant: 'info' },
-    cancelled: { label: 'Annulée', variant: 'default' },
-  };
-
-  const recommendationTypes: Record<string, { icon: string; color: string }> = {
-    formation: { icon: '🎓', color: 'text-blue-400' },
-    promotion: { icon: '📈', color: 'text-emerald-400' },
-    augmentation: { icon: '💰', color: 'text-amber-400' },
-    recadrage: { icon: '⚠️', color: 'text-red-400' },
-    mutation: { icon: '🔄', color: 'text-purple-400' },
-    autre: { icon: '📋', color: 'text-slate-400' },
-  };
-
-  const bureauxList = useMemo(() => {
-    const set = new Set<string>();
-    evaluations.forEach((e: any) => e.bureau && set.add(e.bureau));
-    return ['all', ...Array.from(set).sort((a, b) => normalize(a).localeCompare(normalize(b)))];
-  }, []);
-
-  const periodsList = useMemo(() => {
-    const set = new Set<string>();
-    evaluations.forEach((e: any) => e.period && set.add(e.period));
-    return ['all', ...Array.from(set).sort((a, b) => normalize(a).localeCompare(normalize(b)))];
-  }, []);
-
-  // Stats + signaux préventifs
+  // Stats computation (réutilisé de l'ancien code)
   const stats = useMemo(() => {
     const completed = evaluations.filter((e: any) => e.status === 'completed');
     const scheduled = evaluations.filter((e: any) => e.status === 'scheduled');
@@ -182,21 +208,32 @@ export default function EvaluationsPage() {
     }, 0);
 
     const now = Date.now();
+    const parseFRDateToMs = (dateStr?: string): number => {
+      if (!dateStr) return 0;
+      const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (!m) return 0;
+      const dd = Number(m[1]);
+      const mm = Number(m[2]);
+      const yyyy = Number(m[3]);
+      const d = new Date(yyyy, mm - 1, dd);
+      return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+
     const overdueScheduled = scheduled.filter((e: any) => {
       const ms = parseFRDateToMs(e.date);
       return ms > 0 && ms < now;
     }).length;
 
+    const daysUntil = (dateStr?: string) => {
+      const ms = parseFRDateToMs(dateStr);
+      if (!ms) return null;
+      return Math.ceil((ms - now) / (1000 * 60 * 60 * 24));
+    };
+
     const dueSoon = scheduled.filter((e: any) => {
       const d = daysUntil(e.date);
       return typeof d === 'number' && d >= 0 && d <= 14;
     }).length;
-
-    // Prochaines évaluations (scheduled + in_progress)
-    const prochaines = [...scheduled, ...inProgress]
-      .slice()
-      .sort((a: any, b: any) => parseFRDateToMs(a.date) - parseFRDateToMs(b.date))
-      .slice(0, 3);
 
     return {
       total: evaluations.length,
@@ -208,139 +245,57 @@ export default function EvaluationsPage() {
       excellent,
       bon,
       ameliorer,
-      prochaines,
       pendingRecsTotal,
       overdueScheduled,
       dueSoon,
     };
   }, []);
 
-  // Sidebar badge auto-sync : "alertes RH"
+  // Auto-sync counts
   useAutoSyncCounts(
     'evaluations',
     () => stats.pendingRecsTotal + stats.overdueScheduled + stats.dueSoon,
     { interval: 12000, immediate: true }
   );
 
-  const filteredEvaluations = useMemo(() => {
-    const q = normalize(searchQuery);
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
-    const list = evaluations
-      .filter((e: any) => {
-        const matchesStatus = filter === 'all' || e.status === filter;
-        const matchesBureau = bureauFilter === 'all' || e.bureau === bureauFilter;
-        const matchesPeriod = periodFilter === 'all' || e.period === periodFilter;
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      addToast('Données actualisées', 'success');
+    }, 1500);
+  }, [addToast]);
 
-        const score = Number(e.scoreGlobal || 0);
-        const matchesScore =
-          scoreBucket === 'all' ||
-          (scoreBucket === 'excellent' && score >= 90) ||
-          (scoreBucket === 'bon' && score >= 75 && score < 90) ||
-          (scoreBucket === 'moyen' && score >= 60 && score < 75) ||
-          (scoreBucket === 'faible' && score < 60);
+  const handleCategoryChange = useCallback((category: string) => {
+    setNavigationHistory((prev) => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
+    setActiveCategory(category);
+    setActiveSubCategory('all');
+  }, [activeCategory, activeSubCategory]);
 
-        const pendingRecs = (e.recommendations || []).filter((r: any) => r.status === 'pending').length;
-        const isDueSoon = e.status === 'scheduled' && (() => {
-          const d = daysUntil(e.date);
-          return typeof d === 'number' && d >= 0 && d <= 14;
-        })();
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+  }, []);
 
-        const isOverdue = e.status === 'scheduled' && (() => {
-          const ms = parseFRDateToMs(e.date);
-          return ms > 0 && ms < Date.now();
-        })();
-
-        const matchesToggles =
-          (!pendingRecsOnly || pendingRecs > 0) &&
-          (!dueSoonOnly || isDueSoon) &&
-          (!overdueOnly || isOverdue);
-
-        const matchesSearch =
-          !q ||
-          normalize(e.employeeName || '').includes(q) ||
-          normalize(e.employeeRole || '').includes(q) ||
-          normalize(e.evaluatorName || '').includes(q) ||
-          normalize(e.period || '').includes(q) ||
-          normalize(e.bureau || '').includes(q) ||
-          normalize(e.id || '').includes(q);
-
-        return matchesStatus && matchesBureau && matchesPeriod && matchesScore && matchesToggles && matchesSearch;
-      })
-      .slice();
-
-    list.sort((a: any, b: any) => {
-      if (sortMode === 'name_asc') return normalize(a.employeeName || '').localeCompare(normalize(b.employeeName || ''));
-      if (sortMode === 'pending_desc') {
-        const pa = (a.recommendations || []).filter((r: any) => r.status === 'pending').length;
-        const pb = (b.recommendations || []).filter((r: any) => r.status === 'pending').length;
-        return pb - pa;
-      }
-      if (sortMode === 'score_desc') return (b.scoreGlobal || 0) - (a.scoreGlobal || 0);
-      if (sortMode === 'score_asc') return (a.scoreGlobal || 0) - (b.scoreGlobal || 0);
-      if (sortMode === 'date_asc') return parseFRDateToMs(a.date) - parseFRDateToMs(b.date);
-      // date_desc
-      return parseFRDateToMs(b.date) - parseFRDateToMs(a.date);
-    });
-
-    return list;
-  }, [filter, bureauFilter, periodFilter, scoreBucket, pendingRecsOnly, dueSoonOnly, overdueOnly, searchQuery, sortMode]);
-
-  const selectedEval = useMemo(() => {
-    return selectedEvaluation ? evaluations.find((e: any) => e.id === selectedEvaluation) : null;
-  }, [selectedEvaluation]);
-
-  const handleSelect = useCallback(
-    (id: string) => {
-      setSelectedEvaluation(id);
-      const ev: any = evaluations.find((x: any) => x.id === id);
-
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        module: 'evaluations',
-        action: 'view',
-        targetId: id,
-        targetType: 'Evaluation',
-        details: `Consultation évaluation ${id} (${ev?.employeeName || '—'})`,
-      });
-    },
-    [addActionLog]
-  );
-
-  const handleValidateRecommendation = useCallback(
-    (evalId: string, recId: string) => {
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        module: 'evaluations',
-        action: 'validate_recommendation',
-        targetId: evalId,
-        targetType: 'Evaluation',
-        details: `Recommandation ${recId} validée`,
-      });
-      addToast('Recommandation validée', 'success');
-    },
-    [addActionLog, addToast]
-  );
-
-  const handleProgrammerFormation = useCallback(
-    (evalId: string) => {
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        module: 'evaluations',
-        action: 'schedule_formation',
-        targetId: evalId,
-        targetType: 'Evaluation',
-        details: 'Formation programmée',
-      });
-      addToast('Formation programmée', 'success');
-    },
-    [addActionLog, addToast]
-  );
+  const goBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previous = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((prev) => prev.slice(0, -1));
+      setActiveCategory(previous.category);
+      setActiveSubCategory(previous.subCategory);
+    }
+  }, [navigationHistory]);
 
   const handleExport = useCallback(() => {
     addActionLog({
@@ -356,690 +311,645 @@ export default function EvaluationsPage() {
     addToast('Export évaluations généré', 'success');
   }, [addActionLog, addToast]);
 
-  const handleDownloadCR = useCallback(
-    (evalId: string) => {
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        module: 'evaluations',
-        action: 'download_cr',
-        targetId: evalId,
-        targetType: 'Evaluation',
-        details: 'Téléchargement CR (placeholder)',
+  // Filtered evaluations based on category and subcategory
+  const filteredEvaluations = useMemo(() => {
+    let filtered = evaluations;
+
+    // Filter by category
+    if (activeCategory === 'scheduled') {
+      filtered = filtered.filter((e: any) => e.status === 'scheduled');
+    } else if (activeCategory === 'in_progress') {
+      filtered = filtered.filter((e: any) => e.status === 'in_progress');
+    } else if (activeCategory === 'completed') {
+      filtered = filtered.filter((e: any) => e.status === 'completed');
+    } else if (activeCategory === 'recommendations') {
+      filtered = filtered.filter((e: any) => (e.recommendations || []).length > 0);
+    }
+
+    // Filter by subcategory
+    if (activeSubCategory === 'due-soon') {
+      filtered = filtered.filter((e: any) => {
+        const d = daysUntil(e.date);
+        return typeof d === 'number' && d >= 0 && d <= 14;
       });
-      addToast('CR généré (à connecter)', 'info');
-    },
-    [addActionLog, addToast]
-  );
+    } else if (activeSubCategory === 'overdue') {
+      const now = Date.now();
+      filtered = filtered.filter((e: any) => {
+        const ms = parseFRDateToMs(e.date);
+        return ms > 0 && ms < now;
+      });
+    } else if (activeSubCategory === 'excellent') {
+      filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 90);
+    } else if (activeSubCategory === 'good') {
+      filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 75 && (e.scoreGlobal || 0) < 90);
+    } else if (activeSubCategory === 'needs-improvement') {
+      filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) < 75);
+    } else if (activeSubCategory === 'pending') {
+      filtered = filtered.filter((e: any) => (e.recommendations || []).some((r: any) => r.status === 'pending'));
+    }
 
-  const resetAll = () => {
-    setFilter('all');
-    setSearchQuery('');
-    setSortMode('date_desc');
-    setBureauFilter('all');
-    setPeriodFilter('all');
-    setScoreBucket('all');
-    setPendingRecsOnly(false);
-    setDueSoonOnly(false);
-    setOverdueOnly(false);
-    addToast('Filtres réinitialisés', 'info');
-  };
+    // Filter by search query
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((e: any) => 
+        (e.employeeName || '').toLowerCase().includes(q) ||
+        (e.employeeRole || '').toLowerCase().includes(q) ||
+        (e.evaluatorName || '').toLowerCase().includes(q) ||
+        (e.period || '').toLowerCase().includes(q) ||
+        (e.bureau || '').toLowerCase().includes(q) ||
+        (e.id || '').toLowerCase().includes(q)
+      );
+    }
 
+    // Filter by level 3 filter
+    if (activeFilter && activeFilter !== 'all') {
+      const filterKey = `${activeCategory}:${activeSubCategory}`;
+      if (filterKey === 'scheduled:due-soon') {
+        if (activeFilter === 'today') {
+          filtered = filtered.filter((e: any) => {
+            const d = daysUntil(e.date);
+            return d === 0;
+          });
+        } else if (activeFilter === 'this-week') {
+          filtered = filtered.filter((e: any) => {
+            const d = daysUntil(e.date);
+            return typeof d === 'number' && d >= 0 && d <= 7;
+          });
+        } else if (activeFilter === 'next-week') {
+          filtered = filtered.filter((e: any) => {
+            const d = daysUntil(e.date);
+            return typeof d === 'number' && d >= 8 && d <= 14;
+          });
+        }
+      } else if (filterKey === 'scheduled:overdue') {
+        const now = Date.now();
+        if (activeFilter === '1-7days') {
+          filtered = filtered.filter((e: any) => {
+            const ms = parseFRDateToMs(e.date);
+            const days = Math.ceil((now - ms) / (1000 * 60 * 60 * 24));
+            return days >= 1 && days <= 7;
+          });
+        } else if (activeFilter === '8-30days') {
+          filtered = filtered.filter((e: any) => {
+            const ms = parseFRDateToMs(e.date);
+            const days = Math.ceil((now - ms) / (1000 * 60 * 60 * 24));
+            return days >= 8 && days <= 30;
+          });
+        } else if (activeFilter === '30+days') {
+          filtered = filtered.filter((e: any) => {
+            const ms = parseFRDateToMs(e.date);
+            const days = Math.ceil((now - ms) / (1000 * 60 * 60 * 24));
+            return days > 30;
+          });
+        }
+      } else if (filterKey === 'completed:excellent') {
+        if (activeFilter === '95+') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 95);
+        } else if (activeFilter === '90-94') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 90 && (e.scoreGlobal || 0) < 95);
+        }
+      } else if (filterKey === 'completed:good') {
+        if (activeFilter === '80-89') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 80 && (e.scoreGlobal || 0) < 90);
+        } else if (activeFilter === '75-79') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 75 && (e.scoreGlobal || 0) < 80);
+        }
+      } else if (filterKey === 'completed:needs-improvement') {
+        if (activeFilter === '60-74') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) >= 60 && (e.scoreGlobal || 0) < 75);
+        } else if (activeFilter === 'below-60') {
+          filtered = filtered.filter((e: any) => (e.scoreGlobal || 0) < 60);
+        }
+      } else if (filterKey === 'recommendations:pending') {
+        filtered = filtered.filter((e: any) => {
+          const recs = (e.recommendations || []).filter((r: any) => r.status === 'pending');
+          return recs.some((r: any) => r.type === activeFilter);
+        });
+      }
+    }
+
+    return filtered;
+  }, [activeCategory, activeSubCategory, searchQuery, activeFilter, parseFRDateToMs, daysUntil]);
+
+  // Handlers for modal
+  const handleSelect = useCallback((evaluation: Evaluation) => {
+    setSelectedEvaluation(evaluation);
+    setDetailModalOpen(true);
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      module: 'evaluations',
+      action: 'view',
+      targetId: evaluation.id,
+      targetType: 'Evaluation',
+      details: `Consultation évaluation ${evaluation.id} (${evaluation.employeeName})`,
+    });
+  }, [addActionLog]);
+
+  // Navigation prev/next in modal
+  const currentEvaluationIndex = useMemo(() => {
+    if (!selectedEvaluation) return -1;
+    return filteredEvaluations.findIndex((e: any) => e.id === selectedEvaluation.id);
+  }, [selectedEvaluation, filteredEvaluations]);
+
+  const hasPreviousEvaluation = currentEvaluationIndex > 0;
+  const hasNextEvaluation = currentEvaluationIndex >= 0 && currentEvaluationIndex < filteredEvaluations.length - 1;
+
+  const handlePreviousEvaluation = useCallback(() => {
+    if (hasPreviousEvaluation && currentEvaluationIndex > 0) {
+      const prevEvaluation = filteredEvaluations[currentEvaluationIndex - 1];
+      handleSelect(prevEvaluation as Evaluation);
+    }
+  }, [hasPreviousEvaluation, currentEvaluationIndex, filteredEvaluations, handleSelect]);
+
+  const handleNextEvaluation = useCallback(() => {
+    if (hasNextEvaluation && currentEvaluationIndex < filteredEvaluations.length - 1) {
+      const nextEvaluation = filteredEvaluations[currentEvaluationIndex + 1];
+      handleSelect(nextEvaluation as Evaluation);
+    }
+  }, [hasNextEvaluation, currentEvaluationIndex, filteredEvaluations, handleSelect]);
+
+  const handleValidateRecommendation = useCallback((evalId: string, recId: string) => {
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      module: 'evaluations',
+      action: 'validate_recommendation',
+      targetId: evalId,
+      targetType: 'Evaluation',
+      details: `Recommandation ${recId} validée`,
+    });
+    addToast('Recommandation validée', 'success');
+    // Refresh the evaluation if it's currently open
+    if (selectedEvaluation && selectedEvaluation.id === evalId) {
+      const updated = evaluations.find((e: any) => e.id === evalId);
+      if (updated) setSelectedEvaluation(updated as Evaluation);
+    }
+  }, [addActionLog, addToast, selectedEvaluation]);
+
+  const handleDownloadCR = useCallback((evalId: string) => {
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      module: 'evaluations',
+      action: 'download_cr',
+      targetId: evalId,
+      targetType: 'Evaluation',
+      details: 'Téléchargement CR',
+    });
+    addToast('CR généré (à connecter)', 'info');
+  }, [addActionLog, addToast]);
+
+  const handleEdit = useCallback((evaluation: Evaluation) => {
+    addToast('Édition (à connecter)', 'info');
+  }, [addToast]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
+        return;
+      }
+
+      // F11 : Fullscreen (placeholder)
+      if (e.key === 'F11') {
+        e.preventDefault();
+        addToast('Mode plein écran (à implémenter)', 'info');
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goBack, addToast]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📊 Évaluations
-            <Badge variant="info">{stats.total}</Badge>
-            {(stats.pendingRecsTotal + stats.overdueScheduled) > 0 && (
-              <Badge variant="warning">⚠️ {stats.pendingRecsTotal + stats.overdueScheduled} actions</Badge>
-            )}
-          </h1>
-          <p className="text-sm text-slate-400">Suivi des performances et recommandations RH</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="secondary" onClick={resetAll}>Réinitialiser</Button>
-          <Button variant="secondary" onClick={handleExport}>📥 Export</Button>
-          <Button onClick={() => addToast('Nouvelle évaluation planifiée', 'success')}>+ Planifier évaluation</Button>
-        </div>
-      </div>
+    <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      {/* Sidebar Navigation */}
+      <EvaluationsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        stats={{
+          scheduled: stats.scheduled,
+          inProgress: stats.inProgress,
+          completed: stats.completed,
+          recommendations: stats.pendingRecsTotal,
+        }}
+      />
 
-      {/* Alertes préventives */}
-      {(stats.overdueScheduled > 0 || stats.pendingRecsTotal > 0 || stats.dueSoon > 0) && (
-        <Card className="border-amber-500/40 bg-amber-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🧭</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-amber-400">Pilotage RH (priorités)</h3>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {stats.overdueScheduled > 0 && (
-                    <Badge variant="urgent">⏰ {stats.overdueScheduled} planifiée(s) en retard</Badge>
-                  )}
-                  {stats.dueSoon > 0 && <Badge variant="warning">📅 {stats.dueSoon} à venir (≤14j)</Badge>}
-                  {stats.pendingRecsTotal > 0 && (
-                    <Badge variant="warning">⏳ {stats.pendingRecsTotal} recommandation(s) en attente</Badge>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant={overdueOnly ? 'default' : 'secondary'} onClick={() => setOverdueOnly(v => !v)}>
-                  ⏰ Retard
-                </Button>
-                <Button size="sm" variant={pendingRecsOnly ? 'default' : 'secondary'} onClick={() => setPendingRecsOnly(v => !v)}>
-                  ⏳ Recos
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Résumé */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <Card className="bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className={cn('text-3xl font-bold', getScoreColor(stats.avgScore))}>{stats.avgScore}</p>
-            <p className="text-[10px] text-slate-400">Score moyen</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.excellent}</p>
-            <p className="text-[10px] text-slate-400">Excellents (≥90)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.bon}</p>
-            <p className="text-[10px] text-slate-400">Bons (75-89)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.ameliorer}</p>
-            <p className="text-[10px] text-slate-400">À améliorer (&lt;75)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-purple-500/10 border-purple-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{stats.scheduled}</p>
-            <p className="text-[10px] text-slate-400">Planifiées</p>
-          </CardContent>
-        </Card>
-
-        <Card className={cn('border-amber-500/30', stats.pendingRecsTotal > 0 ? 'bg-amber-500/15' : 'bg-slate-500/10')}>
-          <CardContent className="p-3 text-center">
-            <p className={cn('text-2xl font-bold', stats.pendingRecsTotal > 0 ? 'text-amber-400' : 'text-slate-400')}>
-              {stats.pendingRecsTotal}
-            </p>
-            <p className="text-[10px] text-slate-400">Recos en attente</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Prochaines évaluations */}
-      {stats.prochaines.length > 0 && (
-        <Card className="border-purple-500/50 bg-purple-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h3 className="font-bold text-sm text-purple-400">📅 Prochaines évaluations</h3>
-              <Button size="sm" variant={dueSoonOnly ? 'default' : 'secondary'} onClick={() => setDueSoonOnly(v => !v)}>
-                ≤ 14 jours
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </div>
+            )}
 
-            <div className="grid sm:grid-cols-3 gap-2">
-              {stats.prochaines.map((ev: any) => {
-                const d = daysUntil(ev.date);
-                const isOverdue = ev.status === 'scheduled' && (parseFRDateToMs(ev.date) || 0) < Date.now();
-                return (
-                  <div
-                    key={ev.id}
-                    className={cn(
-                      'p-2 rounded cursor-pointer transition-colors',
-                      darkMode ? 'bg-slate-700/30 hover:bg-purple-500/20' : 'bg-white/50 hover:bg-purple-500/10',
-                      isOverdue && 'border border-red-500/40'
-                    )}
-                    onClick={() => handleSelect(ev.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded bg-purple-500/30 flex items-center justify-center text-xs font-bold">
-                        {(ev.employeeName || '?')
-                          .split(' ')
-                          .filter(Boolean)
-                          .map((n: string) => n[0])
-                          .join('')}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{ev.employeeName}</p>
-                        <p className="text-xs text-slate-400">
-                          {ev.date}
-                          {typeof d === 'number' && d >= 0 && d <= 14 && ` • dans ${d}j`}
-                          {isOverdue && ' • en retard'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Évaluations</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
 
-      {/* Recherche + filtres */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <input
-          type="text"
-          placeholder="🔍 Rechercher (agent, évaluateur, période, bureau, ID)..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={cn(
-            'flex-1 min-w-[240px] px-4 py-2 rounded-lg text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-          )}
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {(stats.pendingRecsTotal + stats.overdueScheduled) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {stats.pendingRecsTotal + stats.overdueScheduled > 9 ? '9+' : stats.pendingRecsTotal + stats.overdueScheduled}
+                </span>
+              )}
+            </Button>
+
+            {/* Export */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExport}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+              title="Exporter"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+
+            {/* Refresh */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              title="Actualiser"
+            >
+              <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+            </Button>
+
+            {/* More actions */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              title="Plus d'actions"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <EvaluationsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+          filters={currentFilters}
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
         />
 
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { id: 'all', label: 'Toutes' },
-            { id: 'completed', label: '✅ Complétées' },
-            { id: 'scheduled', label: '📅 Planifiées' },
-            { id: 'in_progress', label: '⏳ En cours' },
-          ].map((f) => (
-            <Button
-              key={f.id}
-              size="sm"
-              variant={filter === f.id ? 'default' : 'secondary'}
-              onClick={() => setFilter(f.id as StatusFilter)}
-            >
-              {f.label}
-            </Button>
-          ))}
-        </div>
+        {/* KPI Bar */}
+        <EvaluationsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+          onRefresh={handleRefresh}
+          data={{
+            total: stats.total,
+            completed: stats.completed,
+            scheduled: stats.scheduled,
+            inProgress: stats.inProgress,
+            avgScore: stats.avgScore,
+            excellent: stats.excellent,
+            bon: stats.bon,
+            ameliorer: stats.ameliorer,
+            pendingRecsTotal: stats.pendingRecsTotal,
+            overdueScheduled: stats.overdueScheduled,
+            dueSoon: stats.dueSoon,
+          }}
+        />
 
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant={scoreBucket === 'all' ? 'default' : 'secondary'} onClick={() => setScoreBucket('all')}>
-            Score: Tous
-          </Button>
-          <Button size="sm" variant={scoreBucket === 'excellent' ? 'default' : 'secondary'} onClick={() => setScoreBucket('excellent')}>
-            ≥90
-          </Button>
-          <Button size="sm" variant={scoreBucket === 'bon' ? 'default' : 'secondary'} onClick={() => setScoreBucket('bon')}>
-            75–89
-          </Button>
-          <Button size="sm" variant={scoreBucket === 'moyen' ? 'default' : 'secondary'} onClick={() => setScoreBucket('moyen')}>
-            60–74
-          </Button>
-          <Button size="sm" variant={scoreBucket === 'faible' ? 'default' : 'secondary'} onClick={() => setScoreBucket('faible')}>
-            &lt;60
-          </Button>
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant={sortMode === 'date_desc' ? 'default' : 'secondary'} onClick={() => setSortMode('date_desc')}>
-            🗓️ Date ↓
-          </Button>
-          <Button size="sm" variant={sortMode === 'score_desc' ? 'default' : 'secondary'} onClick={() => setSortMode('score_desc')}>
-            📈 Score ↓
-          </Button>
-          <Button size="sm" variant={sortMode === 'pending_desc' ? 'default' : 'secondary'} onClick={() => setSortMode('pending_desc')}>
-            ⏳ Recos ↓
-          </Button>
-          <Button size="sm" variant={sortMode === 'name_asc' ? 'default' : 'secondary'} onClick={() => setSortMode('name_asc')}>
-            🔤 Nom ↑
-          </Button>
-        </div>
-      </div>
-
-      {/* Filtres secondaires (bureau / période) */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <div className="flex gap-2 flex-wrap">
-          {bureauxList.slice(0, 8).map((b) => (
-            <Button
-              key={b}
-              size="sm"
-              variant={bureauFilter === b ? 'default' : 'secondary'}
-              onClick={() => setBureauFilter(b)}
-            >
-              {b === 'all' ? '🏢 Tous bureaux' : b}
-            </Button>
-          ))}
-          {bureauxList.length > 8 && (
-            <Button size="sm" variant="secondary" onClick={() => addToast('Liste bureaux (à étendre)', 'info')}>
-              + Bureaux
-            </Button>
-          )}
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          {periodsList.slice(0, 5).map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant={periodFilter === p ? 'default' : 'secondary'}
-              onClick={() => setPeriodFilter(p)}
-            >
-              {p === 'all' ? '🗂️ Toutes périodes' : p}
-            </Button>
-          ))}
-          {periodsList.length > 5 && (
-            <Button size="sm" variant="secondary" onClick={() => addToast('Liste périodes (à étendre)', 'info')}>
-              + Périodes
-            </Button>
-          )}
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant={pendingRecsOnly ? 'default' : 'secondary'} onClick={() => setPendingRecsOnly(v => !v)}>
-            ⏳ Recos en attente
-          </Button>
-          <Button size="sm" variant={dueSoonOnly ? 'default' : 'secondary'} onClick={() => setDueSoonOnly(v => !v)}>
-            📅 ≤ 14j
-          </Button>
-          <Button size="sm" variant={overdueOnly ? 'default' : 'secondary'} onClick={() => setOverdueOnly(v => !v)}>
-            ⏰ Retard
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Liste des évaluations */}
-        <div className="lg:col-span-2 space-y-3">
-          {filteredEvaluations.map((evaluation: any) => {
-            const isSelected = selectedEvaluation === evaluation.id;
-            const pendingRecs = (evaluation.recommendations || []).filter((r: any) => r.status === 'pending').length;
-
-            const isOverdue = evaluation.status === 'scheduled' && (parseFRDateToMs(evaluation.date) || 0) < Date.now();
-            const d = daysUntil(evaluation.date);
-            const dueSoon = evaluation.status === 'scheduled' && typeof d === 'number' && d >= 0 && d <= 14;
-
-            return (
-              <Card
-                key={evaluation.id}
-                className={cn(
-                  'cursor-pointer transition-all',
-                  isSelected ? 'ring-2 ring-orange-500' : 'hover:border-orange-500/50',
-                  evaluation.status === 'completed' && (evaluation.scoreGlobal || 0) < 60 && 'border-l-4 border-l-red-500',
-                  isOverdue && 'border-l-4 border-l-red-500',
-                  dueSoon && !isOverdue && 'border-l-4 border-l-amber-500'
-                )}
-                onClick={() => handleSelect(evaluation.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                    <div className="flex items-start gap-3">
-                      {/* Avatar */}
-                      <div className="relative">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center font-bold text-white">
-                          {(evaluation.employeeName || '?')
-                            .split(' ')
-                            .filter(Boolean)
-                            .map((n: string) => n[0])
-                            .join('')}
-                        </div>
-
-                        {evaluation.status === 'completed' && (
-                          <div
-                            className={cn(
-                              'absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white',
-                              getScoreBg(evaluation.scoreGlobal || 0)
-                            )}
-                          >
-                            {evaluation.scoreGlobal}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="font-mono text-[10px] text-orange-400">{evaluation.id}</span>
-                          <Badge variant={statusConfig[evaluation.status as EvaluationStatus]?.variant || 'default'}>
-                            {statusConfig[evaluation.status as EvaluationStatus]?.label || evaluation.status}
-                          </Badge>
-                          <Badge variant="default">{evaluation.period}</Badge>
-                          {pendingRecs > 0 && <Badge variant="warning">⏳ {pendingRecs} reco</Badge>}
-                          {isOverdue && <Badge variant="urgent">⏰ en retard</Badge>}
-                          {dueSoon && !isOverdue && <Badge variant="warning">📅 ≤14j</Badge>}
-                        </div>
-
-                        <h3 className="font-bold">{evaluation.employeeName}</h3>
-                        <p className="text-xs text-slate-400">{evaluation.employeeRole}</p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <BureauTag bureau={evaluation.bureau} />
-                          {evaluation.status === 'completed' && (
-                            <span className={cn('text-xs font-bold', getScoreColor(evaluation.scoreGlobal || 0))}>
-                              {evaluation.scoreGlobal}/100
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">{evaluation.date}</p>
-                      <p className="text-xs text-slate-500">Par {evaluation.evaluatorName}</p>
-                    </div>
-                  </div>
-
-                  {/* Score et synthèse (si complétée) */}
-                  {evaluation.status === 'completed' && (
-                    <>
-                      <div className="mb-3">
-                        <div className="flex items-center gap-4">
-                          <div className={cn('text-3xl font-bold', getScoreColor(evaluation.scoreGlobal || 0))}>
-                            {evaluation.scoreGlobal}/100
-                          </div>
-                          <div className="flex-1">
-                            <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
-                              <div
-                                className={cn('h-full transition-all', getScoreBg(evaluation.scoreGlobal || 0))}
-                                style={{ width: `${evaluation.scoreGlobal || 0}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 mb-3">
-                        <div className={cn('p-2 rounded text-xs', darkMode ? 'bg-emerald-500/10' : 'bg-emerald-50')}>
-                          <p className="text-emerald-400 font-medium mb-1">✅ Points forts</p>
-                          <ul className="text-slate-400 space-y-0.5">
-                            {(evaluation.strengths || []).slice(0, 2).map((s: string, i: number) => (
-                              <li key={i}>• {s}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className={cn('p-2 rounded text-xs', darkMode ? 'bg-amber-500/10' : 'bg-amber-50')}>
-                          <p className="text-amber-400 font-medium mb-1">📈 À améliorer</p>
-                          <ul className="text-slate-400 space-y-0.5">
-                            {(evaluation.improvements || []).slice(0, 2).map((it: string, idx: number) => (
-                              <li key={idx}>• {it}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      {(evaluation.recommendations || []).length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {(evaluation.recommendations || []).map((rec: any) => (
-                            <Badge
-                              key={rec.id}
-                              variant={
-                                rec.status === 'implemented'
-                                  ? 'success'
-                                  : rec.status === 'approved'
-                                  ? 'info'
-                                  : rec.status === 'rejected'
-                                  ? 'default'
-                                  : 'warning'
-                              }
-                            >
-                              {recommendationTypes[rec.type]?.icon} {rec.type}
-                              {rec.status === 'pending' && ' ⏳'}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </>
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <div className="max-w-7xl mx-auto">
+              {/* Search bar */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="🔍 Rechercher (agent, évaluateur, période, bureau, ID)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={cn(
+                    'w-full px-4 py-2 rounded-lg text-sm',
+                    'bg-slate-800/50 border border-slate-700/50 text-slate-200 placeholder:text-slate-500',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50'
                   )}
+                />
+              </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50 flex-wrap">
-                    {evaluation.status === 'completed' && pendingRecs > 0 && (
-                      <Button
-                        size="sm"
-                        variant="success"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const firstPending = (evaluation.recommendations || []).find((r: any) => r.status === 'pending');
-                          handleValidateRecommendation(evaluation.id, firstPending?.id || '');
-                        }}
-                      >
-                        ✅ Valider reco ({pendingRecs})
-                      </Button>
-                    )}
+              {/* Evaluations list */}
+              <div className="space-y-3">
+                {filteredEvaluations.map((evaluation: any) => {
+                  const pendingRecs = (evaluation.recommendations || []).filter((r: any) => r.status === 'pending').length;
+                  const statusConfig: Record<EvaluationStatus, { label: string; variant: 'success' | 'warning' | 'info' | 'default' }> = {
+                    completed: { label: 'Complétée', variant: 'success' },
+                    in_progress: { label: 'En cours', variant: 'warning' },
+                    scheduled: { label: 'Planifiée', variant: 'info' },
+                    cancelled: { label: 'Annulée', variant: 'default' },
+                  };
+                  const getScoreColor = (score: number) => {
+                    if (score >= 90) return 'text-emerald-400';
+                    if (score >= 75) return 'text-blue-400';
+                    if (score >= 60) return 'text-amber-400';
+                    return 'text-red-400';
+                  };
 
-                    <Button
-                      size="sm"
-                      variant="info"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleProgrammerFormation(evaluation.id);
-                      }}
+                  return (
+                    <Card
+                      key={evaluation.id}
+                      className="cursor-pointer transition-all hover:border-blue-500/50 hover:bg-slate-800/30"
+                      onClick={() => handleSelect(evaluation as Evaluation)}
                     >
-                      🎓 Formation
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadCR(evaluation.id);
-                      }}
-                    >
-                      📄 CR
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {filteredEvaluations.length === 0 && (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <p className="text-slate-400">Aucune évaluation trouvée avec ces filtres.</p>
-                <Button size="sm" variant="outline" onClick={resetAll} className="mt-4">
-                  Réinitialiser
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        {/* Panel détail évaluation */}
-        <div className="lg:col-span-1">
-          {selectedEval ? (
-            <Card className="sticky top-4">
-              <CardContent className="p-4">
-                {/* Header */}
-                <div className="mb-4 pb-4 border-b border-slate-700/50">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center font-bold text-white">
-                      {(selectedEval.employeeName || '?')
-                        .split(' ')
-                        .filter(Boolean)
-                        .map((n: string) => n[0])
-                        .join('')}
-                    </div>
-                    <div>
-                      <h3 className="font-bold">{selectedEval.employeeName}</h3>
-                      <p className="text-xs text-slate-400">{selectedEval.employeeRole}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 flex-wrap">
-                    <Badge variant={statusConfig[selectedEval.status as EvaluationStatus]?.variant || 'default'}>
-                      {statusConfig[selectedEval.status as EvaluationStatus]?.label || selectedEval.status}
-                    </Badge>
-                    <Badge variant="default">{selectedEval.period}</Badge>
-                    <BureauTag bureau={selectedEval.bureau} />
-                    {selectedEval.status === 'scheduled' && (() => {
-                      const d = daysUntil(selectedEval.date);
-                      const overdue = (parseFRDateToMs(selectedEval.date) || 0) < Date.now();
-                      if (overdue) return <Badge variant="urgent">⏰ en retard</Badge>;
-                      if (typeof d === 'number' && d >= 0 && d <= 14) return <Badge variant="warning">📅 dans {d}j</Badge>;
-                      return null;
-                    })()}
-                  </div>
-
-                  <p className="text-xs text-slate-500 mt-2">
-                    Date: <span className="text-slate-300">{selectedEval.date}</span> • Évaluateur: <span className="text-slate-300">{selectedEval.evaluatorName}</span>
-                  </p>
-                </div>
-
-                {/* Score global */}
-                {selectedEval.status === 'completed' && (
-                  <div className="mb-4 p-3 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-center">
-                    <p className={cn('text-4xl font-bold', getScoreColor(selectedEval.scoreGlobal || 0))}>
-                      {selectedEval.scoreGlobal}/100
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">Score global</p>
-                  </div>
-                )}
-
-                {/* Critères détaillés */}
-                {selectedEval.status === 'completed' && (selectedEval.criteria || []).length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="font-bold text-sm mb-2">📊 Critères</h4>
-                    <div className="space-y-2">
-                      {(selectedEval.criteria || []).map((crit: any) => (
-                        <div key={crit.id} className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm">{crit.name}</span>
-                            <span className="font-bold">{crit.score}/5</span>
-                          </div>
-                          <div className="flex gap-1">
-                            {[1, 2, 3, 4, 5].map((n) => (
-                              <div
-                                key={n}
-                                className={cn('h-1.5 flex-1 rounded', n <= crit.score ? getScoreBg((crit.score || 0) * 20) : 'bg-slate-600')}
-                              />
-                            ))}
-                          </div>
-                          {crit.comment && <p className="text-[10px] text-slate-400 mt-1">{crit.comment}</p>}
-                          <p className="text-[10px] text-slate-500">Poids: {crit.weight}%</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Recommandations détaillées */}
-                {(selectedEval.recommendations || []).length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="font-bold text-sm mb-2">📋 Recommandations</h4>
-                    <div className="space-y-2">
-                      {(selectedEval.recommendations || []).map((rec: any) => (
-                        <div
-                          key={rec.id}
-                          className={cn(
-                            'p-2 rounded border',
-                            rec.status === 'pending'
-                              ? 'border-amber-500/50 bg-amber-500/10'
-                              : rec.status === 'approved'
-                              ? 'border-blue-500/50 bg-blue-500/10'
-                              : rec.status === 'implemented'
-                              ? 'border-emerald-500/50 bg-emerald-500/10'
-                              : 'border-slate-500/50 bg-slate-500/10'
-                          )}
-                        >
-                          <div className="flex items-start gap-2">
-                            <span className="text-lg">{recommendationTypes[rec.type]?.icon || '📌'}</span>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{rec.title}</p>
-                              <p className="text-xs text-slate-400">{rec.description}</p>
-                              <div className="flex gap-2 flex-wrap mt-1">
-                                <Badge
-                                  variant={
-                                    rec.status === 'implemented'
-                                      ? 'success'
-                                      : rec.status === 'approved'
-                                      ? 'info'
-                                      : rec.status === 'rejected'
-                                      ? 'default'
-                                      : 'warning'
-                                  }
-                                >
-                                  {rec.status}
-                                </Badge>
-
-                                {rec.status === 'pending' && (
-                                  <Button
-                                    size="xs"
-                                    variant="success"
-                                    onClick={() => handleValidateRecommendation(selectedEval.id, rec.id)}
-                                  >
-                                    ✅ Valider
-                                  </Button>
-                                )}
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            {/* Avatar */}
+                            <div className="relative flex-shrink-0">
+                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center font-bold text-white">
+                                {(evaluation.employeeName || '?')
+                                  .split(' ')
+                                  .filter(Boolean)
+                                  .map((n: string) => n[0])
+                                  .join('')}
                               </div>
+                              {evaluation.status === 'completed' && (
+                                <div className={cn('absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white', getScoreColor(evaluation.scoreGlobal || 0))}>
+                                  {evaluation.scoreGlobal}
+                                </div>
+                              )}
+                            </div>
 
-                              {rec.implementedAt && (
-                                <p className="text-[10px] text-slate-500 mt-1">Implémenté le {rec.implementedAt}</p>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <Badge variant={statusConfig[evaluation.status as EvaluationStatus]?.variant || 'default'}>
+                                  {statusConfig[evaluation.status as EvaluationStatus]?.label || evaluation.status}
+                                </Badge>
+                                <Badge variant="outline">{evaluation.period}</Badge>
+                                <BureauTag bureau={evaluation.bureau} />
+                                {pendingRecs > 0 && <Badge variant="warning">⏳ {pendingRecs} reco</Badge>}
+                              </div>
+                              <h3 className="font-bold text-slate-200 mb-1">{evaluation.employeeName}</h3>
+                              <p className="text-xs text-slate-400 mb-2">{evaluation.employeeRole}</p>
+                              {evaluation.status === 'completed' && (
+                                <div className="flex items-center gap-2">
+                                  <span className={cn('text-sm font-bold', getScoreColor(evaluation.scoreGlobal || 0))}>
+                                    {evaluation.scoreGlobal}/100
+                                  </span>
+                                </div>
                               )}
                             </div>
                           </div>
+
+                          {/* Date & Evaluator */}
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-xs text-slate-400">{evaluation.date}</p>
+                            <p className="text-xs text-slate-500">Par {evaluation.evaluatorName}</p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+
+                {filteredEvaluations.length === 0 && (
+                  <div className="bg-slate-800/50 rounded-lg p-8 text-center border border-slate-700/50">
+                    <ClipboardCheck className="h-12 w-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-400 mb-2">Aucune évaluation trouvée</p>
+                    <p className="text-xs text-slate-600">
+                      Catégorie: {activeCategory} • Sous-catégorie: {activeSubCategory || 'all'}
+                    </p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </main>
 
-                {/* Commentaire employé */}
-                {selectedEval.employeeComment && (
-                  <div className="mb-4 p-3 rounded bg-blue-500/10 border border-blue-500/30">
-                    <p className="text-xs text-blue-400 font-medium mb-1">💬 Commentaire employé</p>
-                    <p className="text-sm italic">"{selectedEval.employeeComment}"</p>
-                  </div>
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats.total} évaluations • {stats.completed} complétées • {stats.pendingRecsTotal} recommandations
+            </span>
+            {isConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Connecté
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
                 )}
-
-                {/* Traçabilité */}
-                {selectedEval.hash && (
-                  <div className="mb-4 p-2 rounded bg-slate-700/30">
-                    <p className="text-[10px] text-slate-400">🔐 Traçabilité</p>
-                    <p className="font-mono text-[10px] text-slate-500 truncate">{selectedEval.hash}</p>
-                  </div>
-                )}
-
-                {/* Quick link (optionnel) vers employé si on peut matcher */}
-                <div className="mb-4">
-                  {(() => {
-                    const emp = employees.find((x: any) => normalize(x.name) === normalize(selectedEval.employeeName || ''));
-                    if (!emp) return null;
-                    return (
-                      <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                        <p className="text-[10px] text-slate-400 mb-1">🔗 Employé</p>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium truncate">{emp.name}</span>
-                          <Badge variant="info" className="text-[10px]">ID: {emp.id}</Badge>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                  <Button size="sm" variant="info" className="flex-1" onClick={() => handleDownloadCR(selectedEval.id)}>
-                    📄 Télécharger CR
-                  </Button>
-                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => addToast('Édition (à connecter)', 'info')}>
-                    ✏️ Modifier
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="sticky top-4">
-              <CardContent className="p-8 text-center">
-                <span className="text-4xl mb-4 block">📊</span>
-                <p className="text-slate-400">Sélectionnez une évaluation pour voir ses détails</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
       </div>
+
+      {/* Command Palette - Placeholder */}
+      {commandPaletteOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-[12vh]">
+          <div className="w-full max-w-2xl mx-4 rounded-2xl border border-slate-700 bg-slate-900 p-4">
+            <div className="flex items-center gap-3 mb-4">
+              <Search className="h-5 w-5 text-blue-400" />
+              <input
+                type="text"
+                placeholder="Rechercher une évaluation..."
+                className="flex-1 bg-transparent text-slate-200 outline-none"
+                autoFocus
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCommandPaletteOpen(false)}
+                className="h-8 w-8 p-0"
+              >
+                ×
+              </Button>
+            </div>
+            <p className="text-sm text-slate-500 text-center py-8">
+              Command Palette - À implémenter
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setNotificationsPanelOpen(false)} />
+          <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+                {(stats.pendingRecsTotal + stats.overdueScheduled) > 0 && (
+                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                    {stats.pendingRecsTotal + stats.overdueScheduled} nouvelles
+                  </Badge>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNotificationsPanelOpen(false)}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+              >
+                ×
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {stats.overdueScheduled > 0 && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm font-medium text-red-400 mb-1">
+                    {stats.overdueScheduled} évaluation(s) en retard
+                  </p>
+                  <p className="text-xs text-slate-400">Action requise</p>
+                </div>
+              )}
+              {stats.pendingRecsTotal > 0 && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                  <p className="text-sm font-medium text-amber-400 mb-1">
+                    {stats.pendingRecsTotal} recommandation(s) en attente
+                  </p>
+                  <p className="text-xs text-slate-400">À valider</p>
+                </div>
+              )}
+              {stats.dueSoon > 0 && (
+                <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                  <p className="text-sm font-medium text-blue-400 mb-1">
+                    {stats.dueSoon} évaluation(s) à venir (≤14j)
+                  </p>
+                  <p className="text-xs text-slate-400">À planifier</p>
+                </div>
+              )}
+              {(stats.overdueScheduled === 0 && stats.pendingRecsTotal === 0 && stats.dueSoon === 0) && (
+                <p className="text-sm text-slate-500 text-center py-8">Aucune notification</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Evaluation Detail Modal */}
+      <EvaluationDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => {
+          setDetailModalOpen(false);
+          setSelectedEvaluation(null);
+        }}
+        evaluation={selectedEvaluation}
+        onValidateRecommendation={handleValidateRecommendation}
+        onDownloadCR={handleDownloadCR}
+        onEdit={handleEdit}
+        onPrevious={handlePreviousEvaluation}
+        onNext={handleNextEvaluation}
+        hasNext={hasNextEvaluation}
+        hasPrevious={hasPreviousEvaluation}
+        darkMode={true}
+      />
     </div>
   );
 }

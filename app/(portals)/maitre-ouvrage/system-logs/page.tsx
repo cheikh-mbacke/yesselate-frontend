@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,13 @@ import { Input } from '@/components/ui/input';
 import { systemLogs } from '@/lib/data';
 import { usePageNavigation } from '@/hooks/usePageNavigation';
 import { useAutoSyncCounts } from '@/hooks/useAutoSync';
+import {
+  SystemLogsCommandSidebar,
+  SystemLogsSubNavigation,
+  SystemLogsKPIBar,
+  systemLogsCategories,
+} from '@/components/features/bmo/system-logs/command-center';
+import { Terminal, Search, Bell, ChevronLeft, MoreHorizontal, Download, FileCheck } from 'lucide-react';
 
 /* --------------------------------------------
    TYPES (tolérants: tes logs peuvent avoir + de champs)
@@ -577,9 +584,75 @@ function computeAlerts(logs: DerivedLog[]): Alert[] {
    PAGE
 -------------------------------------------- */
 
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, Array<{ id: string; label: string; badge?: number | string; badgeType?: 'default' | 'warning' | 'critical' }>> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  'by-level': [
+    { id: 'all', label: 'Tous' },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'error', label: 'Erreurs', badge: 5, badgeType: 'warning' },
+    { id: 'warning', label: 'Avertissements' },
+    { id: 'info', label: 'Info' },
+  ],
+  'by-category': [
+    { id: 'all', label: 'Toutes' },
+    { id: 'auth', label: 'Auth' },
+    { id: 'security', label: 'Sécurité', badge: 8, badgeType: 'warning' },
+    { id: 'system', label: 'Système' },
+    { id: 'api', label: 'API' },
+    { id: 'audit', label: 'Audit' },
+  ],
+  security: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'critical', label: 'Critiques', badge: 2, badgeType: 'critical' },
+    { id: 'alerts', label: 'Alertes', badge: 6, badgeType: 'warning' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  incidents: [
+    { id: 'all', label: 'Tous' },
+    { id: 'open', label: 'Ouverts', badge: 3, badgeType: 'critical' },
+    { id: 'triage', label: 'En triage' },
+    { id: 'closed', label: 'Fermés' },
+  ],
+  correlation: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'user', label: 'Par utilisateur' },
+    { id: 'ip', label: 'Par IP' },
+    { id: 'session', label: 'Par session' },
+  ],
+  integrity: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'verified', label: 'Vérifiées' },
+    { id: 'mismatch', label: 'Mismatch', badge: 0, badgeType: 'critical' },
+  ],
+  exports: [
+    { id: 'all', label: 'Tous' },
+    { id: 'json', label: 'JSON' },
+    { id: 'csv', label: 'CSV' },
+    { id: 'evidence', label: 'Evidence packs' },
+  ],
+  'advanced-search': [
+    { id: 'all', label: 'Toutes' },
+    { id: 'query', label: 'Query avancée' },
+    { id: 'saved', label: 'Sauvegardées' },
+  ],
+};
+
 export default function SystemLogsPage() {
   const { darkMode } = useAppStore();
   const { addToast, addActionLog } = useBMOStore();
+
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState<string>('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState<string>('all');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Quick filters
   const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
@@ -1104,12 +1177,172 @@ export default function SystemLogsPage() {
 
   const visibleLogs = filteredLogs.slice(0, limit);
 
+  // Computed values
+  const currentCategoryLabel = useMemo(() => {
+    return systemLogsCategories.find((c) => c.id === activeCategory)?.label || 'System Logs';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    setActiveCategory(category);
+    setActiveSubCategory('all');
+  }, []);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+        return;
+      }
+
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((v) => !v);
+        return;
+      }
+
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setFullscreen((v) => !v);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   /* --------------------------------------------
      RENDER
   -------------------------------------------- */
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <SystemLogsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        onOpenCommandPalette={() => setCommandPaletteOpen((v) => !v)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Terminal className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Console Observabilité & Sécurité</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen((v) => !v)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Export */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => exportFiltered('json')}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+              title="Exporter JSON"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+
+            {/* Integrity Scan */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => runIntegrityScan()}
+              disabled={integrityScan.running}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+              title="Scanner l'intégrité"
+            >
+              <FileCheck className="h-4 w-4" />
+            </Button>
+
+            {/* More Menu */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <SystemLogsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        <SystemLogsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed((v) => !v)}
+          onRefresh={() => {
+            // Refresh logic
+          }}
+          stats={{
+            ...stats,
+            filtered: filteredLogs.length,
+          }}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <div className="space-y-3 sm:space-y-4">
       {/* Header / Console controls responsive */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0">
@@ -1673,13 +1906,47 @@ export default function SystemLogsPage() {
         </div>
       </div>
 
-      {/* Footer hint responsive */}
-      <Card className="border-slate-700/50">
-        <CardContent className="p-2 sm:p-3 text-[10px] sm:text-xs text-slate-400">
-          🧪 Pro tip: utilise la query comme une console pro. Exemple: <span className="font-mono">category:auth "failed" user:USR-001</span> •
-          <span className="font-mono"> level:critical || level:security</span> • <span className="font-mono">entity:Invoice#INV-2025-001</span>.
-        </CardContent>
-      </Card>
+              {/* Footer hint responsive */}
+              <Card className="border-slate-700/50">
+                <CardContent className="p-2 sm:p-3 text-[10px] sm:text-xs text-slate-400">
+                  🧪 Pro tip: utilise la query comme une console pro. Exemple: <span className="font-mono">category:auth "failed" user:USR-001</span> •
+                  <span className="font-mono"> level:critical || level:security</span> • <span className="font-mono">entity:Invoice#INV-2025-001</span>.
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">Total: {stats.total} logs</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">Aujourd'hui: {stats.today}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              Critiques: {stats.critical} • Sécurité: {stats.security}
+            </span>
+            {integrityScan.total > 0 && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className={cn(
+                  'text-xs',
+                  integrityScan.mismatch > 0 ? 'text-red-400' : 'text-emerald-400'
+                )}>
+                  Intégrité: {integrityScan.mismatch > 0 ? `${integrityScan.mismatch} mismatch` : 'OK'}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-slate-500">Connecté</span>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

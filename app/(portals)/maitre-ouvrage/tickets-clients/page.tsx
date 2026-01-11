@@ -303,12 +303,12 @@ function TicketsClientsPageContent() {
       
       setStats({
         total: apiStats.total,
-        open: apiStats.byStatus.open + apiStats.byStatus.in_progress,
-        critical: apiStats.byPriority.critical,
-        slaBreached: apiStats.slaBreached,
+        open: (apiStats.open || 0) + (apiStats.inProgress || 0),
+        critical: apiStats.critical || 0,
+        slaBreached: apiStats.slaBreached || 0,
         resolvedToday: apiStats.resolvedToday || 0,
-        avgResponseTime: apiStats.avgResponseTime,
-        satisfactionScore: apiStats.avgSatisfaction,
+        avgResponseTime: apiStats.avgResponseTime || 0,
+        satisfactionScore: apiStats.satisfactionScore || 0,
       });
     } catch (error: any) {
       if (error?.name !== 'AbortError') {

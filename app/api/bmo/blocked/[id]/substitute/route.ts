@@ -128,7 +128,8 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/substitute] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/substitute] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to create substitution', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -139,10 +140,10 @@ export async function POST(
 // GET pour voir substitution active
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // TODO: Récupérer substitution active
     const substitution = {
@@ -162,7 +163,8 @@ export async function GET(
 
     return NextResponse.json(substitution);
   } catch (error) {
-    console.error(`[blocked/${params.id}/substitute] Get error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/substitute] Get error:`, error);
     return NextResponse.json(
       { error: 'Failed to get substitution' },
       { status: 500 }
@@ -173,10 +175,10 @@ export async function GET(
 // DELETE pour révoquer substitution (BMO uniquement)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     if (!body.reason) {
@@ -208,7 +210,8 @@ export async function DELETE(
       },
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/substitute] Revoke error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/substitute] Revoke error:`, error);
     return NextResponse.json(
       { error: 'Failed to revoke substitution' },
       { status: 500 }

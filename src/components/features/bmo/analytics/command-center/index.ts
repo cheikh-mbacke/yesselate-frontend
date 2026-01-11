@@ -9,4 +9,8 @@ export { AnalyticsSubNavigation } from './AnalyticsSubNavigation';
 export { AnalyticsKPIBar } from './AnalyticsKPIBar';
 export { AnalyticsContentRouter } from './AnalyticsContentRouter';
 export { AnalyticsFiltersPanel } from './AnalyticsFiltersPanel';
+export { AnalyticsBatchActionsBar } from './AnalyticsBatchActionsBar';
+export { AnalyticsModals } from './AnalyticsModals';
+export { AnalyticsDetailPanel } from './AnalyticsDetailPanel';
+export { ActionsMenu } from './ActionsMenu';
 

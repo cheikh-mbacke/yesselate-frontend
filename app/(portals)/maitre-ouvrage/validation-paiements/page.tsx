@@ -39,7 +39,9 @@ import {
   Settings,
   ChevronLeft,
   Filter,
+  HelpCircle,
 } from 'lucide-react';
+import { PaiementsHelpModal } from '@/components/features/bmo/workspace/paiements/modals/PaiementsHelpModal';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -173,6 +175,7 @@ export default function ValidationPaiementsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
 
   // Load stats
   const loadStats = useCallback(async (mode: 'auto' | 'manual' = 'auto') => {
@@ -307,10 +310,10 @@ export default function ValidationPaiementsPage() {
         e.preventDefault();
         setIsFullScreen(prev => !prev);
       }
-      // ? - Shortcuts Modal
-      if (e.key === '?') {
+      // F1 - Help Modal
+      if (e.key === 'F1') {
         e.preventDefault();
-        setModal({ isOpen: true, type: 'shortcuts' });
+        setHelpModalOpen(true);
       }
       // Esc - Close modals/panels
       if (e.key === 'Escape') {
@@ -322,12 +325,14 @@ export default function ValidationPaiementsPage() {
           setFiltersPanelOpen(false);
         } else if (notificationPanelOpen) {
           setNotificationPanelOpen(false);
+        } else if (helpModalOpen) {
+          setHelpModalOpen(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setCommandPaletteOpen, navigationHistory, modal.isOpen, commandPaletteOpen, filtersPanelOpen, notificationPanelOpen]);
+  }, [setCommandPaletteOpen, navigationHistory, modal.isOpen, commandPaletteOpen, filtersPanelOpen, notificationPanelOpen, helpModalOpen]);
 
   // Generate KPIs from stats
   const kpis = stats ? [
@@ -555,6 +560,14 @@ export default function ValidationPaiementsPage() {
                         <Download className="w-4 h-4 text-emerald-400" />
                         Exporter
                       </button>
+                      <div className="h-px bg-slate-700 my-1" />
+                      <button
+                        onClick={() => { setHelpModalOpen(true); setMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                      >
+                        <HelpCircle className="w-4 h-4 text-slate-400" />
+                        Aide
+                      </button>
                       <button
                         onClick={() => { setModal({ isOpen: true, type: 'settings' }); setMenuOpen(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
@@ -652,6 +665,12 @@ export default function ValidationPaiementsPage() {
         onClose={() => setFiltersPanelOpen(false)}
         onApplyFilters={handleApplyFilters}
         currentFilters={activeFilters}
+      />
+
+      {/* Help Modal */}
+      <PaiementsHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
       />
     </div>
   );

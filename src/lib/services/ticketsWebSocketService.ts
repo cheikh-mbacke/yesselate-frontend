@@ -98,9 +98,17 @@ export class TicketsWebSocketService {
         }
       };
 
-      this.ws.onerror = (error) => {
-        console.error('[TicketsWS] Erreur:', error);
-        this.emit('error', { error });
+      this.ws.onerror = (event) => {
+        // WebSocket error events don't provide detailed error info
+        // Log the event type and WebSocket state for debugging
+        const errorInfo = {
+          type: event.type,
+          readyState: this.ws.readyState,
+          url: this.ws.url,
+          timestamp: new Date().toISOString(),
+        };
+        console.error('[TicketsWS] Erreur:', errorInfo);
+        this.emit('error', { error: errorInfo });
       };
 
       this.ws.onclose = () => {

@@ -133,7 +133,8 @@ export async function POST(
       note: 'Cette décision est définitive et s\'impose à toutes les parties',
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/arbitrate] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/arbitrate] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to create arbitrage', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -144,10 +145,10 @@ export async function POST(
 // GET pour voir arbitrage
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // TODO: Récupérer arbitrage
     const arbitrage = {
@@ -168,7 +169,8 @@ export async function GET(
 
     return NextResponse.json(arbitrage);
   } catch (error) {
-    console.error(`[blocked/${params.id}/arbitrate] Get error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/arbitrate] Get error:`, error);
     return NextResponse.json(
       { error: 'Failed to get arbitrage' },
       { status: 500 }

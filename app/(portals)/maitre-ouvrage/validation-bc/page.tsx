@@ -48,9 +48,11 @@ import {
   ValidationBCRequestJustificatif,
   ValidationBCDocumentView,
   ValidationBC360Panel,
+  ValidationBCNotificationPanel,
   type ValidationDocument,
   type DocumentType,
 } from '@/components/features/validation-bc/workspace';
+import { ValidationBCHelpModal } from '@/components/features/validation-bc/modals/ValidationBCHelpModal';
 
 // Graphiques
 import {
@@ -95,20 +97,19 @@ import {
   Bell,
   ChevronLeft,
   RefreshCw,
-  Plus,
+  MoreVertical,
   Download,
   Settings,
-  MoreHorizontal,
+  Maximize2,
+  Minimize2,
+  Plus,
+  BarChart3,
+  Filter,
+  HelpCircle,
+  Keyboard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 // ================================
 // Types
@@ -225,7 +226,6 @@ function ValidationBCPageContent() {
 
   // Modals state
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -235,6 +235,8 @@ function ValidationBCPageContent() {
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [multiLevelValidationOpen, setMultiLevelValidationOpen] = useState(false);
   const [requestJustificatifOpen, setRequestJustificatifOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
 
   // Validation modal
   const [validationModalOpen, setValidationModalOpen] = useState(false);
@@ -584,21 +586,8 @@ function ValidationBCPageContent() {
     }
   }, [navigationHistory]);
 
-  /**
-   * Ouvre un document dans un onglet workspace
-   */
-  const openDocument = useCallback(
-    (id: string, type: DocumentType) => {
-      openTab({
-        type: type as ValidationTabType,
-        id: `document:${type}:${id}`,
-        title: id,
-        icon: type === 'bc' ? '📄' : type === 'facture' ? '🧾' : '📝',
-        data: { documentId: id, type },
-      });
-    },
-    [openTab]
-  );
+  // Note: openDocument n'est plus nécessaire car ValidationBCDocumentsList
+  // gère maintenant le modal overlay en interne via ValidationBCDetailModal
 
   /**
    * Ouvre le modal de validation pour un document
@@ -647,6 +636,31 @@ function ValidationBCPageContent() {
         e.preventDefault();
         setCommandPaletteOpen(false);
         setNotificationsPanelOpen(false);
+        setHelpModalOpen(false);
+        setFiltersPanelOpen(false);
+        if (exportOpen) setExportOpen(false);
+        if (quickCreateOpen) setQuickCreateOpen(false);
+        return;
+      }
+      
+      // ⌘I / Ctrl+I - Stats Modal
+      if (isMod && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('validation-bc:open-stats'));
+        return;
+      }
+      
+      // ⌘E / Ctrl+E - Export Modal
+      if (isMod && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setExportOpen(true);
+        return;
+      }
+      
+      // ? - Help Modal
+      if (e.key === '?') {
+        e.preventDefault();
+        setHelpModalOpen(true);
         return;
       }
 
@@ -677,26 +691,30 @@ function ValidationBCPageContent() {
         setQuickCreateOpen(true);
         return;
       }
+      
+      // ⌘F / Ctrl+F - Filters Panel
+      if (isMod && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFiltersPanelOpen(prev => !prev);
+        return;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleGoBack]);
+  }, [handleGoBack, exportOpen, quickCreateOpen]);
 
   // Listen to custom events from command palette
   useEffect(() => {
-    const handleOpenStats = () => setStatsModalOpen(true);
     const handleOpenExport = () => setExportOpen(true);
     const handleOpenTimeline = () => setTimelineOpen(true);
     const handleOpenWorkflow = () => setWorkflowOpen(true);
 
-    window.addEventListener('validation-bc:open-stats', handleOpenStats);
     window.addEventListener('validation-bc:open-export', handleOpenExport);
     window.addEventListener('validation-bc:open-timeline', handleOpenTimeline);
     window.addEventListener('validation-bc:open-workflow', handleOpenWorkflow);
 
     return () => {
-      window.removeEventListener('validation-bc:open-stats', handleOpenStats);
       window.removeEventListener('validation-bc:open-export', handleOpenExport);
       window.removeEventListener('validation-bc:open-timeline', handleOpenTimeline);
       window.removeEventListener('validation-bc:open-workflow', handleOpenWorkflow);
@@ -758,105 +776,57 @@ function ValidationBCPageContent() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions - Consolidated */}
           <div className="flex items-center gap-1">
             {/* Search */}
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setCommandPaletteOpen(true)}
-              className="h-8 px-3 text-slate-400 hover:text-slate-200"
-              aria-label="Ouvrir la palette de commandes (raccourci: ⌘K)"
-              aria-expanded={commandPaletteOpen}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             >
-              <Search className="h-4 w-4 mr-2" aria-hidden="true" />
-              <span className="text-sm">Rechercher...</span>
-              <kbd className="ml-2 text-xs bg-slate-700/50 px-1.5 py-0.5 rounded" aria-label="Raccourci clavier: ⌘K">⌘K</kbd>
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
             </Button>
 
-            {/* Refresh */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
-              title="Actualiser les données"
-              aria-label={isRefreshing ? 'Actualisation en cours...' : 'Actualiser les données'}
-              aria-busy={isRefreshing}
-            >
-              <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} aria-hidden="true" />
-            </Button>
-
-            {/* Quick Create */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setQuickCreateOpen(true)}
-              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
-              title="Créer un nouveau document (raccourci: ⌘N)"
-              aria-label="Créer un nouveau document"
-              aria-expanded={quickCreateOpen}
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
             {/* Notifications */}
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setNotificationsPanelOpen(!notificationsPanelOpen)}
-              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200 relative"
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
               title="Notifications"
-              aria-label={`Notifications${statsData && statsData.urgent > 0 ? ` - ${statsData.urgent} urgent${statsData.urgent > 1 ? 's' : ''}` : ''}`}
-              aria-expanded={notificationsPanelOpen}
             >
               <Bell className="h-4 w-4" />
               {statsData && statsData.urgent > 0 && (
-                <span 
-                  className="absolute -top-0.5 -right-0.5 h-4 w-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
-                  aria-label={`${statsData.urgent} document${statsData.urgent > 1 ? 's' : ''} urgent${statsData.urgent > 1 ? 's' : ''}`}
-                >
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
                   {statsData.urgent}
                 </span>
               )}
             </Button>
 
-            {/* More Actions */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
-                  📊 Statistiques
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setExportOpen(true)}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Exporter
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setTimelineOpen(true)}>
-                  📅 Timeline
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setWorkflowOpen(true)}>
-                  🔄 Workflow
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setAnalyticsOpen(true)}>
-                  📈 Analytics
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setIsFullScreen(!isFullScreen)}>
-                  {isFullScreen ? '⊗' : '⊕'} Plein écran
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              onExport={() => setExportOpen(true)}
+              onStats={() => window.dispatchEvent(new CustomEvent('validation-bc:open-stats'))}
+              onQuickCreate={() => setQuickCreateOpen(true)}
+              onFullscreen={() => setIsFullScreen(!isFullScreen)}
+              fullscreen={isFullScreen}
+              onFilters={() => setFiltersPanelOpen(!filtersPanelOpen)}
+              onHelp={() => setHelpModalOpen(true)}
+            />
           </div>
         </header>
 
@@ -901,8 +871,8 @@ function ValidationBCPageContent() {
             <div className="h-full overflow-y-auto">
               <div className="max-w-7xl mx-auto p-6">
                 {/* Advanced Search */}
-                {['bc', 'factures', 'avenants', 'urgents'].includes(activeCategory) && (
-                  <div className="mb-6">
+                {['bc', 'factures', 'avenants', 'urgents'].includes(activeCategory) && filtersPanelOpen && (
+                  <div className="mb-6" id="filters-panel">
                     <AdvancedSearchPanel
                       onSearch={handleSearchFiltersChange}
                       onReset={handleResetSearch}
@@ -934,7 +904,6 @@ function ValidationBCPageContent() {
                 {activeCategory === 'bc' && permissions.canView && (
                   <BCListView
                     subCategory={activeSubCategory}
-                    onDocumentClick={(doc) => openDocument(doc.id, 'bc')}
                     onValidate={permissions.canValidate ? handleValidateDocument : undefined}
                     onReject={permissions.canReject ? handleRejectDocument : undefined}
                   />
@@ -943,7 +912,6 @@ function ValidationBCPageContent() {
                 {activeCategory === 'factures' && permissions.canView && (
                   <FacturesListView
                     subCategory={activeSubCategory}
-                    onDocumentClick={(doc) => openDocument(doc.id, 'facture')}
                     onValidate={permissions.canValidate ? handleValidateDocument : undefined}
                     onReject={permissions.canReject ? handleRejectDocument : undefined}
                   />
@@ -952,7 +920,6 @@ function ValidationBCPageContent() {
                 {activeCategory === 'avenants' && permissions.canView && (
                   <AvenantsListView
                     subCategory={activeSubCategory}
-                    onDocumentClick={(doc) => openDocument(doc.id, 'avenant')}
                     onValidate={permissions.canValidate ? handleValidateDocument : undefined}
                     onReject={permissions.canReject ? handleRejectDocument : undefined}
                   />
@@ -961,7 +928,6 @@ function ValidationBCPageContent() {
                 {activeCategory === 'urgents' && permissions.canView && (
                   <UrgentsListView
                     subCategory={activeSubCategory}
-                    onDocumentClick={(doc) => openDocument(doc.id, doc.type)}
                     onValidate={permissions.canValidate ? handleValidateDocument : undefined}
                     onReject={permissions.canReject ? handleRejectDocument : undefined}
                   />
@@ -977,7 +943,6 @@ function ValidationBCPageContent() {
                 
                 {activeCategory === 'services' && (
                   <ValidationBCServiceQueues
-                    onOpenDocument={openDocument}
                     onValidate={permissions.canValidate ? handleValidateDocument : undefined}
                     onReject={permissions.canReject ? handleRejectDocument : undefined}
                   />
@@ -988,7 +953,7 @@ function ValidationBCPageContent() {
                 )}
 
                 {activeCategory === 'historique' && permissions.canView && (
-                  <ValidationBCActivityHistory onViewDocument={(id) => openDocument(id, 'bc')} />
+                  <ValidationBCActivityHistory />
                 )}
 
                 {/* Permission Denied */}
@@ -1035,40 +1000,41 @@ function ValidationBCPageContent() {
         </main>
 
         {/* Status Bar */}
-        <footer 
-          className="flex items-center justify-between px-4 py-1.5 border-t border-slate-700/50 bg-slate-900/60 text-xs"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          <div className="flex items-center gap-4 text-slate-500">
-            <span>Dernière MAJ: {formatLastUpdate()}</span>
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
             {statsData && (
               <>
-                <span aria-hidden="true">•</span>
-                <span>{statsData.total} documents</span>
-                <span aria-hidden="true">•</span>
-                <span className="text-amber-400">{statsData.pending} en attente</span>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  {statsData.total} documents • {statsData.pending} en attente • {statsData.urgent} urgents
+                </span>
               </>
             )}
           </div>
-          <div className="flex items-center gap-2" aria-label="Statut de connexion">
-            <div 
-              className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" 
-              aria-label="Connexion active"
-              role="status"
-            />
-            <span className="text-slate-500">Connecté</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
           </div>
         </footer>
       </div>
 
       {/* Notifications Panel (Slide-in from right) */}
-      {notificationsPanelOpen && (
-        <div className="w-80 border-l border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
-          <ValidationBCNotifications />
-        </div>
-      )}
+      <ValidationBCNotificationPanel
+        isOpen={notificationsPanelOpen}
+        onClose={() => setNotificationsPanelOpen(false)}
+      />
 
       {/* ================================ */}
       {/* Modals */}
@@ -1104,7 +1070,7 @@ function ValidationBCPageContent() {
           try {
             if (doc && doc.id && doc.type) {
               toast.success('Document créé', doc.id);
-              openDocument(doc.id, doc.type);
+              // Le document sera visible dans la liste et l'utilisateur pourra le sélectionner
               // Rafraîchir les stats pour inclure le nouveau document
               setTimeout(() => loadStats('auto'), 500);
             } else {
@@ -1112,8 +1078,8 @@ function ValidationBCPageContent() {
               toast.error('Erreur', 'Données du document invalides');
             }
           } catch (error) {
-            console.error('Erreur lors de l\'ouverture du document créé:', error);
-            toast.error('Erreur', 'Document créé mais impossible de l\'ouvrir');
+            console.error('Erreur lors de la création du document:', error);
+            toast.error('Erreur', 'Document créé mais impossible de le rafraîchir');
           }
         }}
       />
@@ -1189,6 +1155,12 @@ function ValidationBCPageContent() {
           }}
         />
       )}
+
+      {/* Help Modal */}
+      <ValidationBCHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
     </ValidationBCErrorBoundary>
   );
@@ -1199,5 +1171,183 @@ export default function ValidationBCPage() {
     <ValidationBCToastProvider>
       <ValidationBCPageContent />
     </ValidationBCToastProvider>
+  );
+}
+
+// ================================
+// Actions Menu Component
+// ================================
+function ActionsMenu({
+  onRefresh,
+  isRefreshing,
+  onExport,
+  onStats,
+  onQuickCreate,
+  onFullscreen,
+  fullscreen,
+  onFilters,
+  onHelp,
+}: {
+  onRefresh: () => void;
+  isRefreshing: boolean;
+  onExport: () => void;
+  onStats: () => void;
+  onQuickCreate: () => void;
+  onFullscreen: () => void;
+  fullscreen: boolean;
+  onFilters: () => void;
+  onHelp: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [open]);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+        title="Actions"
+        aria-label="Menu d'actions"
+        aria-expanded={open}
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-56 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+            <button
+              onClick={() => {
+                onRefresh();
+                setOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50 disabled:opacity-50"
+              aria-label={isRefreshing ? 'Actualisation en cours...' : 'Rafraîchir les données'}
+              aria-busy={isRefreshing}
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+              Rafraîchir
+            </button>
+            
+            <div className="border-t border-slate-700/50 my-1" />
+            
+            <button
+              onClick={() => {
+                onFilters();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label="Ouvrir les filtres avancés"
+            >
+              <Filter className="w-4 h-4" />
+              Filtres avancés
+            </button>
+            
+            <button
+              onClick={() => {
+                onQuickCreate();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label="Créer un nouveau document"
+            >
+              <Plus className="w-4 h-4" />
+              Nouveau document
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ⌘N
+              </kbd>
+            </button>
+            
+            <button
+              onClick={() => {
+                onExport();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label="Exporter les données"
+            >
+              <Download className="w-4 h-4" />
+              Exporter
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ⌘E
+              </kbd>
+            </button>
+            
+            <div className="border-t border-slate-700/50 my-1" />
+            
+            <button
+              onClick={() => {
+                onFullscreen();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label={fullscreen ? 'Quitter le mode plein écran' : 'Passer en mode plein écran'}
+            >
+              {fullscreen ? (
+                <>
+                  <Minimize2 className="w-4 h-4" />
+                  Quitter plein écran
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-4 h-4" />
+                  Plein écran
+                </>
+              )}
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                F11
+              </kbd>
+            </button>
+            
+            <div className="border-t border-slate-700/50 my-1" />
+            
+            <button
+              onClick={() => {
+                onStats();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label="Ouvrir les statistiques"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Statistiques
+            </button>
+            
+            <button
+              onClick={() => {
+                onHelp();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+              aria-label="Afficher l'aide et les raccourcis clavier"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Aide
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ?
+              </kbd>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -69,6 +69,9 @@ import {
 import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
 import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
 import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
+import { useKpis, useAlerts, useReports } from '@/lib/api/hooks/useAnalytics';
+import { AnalyticsDashboardView } from '@/components/features/bmo/analytics/workspace/views/AnalyticsDashboardView';
+import { AnalyticsComparisonView } from '@/components/features/bmo/analytics/workspace/views/AnalyticsComparisonView';
 
 // ================================
 // Types
@@ -346,6 +349,11 @@ function AnalyticsPageContent() {
     autoInvalidateQueries: true,
   });
 
+  // ✅ Utiliser les hooks React Query pour les stats dynamiques
+  const { data: kpisData, isLoading: kpisLoading } = useKpis();
+  const { data: alertsData, isLoading: alertsLoading } = useAlerts();
+  const { data: reportsData, isLoading: reportsLoading } = useReports();
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -377,23 +385,36 @@ function AnalyticsPageContent() {
     return Object.values(filters).filter(v => Array.isArray(v) && v.length > 0).length;
   }, [filters]);
 
-  // NOUVEAU v3.0: Stats dynamiques (calculées selon filtres)
+  // ✅ NOUVEAU v3.0: Stats dynamiques calculées depuis les données réelles
   const dynamicStats = useMemo(() => {
-    // TODO: Calculer selon données réelles + filtres actifs
-    // Pour l'instant, simulation simple
-    const baseKpis = 24;
-    const baseAlerts = 8;
-    const baseReports = 45;
+    // Valeurs mockées par défaut (pendant le chargement ou si les données ne sont pas disponibles)
+    const mockStats = {
+      kpis: 10,
+      alerts: 5,
+      reports: 4,
+    };
 
-    // Si filtres actifs, réduire les stats (simulation)
-    const multiplier = activeFiltersCount > 0 ? 0.7 : 1;
+    // Pendant le chargement, retourner les valeurs mockées
+    if (kpisLoading || alertsLoading || reportsLoading) {
+      return mockStats;
+    }
+
+    // Si les données sont disponibles, utiliser les vraies valeurs
+    const kpis = kpisData?.kpis || [];
+    const alerts = alertsData?.alerts || [];
+    const reports = reportsData?.reports || [];
+
+    // Si aucune donnée n'est disponible, utiliser les valeurs mockées
+    if (kpis.length === 0 && alerts.length === 0 && reports.length === 0) {
+      return mockStats;
+    }
 
     return {
-      kpis: Math.floor(baseKpis * multiplier),
-      alerts: Math.floor(baseAlerts * multiplier),
-      reports: baseReports,
+      kpis: kpis.length > 0 ? kpis.length : mockStats.kpis,
+      alerts: alerts.length > 0 ? alerts.length : mockStats.alerts,
+      reports: reports.length > 0 ? reports.length : mockStats.reports,
     };
-  }, [activeFiltersCount]);
+  }, [kpisData, alertsData, reportsData, kpisLoading, alertsLoading, reportsLoading]);
 
   const formatLastUpdate = useCallback(() => {
     const now = new Date();
@@ -552,6 +573,7 @@ function AnalyticsPageContent() {
 
       // NOUVEAU v3.0: Restaurer viewMode
       if (st.view && ['grid', 'dashboard', 'comparative'].includes(st.view)) {
+        console.log('🔍 [DEBUG] Setting viewMode from applyState:', st.view);
         setViewMode(st.view as ViewMode);
       }
 
@@ -570,6 +592,7 @@ function AnalyticsPageContent() {
       toggleSidebar,
       toggleNotificationsPanel,
       setKPIConfig,
+      setViewMode,
       audit,
     ]
   );
@@ -587,9 +610,12 @@ function AnalyticsPageContent() {
     const kc = url.searchParams.get('kc');
     const np = url.searchParams.get('np');
 
+    console.log('🔍 [DEBUG] URL params:', { cat, sub, view, fs, sc, kv, kc, np });
+
     const hasAnyParam = !!(cat || sub || view || fs || sc || kv || kc || np);
 
     if (hasAnyParam) {
+      console.log('🔍 [DEBUG] Applying state from URL:', { cat: cat || activeCategory, sub: sub || activeSubCategory, view: view || viewMode });
       applyState(
         {
           cat: cat || activeCategory,
@@ -1110,26 +1136,24 @@ function AnalyticsPageContent() {
           <div ref={scrollRef} className="h-full overflow-y-auto">
             <ClientErrorBoundary title="Erreur d'affichage du contenu Analytics" className="p-0">
               {/* NOUVEAU v3.0: Router selon viewMode */}
-              {viewMode === 'grid' && (
-                <AnalyticsContentRouter
-                  category={activeCategory}
-                  subCategory={activeSubCategory}
-                />
-              )}
-
-              {viewMode === 'dashboard' && (
-                <DashboardViewPlaceholder
-                  category={activeCategory}
-                  subCategory={activeSubCategory}
-                />
-              )}
-
-              {viewMode === 'comparative' && (
-                <ComparativeViewPlaceholder
-                  category={activeCategory}
-                  subCategory={activeSubCategory}
-                />
-              )}
+              {(() => {
+                console.log('🔍 [DEBUG] Rendering viewMode:', viewMode, 'category:', activeCategory, 'subCategory:', activeSubCategory);
+                if (viewMode === 'grid') {
+                  return (
+                    <AnalyticsContentRouter
+                      category={activeCategory}
+                      subCategory={activeSubCategory}
+                    />
+                  );
+                }
+                if (viewMode === 'dashboard') {
+                  return <AnalyticsDashboardView />;
+                }
+                if (viewMode === 'comparative') {
+                  return <AnalyticsComparisonView category={activeCategory} subCategory={activeSubCategory} />;
+                }
+                return null;
+              })()}
             </ClientErrorBoundary>
           </div>
         </main>
@@ -1371,60 +1395,6 @@ function DrillDownBreadcrumb({
   );
 }
 
-// ================================
-// NOUVEAU v3.0: Placeholders vues alternatives
-// ================================
-function DashboardViewPlaceholder({
-  category,
-  subCategory,
-}: {
-  category: string;
-  subCategory: string;
-}) {
-  return (
-    <div className="p-6">
-      <div className="rounded-xl border border-slate-800/60 bg-slate-800/30 p-8 text-center">
-        <LayoutGrid className="h-12 w-12 text-slate-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-slate-200 mb-2">Vue Tableau de bord</h3>
-        <p className="text-sm text-slate-400 max-w-md mx-auto">
-          Cette vue affichera des widgets drag & drop personnalisables pour visualiser vos KPIs.
-        </p>
-        <p className="text-xs text-slate-500 mt-3">
-          Catégorie: {category} • Sous-catégorie: {subCategory}
-        </p>
-        <div className="mt-6 text-xs text-slate-600">
-          Composant à créer: <code className="bg-slate-900/50 px-2 py-1 rounded">AnalyticsDashboardView</code>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ComparativeViewPlaceholder({
-  category,
-  subCategory,
-}: {
-  category: string;
-  subCategory: string;
-}) {
-  return (
-    <div className="p-6">
-      <div className="rounded-xl border border-slate-800/60 bg-slate-800/30 p-8 text-center">
-        <BarChart2 className="h-12 w-12 text-slate-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-slate-200 mb-2">Vue Comparative</h3>
-        <p className="text-sm text-slate-400 max-w-md mx-auto">
-          Cette vue permettra de comparer les KPIs par bureau, période ou catégorie avec des graphiques côte à côte.
-        </p>
-        <p className="text-xs text-slate-500 mt-3">
-          Catégorie: {category} • Sous-catégorie: {subCategory}
-        </p>
-        <div className="mt-6 text-xs text-slate-600">
-          Composant à créer: <code className="bg-slate-900/50 px-2 py-1 rounded">AnalyticsComparativeView</code>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ================================
 // NotificationsPanel (CONSERVÉ)

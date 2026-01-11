@@ -5,7 +5,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import {
   BarChart3,
@@ -31,6 +31,7 @@ import {
 } from '@/lib/api/hooks/useAnalytics';
 import { InteractiveChart, ChartGrid, ChartGridItem } from '../charts';
 import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
+import { FinancialView } from './FinancialView';
 
 interface ContentRouterProps {
   category: string;
@@ -713,121 +714,8 @@ const AlertsView = React.memo(function AlertsView({ subCategory }: { subCategory
 });
 
 // ================================
-// Financial View
+// Financial View - Importé depuis FinancialView.tsx
 // ================================
-const FinancialView = React.memo(function FinancialView({ subCategory }: { subCategory: string }) {
-  const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
-  const { data: dashboardData, isLoading } = useAnalyticsDashboard();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
-      </div>
-    );
-  }
-
-  const financialMetrics = [
-    {
-      id: 'budget',
-      label: 'Budget Total',
-      value: '€2.4M',
-      change: '+5.2%',
-      trend: 'up' as const,
-      icon: DollarSign,
-      color: 'emerald',
-    },
-    {
-      id: 'spent',
-      label: 'Dépensé',
-      value: '€1.8M',
-      change: '+2.1%',
-      trend: 'up' as const,
-      icon: Activity,
-      color: 'amber',
-    },
-    {
-      id: 'remaining',
-      label: 'Restant',
-      value: '€600K',
-      change: '-3.4%',
-      trend: 'down' as const,
-      icon: TrendingUp,
-      color: 'blue',
-    },
-    {
-      id: 'forecast',
-      label: 'Prévision',
-      value: '€2.1M',
-      change: '+1.8%',
-      trend: 'up' as const,
-      icon: BarChart3,
-      color: 'purple',
-    },
-  ];
-
-  const handleMetricClick = (metric: any) => {
-    openDetailPanel('kpi', metric.id, {
-      name: metric.label,
-      value: metric.value,
-      trend: metric.trend,
-      change: metric.change,
-    });
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {financialMetrics.map((metric) => {
-          const Icon = metric.icon;
-          const isPositive = metric.trend === 'up';
-          const colorClasses = {
-            blue: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-            emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-            amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-            purple: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-          };
-
-          return (
-            <div
-              key={metric.id}
-              onClick={() => handleMetricClick(metric)}
-              className="p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer group"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div
-                  className={cn(
-                    'p-2 rounded-lg border',
-                    colorClasses[metric.color as keyof typeof colorClasses]
-                  )}
-                >
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div className="flex items-center gap-1 text-sm font-medium">
-                  {isPositive ? (
-                    <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4 text-red-400" />
-                  )}
-                  <span
-                    className={cn(
-                      'text-xs',
-                      isPositive ? 'text-emerald-400' : 'text-red-400'
-                    )}
-                  >
-                    {metric.change}
-                  </span>
-                </div>
-              </div>
-              <p className="text-sm text-slate-400 mb-1">{metric.label}</p>
-              <p className="text-2xl font-bold text-slate-200">{metric.value}</p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-});
 
 // ================================
 // Trends View
@@ -846,6 +734,23 @@ const TrendsView = React.memo(function TrendsView({ subCategory }: { subCategory
 
   const trends = trendsData?.trends || [];
 
+  // Filtrer les trends selon la sous-catégorie
+  const filteredTrends = useMemo(() => {
+    if (subCategory === 'all') {
+      return trends;
+    }
+    if (subCategory === 'positive') {
+      return trends.filter((t: any) => t.trend === 'up');
+    }
+    if (subCategory === 'negative') {
+      return trends.filter((t: any) => t.trend === 'down');
+    }
+    if (subCategory === 'stable') {
+      return trends.filter((t: any) => t.trend === 'stable');
+    }
+    return trends;
+  }, [trends, subCategory]);
+
   const handleTrendClick = (trend: any) => {
     openDetailPanel('kpi', trend.id, {
       name: trend.metric,
@@ -859,13 +764,18 @@ const TrendsView = React.memo(function TrendsView({ subCategory }: { subCategory
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4">
-        {trends.length === 0 ? (
+        {filteredTrends.length === 0 ? (
           <div className="text-center py-12">
             <TrendingUp className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">Aucune tendance disponible</p>
+            <p className="text-slate-400">
+              {subCategory === 'positive' && 'Aucune tendance positive disponible'}
+              {subCategory === 'negative' && 'Aucune tendance négative disponible'}
+              {subCategory === 'stable' && 'Aucune tendance stable disponible'}
+              {subCategory !== 'positive' && subCategory !== 'negative' && subCategory !== 'stable' && 'Aucune tendance disponible'}
+            </p>
           </div>
         ) : (
-          trends.map((trend) => {
+          filteredTrends.map((trend) => {
             const isPositive = trend.trend === 'up';
             const diff = Math.abs(trend.current - trend.previous);
             const percentChange = trend.previous > 0

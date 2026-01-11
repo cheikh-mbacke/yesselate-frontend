@@ -620,3 +620,4 @@ const handleConferenceDoubleClick = (id: string) => {
 
 **Note**: Cette architecture est prête pour l'implémentation. Les composants critiques doivent être créés pour avoir une expérience utilisateur complète et cohérente avec Analytics/Gouvernance.
 
+

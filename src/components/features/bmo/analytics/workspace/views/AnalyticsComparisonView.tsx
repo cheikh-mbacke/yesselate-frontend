@@ -15,14 +15,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
-import { TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react';
-import { calculateBureauPerformance } from '@/lib/data/analytics';
+import { TrendingUp, TrendingDown, ArrowUpDown, DollarSign, Activity } from 'lucide-react';
+import { calculateBureauPerformance, calculateFinancialPerformance } from '@/lib/data/analytics';
+import { formatFCFA } from '@/lib/utils/format-currency';
 import { bureaux } from '@/lib/data';
 import { cn } from '@/lib/utils';
+import type { AnalyticsMainCategory } from '@/lib/stores/analyticsCommandCenterStore';
 
 type ComparisonType = 'bureaux' | 'periods';
 
-export function AnalyticsComparisonView() {
+interface AnalyticsComparisonViewProps {
+  category?: AnalyticsMainCategory;
+  subCategory?: string;
+}
+
+export function AnalyticsComparisonView({ category, subCategory }: AnalyticsComparisonViewProps = {}) {
   const [comparisonType, setComparisonType] = useState<ComparisonType>('bureaux');
   const [selectedBureaux, setSelectedBureaux] = useState<string[]>([]);
   
@@ -80,9 +87,34 @@ export function AnalyticsComparisonView() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold mb-2">Comparaisons & Benchmarks</h2>
+          <h2 className="text-2xl font-bold mb-2">
+            Comparaisons & Benchmarks
+            {category && category !== 'overview' && (
+              <span className="ml-2 text-lg font-normal text-slate-500">
+                • {category === 'performance' ? 'Performance' : 
+                    category === 'trends' ? 'Tendances' : 
+                    category === 'financial' ? 'Financier' : 
+                    category === 'alerts' ? 'Alertes' : 
+                    category === 'reports' ? 'Rapports' : 
+                    category === 'kpis' ? 'KPIs' : 
+                    category === 'bureaux' ? 'Bureaux' : category}
+              </span>
+            )}
+          </h2>
           <p className="text-slate-500 text-sm">
-            Comparez les performances entre bureaux ou périodes
+            {category === 'performance' 
+              ? 'Comparez les performances des KPIs entre bureaux'
+              : category === 'trends'
+              ? 'Comparez les tendances entre bureaux ou périodes'
+              : category === 'financial'
+              ? 'Comparez les données financières entre bureaux'
+              : category === 'alerts'
+              ? 'Comparez les alertes entre bureaux'
+              : category === 'reports'
+              ? 'Comparez les rapports entre bureaux'
+              : category === 'kpis'
+              ? 'Comparez les KPIs entre bureaux'
+              : 'Comparez les performances entre bureaux ou périodes'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -233,11 +265,11 @@ export function AnalyticsComparisonView() {
             </FluentCardContent>
           </FluentCard>
 
-          {/* Tableau comparatif détaillé */}
+          {/* Tableau comparatif */}
           <FluentCard>
             <FluentCardHeader>
               <FluentCardTitle className="text-sm">
-                📋 Tableau Comparatif Détaillé
+                Résumé
               </FluentCardTitle>
             </FluentCardHeader>
             <FluentCardContent>
@@ -245,77 +277,46 @@ export function AnalyticsComparisonView() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-700">
-                      <th className="text-left py-3 px-4 font-semibold">Bureau</th>
-                      <th className="text-center py-3 px-4 font-semibold">Score</th>
-                      <th className="text-center py-3 px-4 font-semibold">Demandes</th>
-                      <th className="text-center py-3 px-4 font-semibold">Validation %</th>
-                      <th className="text-center py-3 px-4 font-semibold">SLA %</th>
-                      <th className="text-center py-3 px-4 font-semibold">Délai moy.</th>
-                      <th className="text-center py-3 px-4 font-semibold">Rang</th>
+                      <th className="text-left py-2 px-3 font-semibold">Bureau</th>
+                      <th className="text-center py-2 px-3 font-semibold">Score</th>
+                      <th className="text-center py-2 px-3 font-semibold">Valid. %</th>
+                      <th className="text-center py-2 px-3 font-semibold">SLA %</th>
+                      <th className="text-center py-2 px-3 font-semibold">Délai</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedData.map((bureau, idx) => (
+                    {selectedData.map((bureau) => (
                       <tr 
                         key={bureau.bureauCode}
                         className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                       >
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">
                               {bureaux.find(b => b.code === bureau.bureauCode)?.icon}
                             </span>
-                            <div>
-                              <div className="font-semibold">{bureau.bureauCode}</div>
-                              <div className="text-xs text-slate-500">
-                                {bureaux.find(b => b.code === bureau.bureauCode)?.name}
-                              </div>
-                            </div>
+                            <span className="font-semibold">{bureau.bureauCode}</span>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2 px-3 text-center">
                           <Badge 
                             variant={bureau.score >= 80 ? 'success' : bureau.score >= 60 ? 'warning' : 'urgent'}
+                            className="text-xs"
                           >
                             {bureau.score}
                           </Badge>
                         </td>
-                        <td className="py-3 px-4 text-center font-semibold">{bureau.totalDemands}</td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span>{bureau.validationRate}%</span>
-                            {bureau.validationRate >= 85 ? (
-                              <TrendingUp className="w-3 h-3 text-emerald-500" />
-                            ) : bureau.validationRate < 70 ? (
-                              <TrendingDown className="w-3 h-3 text-red-500" />
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span>{bureau.slaCompliance}%</span>
-                            {bureau.slaCompliance >= 90 ? (
-                              <TrendingUp className="w-3 h-3 text-emerald-500" />
-                            ) : bureau.slaCompliance < 75 ? (
-                              <TrendingDown className="w-3 h-3 text-red-500" />
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2 px-3 text-center">{bureau.validationRate}%</td>
+                        <td className="py-2 px-3 text-center">{bureau.slaCompliance}%</td>
+                        <td className="py-2 px-3 text-center">
                           <span className={cn(
-                            'font-semibold',
-                            bureau.avgDelay <= 3 ? 'text-emerald-600' :
-                            bureau.avgDelay <= 5 ? 'text-amber-600' :
-                            'text-red-600'
+                            'font-medium text-xs',
+                            bureau.avgDelay <= 3 ? 'text-emerald-500' :
+                            bureau.avgDelay <= 5 ? 'text-amber-500' :
+                            'text-red-500'
                           )}>
                             {bureau.avgDelay}j
                           </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                            <span className="font-bold">#{idx + 1}</span>
-                          </div>
                         </td>
                       </tr>
                     ))}

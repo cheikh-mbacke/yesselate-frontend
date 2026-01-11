@@ -326,6 +326,85 @@ export const mockComparisons = {
   },
 };
 
+export interface BureauFinancialPerformance {
+  bureauCode: string;
+  bureauName: string;
+  budgetTotal: number; // FCFA
+  budgetConsumed: number; // FCFA
+  budgetRemaining: number; // FCFA
+  budgetUtilization: number; // %
+  revenues: number; // FCFA
+  expenses: number; // FCFA
+  netResult: number; // FCFA
+  marginRate: number; // %
+  avgCostPerDemand: number; // FCFA
+  treasury: number; // FCFA
+  overduePayments: number; // FCFA
+  collectionRate: number; // %
+}
+
+export function calculateFinancialPerformance(): BureauFinancialPerformance[] {
+  const allDemands = (demands as Demand[]).map((d) => ({
+    ...d,
+    delay: calcDelay(d.date),
+  }));
+
+  return bureaux.map((bureau) => {
+    const bureauDemands = allDemands.filter((d) => d.bureau === bureau.code);
+    const total = bureauDemands.length;
+    
+    // Simulation de données financières réalistes
+    const baseBudget = 400000000; // 400M FCFA par bureau
+    const variance = (bureau.code.charCodeAt(0) % 5) * 50000000; // Variation selon le bureau
+    const budgetTotal = baseBudget + variance;
+    
+    // Taux d'utilisation basé sur le nombre de demandes
+    const utilizationRate = Math.min(85 + (total % 15), 95);
+    const budgetConsumed = Math.round(budgetTotal * (utilizationRate / 100));
+    const budgetRemaining = budgetTotal - budgetConsumed;
+    
+    // Revenus (factures encaissées)
+    const validatedCount = bureauDemands.filter((d) => d.status === 'validated').length;
+    const avgRevenuePerDemand = 15000000; // 15M par demande validée
+    const revenues = validatedCount * avgRevenuePerDemand;
+    
+    // Dépenses
+    const expenses = budgetConsumed;
+    const netResult = revenues - expenses;
+    const marginRate = revenues > 0 ? (netResult / revenues) * 100 : 0;
+    
+    // Coût moyen par demande
+    const avgCostPerDemand = total > 0 ? Math.round(budgetConsumed / total) : 0;
+    
+    // Trésorerie (simulation)
+    const treasury = Math.round(budgetRemaining + revenues * 0.3); // 30% des revenus disponibles
+    
+    // Retards de paiement
+    const overdueCount = bureauDemands.filter((d) => d.delay > 30 && d.status !== 'validated').length;
+    const overduePayments = overdueCount * avgRevenuePerDemand * 0.5; // 50% des factures en retard
+    
+    // Taux de recouvrement
+    const collectionRate = total > 0 ? Math.round((validatedCount / total) * 100) : 0;
+
+    return {
+      bureauCode: bureau.code,
+      bureauName: bureau.name,
+      budgetTotal,
+      budgetConsumed,
+      budgetRemaining,
+      budgetUtilization: Math.round(utilizationRate),
+      revenues,
+      expenses,
+      netResult,
+      marginRate: Math.round(marginRate * 10) / 10,
+      avgCostPerDemand,
+      treasury,
+      overduePayments,
+      collectionRate,
+    };
+  }).sort((a, b) => b.netResult - a.netResult);
+}
+
 export const mockFinancialData = {
   budgetTotal: 2500000000, // 2.5 Mds FCFA
   budgetConsumed: 1875000000, // 1.875 Mds

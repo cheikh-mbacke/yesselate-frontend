@@ -17,13 +17,12 @@ export function ErpModalLayout({
   return (
     <div
       className={cn(
-        // IMPORTANT: pas de scroll ici => scroll uniquement dans le body
-        'flex max-h-[85vh] w-full flex-col overflow-hidden',
+        'flex max-h-[85vh] w-full flex-col overflow-hidden bg-slate-900/60 text-slate-100',
         className
       )}
     >
       {header ? (
-        <div className="sticky top-0 z-10 border-b border-slate-200/40 dark:border-slate-700/50 bg-white/90 dark:bg-[#1f1f1f]/90 backdrop-blur">
+        <div className="sticky top-0 z-10 border-b border-slate-800/60 bg-slate-900/80 backdrop-blur">
           {header}
         </div>
       ) : null}
@@ -31,11 +30,10 @@ export function ErpModalLayout({
       <div className="flex-1 overflow-y-auto">{children}</div>
 
       {footer ? (
-        <div className="sticky bottom-0 z-10 border-t border-slate-200/40 dark:border-slate-700/50 bg-white/90 dark:bg-[#1f1f1f]/90 backdrop-blur">
+        <div className="sticky bottom-0 z-10 border-t border-slate-800/60 bg-slate-900/80 backdrop-blur">
           {footer}
         </div>
       ) : null}
     </div>
   );
 }
-

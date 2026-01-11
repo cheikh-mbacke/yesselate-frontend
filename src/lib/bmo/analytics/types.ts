@@ -10,7 +10,6 @@ export type KpiCategory =
   | 'bureaux';
 
 export type KpiStatus = 'ok' | 'warning' | 'critical';
-
 export type KpiFrequency = 'realtime' | 'hourly' | 'daily' | 'weekly' | 'monthly';
 
 export type Kpi = {
@@ -18,35 +17,29 @@ export type Kpi = {
   key: string;
   title: string;
   description?: string;
-
   category: KpiCategory;
   status: KpiStatus;
-
-  ownerLabel?: string;     // ex: Direction Technique
-  sourceLabel?: string;    // ex: system / Ciril / 3P / Marco / etc.
+  ownerLabel?: string;
+  sourceLabel?: string;
   frequency: KpiFrequency;
-
-  unit?: string;           // %, jours, €, etc.
-  value: number;           // valeur courante
-  target?: number;         // objectif
-  delta?: number;          // évolution (ex: +3)
-  deltaPct?: number;       // évolution %
-
+  unit?: string;
+  value: number;
+  target?: number;
+  delta?: number;
+  deltaPct?: number;
   thresholds?: {
     successGte?: number;
     warningGte?: number;
     criticalLt?: number;
   };
-
-  formula?: string;        // ex: (validées / total) * 100
-
-  updatedAt: string;       // ISO
+  formula?: string;
+  updatedAt: string;
   tags?: string[];
   relatedKpiIds?: string[];
 };
 
 export type KpiTimeseriesPoint = {
-  ts: string;   // ISO
+  ts: string;
   value: number;
 };
 
@@ -60,8 +53,8 @@ export type Alert = {
   status: AlertStatus;
   title: string;
   message?: string;
-  createdAt: string; // ISO
-  updatedAt: string; // ISO
+  createdAt: string;
+  updatedAt: string;
   ownerLabel?: string;
 };
 
@@ -90,4 +83,3 @@ export type CursorPage<T> = {
   nextCursor?: string | null;
   totals?: Record<string, number>;
 };
-

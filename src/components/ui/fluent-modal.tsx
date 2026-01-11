@@ -7,12 +7,13 @@ import { cn } from '@/lib/utils';
 
 type Props = {
   open: boolean;
-  title?: string;
+  title?: string | React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
   noPadding?: boolean;
+  dark?: boolean; // Force dark theme (ERP)
 };
 
 const maxWidthClasses: Record<string, string> = {
@@ -26,7 +27,7 @@ const maxWidthClasses: Record<string, string> = {
   '5xl': 'max-w-5xl',
 };
 
-export function FluentModal({ open, title, onClose, children, className, maxWidth = '3xl', noPadding = false }: Props) {
+export function FluentModal({ open, title, onClose, children, className, maxWidth = '3xl', noPadding = false, dark = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -47,27 +48,46 @@ export function FluentModal({ open, title, onClose, children, className, maxWidt
     <div className="fixed inset-0 z-[1000]">
       {/* overlay */}
       <div
-        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+        className={cn(
+          "absolute inset-0 backdrop-blur-[2px]",
+          dark ? "bg-black/55 backdrop-blur-sm" : "bg-black/30"
+        )}
         onClick={onClose}
       />
       {/* panel */}
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div
           className={cn(
-            "w-full rounded-2xl border border-slate-200/70 bg-white/90 backdrop-blur-xl shadow-xl",
-            "dark:border-slate-800 dark:bg-[#1f1f1f]/85",
+            "w-full rounded-2xl backdrop-blur-xl shadow-xl",
             "max-h-[85vh] overflow-hidden",
             maxWidthClasses[maxWidth] || 'max-w-3xl',
+            dark 
+              ? "bg-slate-900/95 text-slate-100 border border-slate-800/60"
+              : "border border-slate-200/70 bg-white/90 dark:border-slate-800 dark:bg-[#1f1f1f]/85",
             className
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3 dark:border-slate-800">
+          <div className={cn(
+            "flex items-center justify-between gap-3 px-4 py-3",
+            dark 
+              ? "border-b border-slate-800/60"
+              : "border-b border-slate-200/70 dark:border-slate-800"
+          )}>
             <div className="min-w-0">
-              <div className="font-semibold truncate">{title ?? 'Fenêtre'}</div>
+              {typeof title === 'string' ? (
+                <div className="font-semibold truncate">{title}</div>
+              ) : (
+                <div className="font-semibold">{title ?? 'Fenêtre'}</div>
+              )}
             </div>
             <button
-              className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              className={cn(
+                "rounded-lg p-2",
+                dark 
+                  ? "hover:bg-slate-800/60 text-slate-300"
+                  : "hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              )}
               onClick={onClose}
               aria-label="Fermer"
             >

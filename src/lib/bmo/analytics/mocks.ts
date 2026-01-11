@@ -72,7 +72,7 @@ const KPIS: Kpi[] = (() => {
         ? { successGte: 90, warningGte: 80, criticalLt: 80 }
         : { successGte: 3, warningGte: 5, criticalLt: 9999 };
 
-    let value = unit === 'jours' ? 2 + seed() * 6 : 60 + seed() * 40; // 2..8 jours ou 60..100%
+    let value = unit === 'jours' ? 2 + seed() * 6 : 60 + seed() * 40;
     value = Number(value.toFixed(unit === 'jours' ? 1 : 0));
 
     const target = unit === 'jours' ? 3 : 90;
@@ -111,7 +111,6 @@ const KPIS: Kpi[] = (() => {
     items.push(kpi);
   }
 
-  // liaisons simples
   items.forEach((k, idx) => {
     k.relatedKpiIds = [
       items[(idx + 1) % items.length].id,
@@ -234,4 +233,3 @@ export const analyticsMocks = {
     return NOTIFS[idx];
   },
 };
-

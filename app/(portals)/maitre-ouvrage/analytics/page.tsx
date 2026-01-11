@@ -684,19 +684,19 @@ function AnalyticsPageContent() {
     (actionId: string, ids: string[]) => {
       audit.log('BATCH_ACTION', { actionId, count: ids.length });
 
-    switch (actionId) {
-      case 'export':
-        openModal('export', { selectedIds: ids });
-        break;
-      case 'view':
+      switch (actionId) {
+        case 'export':
+          openModal('export', { selectedIds: ids });
+          break;
+        case 'view':
           if (ids.length > 0) openModal('kpi-detail', { kpiId: ids[0] });
-        break;
-      case 'delete':
-        toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
-        break;
-      case 'archive':
-        toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
-        break;
+          break;
+        case 'delete':
+          toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
+          break;
+        case 'archive':
+          toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
+          break;
         // NOUVEAU v3.0: Actions sophistiquées
         case 'validate-workflow':
           toast.info('Workflow de validation', `Démarrage pour ${ids.length} KPI(s)`);
@@ -707,9 +707,9 @@ function AnalyticsPageContent() {
         case 'generate-report':
           toast.success('Génération rapport', `Rapport direction pour ${ids.length} KPI(s)`);
           break;
-      default:
-        break;
-    }
+        default:
+          break;
+      }
     },
     [audit, openModal, toast]
   );
@@ -1207,9 +1207,32 @@ function EnhancedActionsMenu({
   onGenerateReport: (type: 'direction' | 'conseil') => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // ✅ Fermer sur Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [menuOpen]);
+
+  // ✅ Fermer sur clic dehors
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <Button
         variant="ghost"
         size="sm"
@@ -1220,12 +1243,7 @@ function EnhancedActionsMenu({
       </Button>
 
       {menuOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setMenuOpen(false)}
-          />
-          <div className="absolute right-0 top-full mt-1 w-56 bg-slate-900 border border-slate-800/60 rounded-lg shadow-xl z-50">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-slate-900 border border-slate-800/60 rounded-lg shadow-xl z-50">
             <div className="py-1">
               <button
                 onClick={() => {
@@ -1297,7 +1315,6 @@ function EnhancedActionsMenu({
               </button>
             </div>
           </div>
-        </>
       )}
     </div>
   );

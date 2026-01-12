@@ -166,9 +166,9 @@ export function AnalyticsInboxView({ tab }: AnalyticsInboxViewProps) {
             <input
               type="text"
               placeholder="Rechercher..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200/70 bg-white/90 
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 
                        outline-none focus:ring-2 focus:ring-orange-500/30 
-                       dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm"
+                       text-white text-sm placeholder:text-slate-400"
               value={search}
               onChange={(e) => { setSearch(e.target.value); updateUI({ searchQuery: e.target.value }); }}
             />
@@ -177,9 +177,9 @@ export function AnalyticsInboxView({ tab }: AnalyticsInboxViewProps) {
           {/* Filtre par catégorie (KPIs uniquement) */}
           {data.type === 'kpis' && (
             <select
-              className="px-4 py-2.5 rounded-xl border border-slate-200/70 bg-white/90 
+              className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 
                        outline-none focus:ring-2 focus:ring-orange-500/30 
-                       dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm"
+                       text-white text-sm"
               value={filterCategory}
               onChange={(e) => { setFilterCategory(e.target.value); updateUI({ filterType: e.target.value }); }}
             >
@@ -194,9 +194,9 @@ export function AnalyticsInboxView({ tab }: AnalyticsInboxViewProps) {
           {/* Tri */}
           {data.type === 'kpis' && (
             <select
-              className="px-4 py-2.5 rounded-xl border border-slate-200/70 bg-white/90 
+              className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 
                        outline-none focus:ring-2 focus:ring-orange-500/30 
-                       dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm"
+                       text-white text-sm"
               value={sortBy}
               onChange={(e) => { setSortBy(e.target.value as SortBy); updateUI({ sortBy: e.target.value }); }}
             >
@@ -268,9 +268,9 @@ function KPICard({ kpi }: { kpi: KPIMetric }) {
   return (
     <div className={cn(
       'p-5 rounded-2xl border-2 transition-all hover:scale-105 cursor-pointer',
-      kpi.status === 'good' && 'border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20',
-      kpi.status === 'warning' && 'border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20',
-      kpi.status === 'critical' && 'border-red-500/30 bg-red-50/50 dark:bg-red-950/20'
+      kpi.status === 'good' && 'border-emerald-500/30 bg-emerald-950/20',
+      kpi.status === 'warning' && 'border-amber-500/30 bg-amber-950/20',
+      kpi.status === 'critical' && 'border-red-500/30 bg-red-950/20'
     )}>
       <div className="flex items-start justify-between mb-3">
         <div>
@@ -285,9 +285,9 @@ function KPICard({ kpi }: { kpi: KPIMetric }) {
           {kpi.trend === 'stable' && <Minus className="w-4 h-4 text-slate-400" />}
           <span className={cn(
             'text-xs font-semibold',
-            kpi.trend === 'up' && 'text-emerald-600',
-            kpi.trend === 'down' && 'text-red-600',
-            kpi.trend === 'stable' && 'text-slate-500'
+            kpi.trend === 'up' && 'text-emerald-400',
+            kpi.trend === 'down' && 'text-red-400',
+            kpi.trend === 'stable' && 'text-slate-400'
           )}>
             {kpi.trendValue > 0 ? '+' : ''}{kpi.trendValue}%
           </span>
@@ -295,23 +295,23 @@ function KPICard({ kpi }: { kpi: KPIMetric }) {
       </div>
 
       <div className="mb-3">
-        <div className="text-3xl font-bold">
+        <div className="text-3xl font-bold text-slate-200">
           {kpi.value}
-          <span className="text-lg font-normal text-slate-500 ml-1">{kpi.unit}</span>
+          <span className="text-lg font-normal text-slate-400 ml-1">{kpi.unit}</span>
         </div>
         {kpi.target && (
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-slate-400 mt-1">
             Objectif: {kpi.target}{kpi.unit}
           </div>
         )}
       </div>
 
-      <p className="text-xs text-slate-500">{kpi.description}</p>
+      <p className="text-xs text-slate-400">{kpi.description}</p>
 
       {/* Progress bar si target */}
       {kpi.target && (
         <div className="mt-3">
-          <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
             <div
               className={cn(
                 'h-full transition-all',
@@ -330,7 +330,7 @@ function KPICard({ kpi }: { kpi: KPIMetric }) {
 
 function KPIListItem({ kpi }: { kpi: KPIMetric }) {
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+    <div className="flex items-center gap-4 p-4 rounded-xl border border-slate-700 hover:bg-slate-800/50 transition-colors">
       <div className={cn(
         'w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0',
         kpi.status === 'good' && 'bg-emerald-500/10',
@@ -369,9 +369,9 @@ function KPIListItem({ kpi }: { kpi: KPIMetric }) {
           {kpi.trend === 'stable' && <Minus className="w-4 h-4 text-slate-400" />}
           <span className={cn(
             'text-xs font-semibold',
-            kpi.trend === 'up' && 'text-emerald-600',
-            kpi.trend === 'down' && 'text-red-600',
-            kpi.trend === 'stable' && 'text-slate-500'
+            kpi.trend === 'up' && 'text-emerald-400',
+            kpi.trend === 'down' && 'text-red-400',
+            kpi.trend === 'stable' && 'text-slate-400'
           )}>
             {kpi.trendValue > 0 ? '+' : ''}{kpi.trendValue}%
           </span>
@@ -385,9 +385,9 @@ function AlertItem({ alert }: { alert: Alert }) {
   return (
     <div className={cn(
       'p-4 rounded-xl border-l-4',
-      alert.type === 'critical' && 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20',
-      alert.type === 'warning' && 'border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20',
-      alert.type === 'info' && 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+      alert.type === 'critical' && 'border-l-red-500 bg-red-950/20',
+      alert.type === 'warning' && 'border-l-amber-500 bg-amber-950/20',
+      alert.type === 'info' && 'border-l-blue-500 bg-blue-950/20'
     )}>
       <div className="flex items-start gap-3">
         <AlertTriangle className={cn(
@@ -403,7 +403,7 @@ function AlertItem({ alert }: { alert: Alert }) {
               {alert.type}
             </Badge>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">{alert.description}</p>
+          <p className="text-sm text-slate-300 mb-2">{alert.description}</p>
           <div className="text-xs text-slate-500">
             {alert.metric}: <span className="font-semibold">{alert.value}</span> (seuil: {alert.threshold})
           </div>
@@ -415,7 +415,7 @@ function AlertItem({ alert }: { alert: Alert }) {
 
 function BureauPerformanceCard({ bureau }: { bureau: BureauPerformance }) {
   return (
-    <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-orange-500/50 transition-all">
+    <div className="p-5 rounded-2xl border border-slate-700 hover:border-orange-500/50 transition-all">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="font-bold text-lg">{bureau.bureauName}</h3>

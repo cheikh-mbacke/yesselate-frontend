@@ -97,7 +97,7 @@ export function DetailsSidePanel({ isOpen, onClose, data }: DetailsSidePanelProp
           {/* Details */}
           <div className="space-y-4">
             {Object.entries(data.details).map(([key, value]) => (
-              <Card key={key} className={darkMode ? 'bg-slate-700/30' : 'bg-gray-50'}>
+              <Card key={key} className="bg-slate-700/30">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-slate-400 capitalize">

@@ -19,27 +19,48 @@ import { Badge } from '@/components/ui/badge';
 import {
   TrendingUp, TrendingDown, Target, Star, Share2, Download,
   Edit, Bell, Info, Users, Calendar, Activity, AlertTriangle,
-  CheckCircle2, XCircle, Minus, Loader2, ExternalLink
+  CheckCircle2, XCircle, Minus, Loader2, ExternalLink,
+  Zap, PlayCircle, Clock, MessageSquare, FileText, Settings,
+  ArrowRight, CheckCircle, X, Plus, Send, UserPlus, Flag
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InteractiveChart } from '../charts/InteractiveChart';
 import { useKpi } from '@/lib/api/hooks/useAnalytics';
 import { ErpModalLayout } from '@/lib/bmo/erp/modalLayout';
+import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 
 interface KPIDetailModalProps {
   open: boolean;
   onClose: () => void;
   kpiId: string | null;
+  fallbackData?: Record<string, unknown>;
 }
 
-export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'bureaux' | 'related'>('overview');
+export function KPIDetailModal({ open, onClose, kpiId, fallbackData }: KPIDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'bureaux' | 'related' | 'actions'>('overview');
   const [isFavorite, setIsFavorite] = useState(false);
   const [showAlertConfig, setShowAlertConfig] = useState(false);
+  const { openModal } = useAnalyticsCommandCenterStore();
+  const [actionItems, setActionItems] = useState<Array<{
+    id: string;
+    title: string;
+    description: string;
+    priority: 'high' | 'medium' | 'low';
+    status: 'pending' | 'in-progress' | 'completed';
+    assignedTo?: string;
+    dueDate?: string;
+    createdAt: string;
+  }>>([]);
+  const [newActionTitle, setNewActionTitle] = useState('');
+  const [newActionDescription, setNewActionDescription] = useState('');
 
   // Fetch KPI details
   const { data: kpiResponse, isLoading, error } = useKpi(kpiId || '');
   const kpiData = kpiResponse?.kpi;
+  
+  // Get store data for fallback (si pas passé en prop)
+  const detailPanel = useAnalyticsCommandCenterStore((state) => state.detailPanel);
+  const storeFallbackData = fallbackData || (detailPanel.isOpen && detailPanel.type === 'kpi' ? detailPanel.data : undefined);
 
   // Reset tab on open
   useEffect(() => {
@@ -52,7 +73,7 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
 
   if (isLoading) {
     return (
-      <FluentModal open={open} onClose={onClose} title="Chargement..." maxWidth="xl" dark>
+      <FluentModal open={open} onClose={onClose} title="Chargement..." maxWidth="6xl" dark>
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
         </div>
@@ -61,13 +82,49 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
   }
 
   if (error || !kpiData) {
+    // Si on a une erreur mais qu'on a des données de fallback, les utiliser
+    if (storeFallbackData && !kpiData) {
+      // Utiliser les données de fallback
+      const fallbackData = storeFallbackData as any;
+      return (
+        <FluentModal open={open} onClose={onClose} title={fallbackData.name || "Détail KPI"} maxWidth="6xl" dark>
+          <div className="p-6 space-y-4">
+            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-3xl font-bold text-slate-100">{fallbackData.value}</span>
+                {fallbackData.unit && (
+                  <span className="text-sm text-slate-500">{fallbackData.unit}</span>
+                )}
+              </div>
+              {fallbackData.target && (
+                <div className="text-sm text-slate-400">
+                  Objectif: {fallbackData.target} {fallbackData.unit || ''}
+                </div>
+              )}
+            </div>
+            {fallbackData.description && (
+              <p className="text-sm text-slate-400">{fallbackData.description}</p>
+            )}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-700">
+              <FluentButton variant="secondary" onClick={onClose}>
+                Fermer
+              </FluentButton>
+            </div>
+          </div>
+        </FluentModal>
+      );
+    }
+    
     return (
-      <FluentModal open={open} onClose={onClose} title="Erreur" maxWidth="xl" dark>
+      <FluentModal open={open} onClose={onClose} title="Erreur" maxWidth="6xl" dark>
         <div className="flex flex-col items-center justify-center py-12">
           <AlertTriangle className="w-12 h-12 text-red-400 mb-4" />
           <p className="text-slate-400">
             Impossible de charger les détails du KPI
           </p>
+          {kpiId && (
+            <p className="text-xs text-slate-500 mt-2">ID: {kpiId}</p>
+          )}
         </div>
       </FluentModal>
     );
@@ -98,6 +155,7 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
     <FluentModal
       open={open}
       onClose={onClose}
+      dark
       title={
         <div className="flex items-center gap-3">
           {statusIcon}
@@ -107,16 +165,16 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
           </div>
         </div>
       }
-      maxWidth="xl"
+      maxWidth="6xl"
       noPadding
       dark
     >
       <ErpModalLayout
-        className="h-full"
+        className="h-[85vh] min-h-[600px]"
         header={
           <>
             {/* Actions Header */}
-            <div className="flex items-center justify-between p-4 bg-slate-800/30 border-b border-slate-700/50">
+            <div className="flex items-center justify-between p-6 bg-slate-800/30 border-b border-slate-700/50">
               <div className="flex items-center gap-4">
                 {/* Valeur actuelle */}
                 <div>
@@ -181,18 +239,19 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 px-4 bg-slate-900/60">
+            <div className="flex gap-2 px-6 bg-slate-900/60 overflow-x-auto">
               {[
                 { id: 'overview', label: 'Vue d\'ensemble', icon: Info },
                 { id: 'history', label: 'Historique', icon: Calendar },
                 { id: 'bureaux', label: 'Par Bureau', icon: Users },
                 { id: 'related', label: 'KPIs Liés', icon: Activity },
+                { id: 'actions', label: 'Actions', icon: Zap, badge: actionItems.filter(a => a.status === 'pending').length },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2',
+                    'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 relative',
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-400'
                       : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -200,20 +259,32 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
+                  {tab.badge && tab.badge > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 text-xs font-semibold rounded-full bg-red-500 text-white">
+                      {tab.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           </>
         }
         footer={
-          <div className="flex items-center justify-between p-4 bg-slate-900/60">
-            <FluentButton variant="secondary" onClick={() => setShowAlertConfig(true)}>
+          <div className="flex items-center justify-between p-6 bg-slate-900/60">
+            <FluentButton 
+              variant="secondary" 
+              onClick={() => setShowAlertConfig(true)}
+              className="bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50"
+            >
               <Bell className="w-4 h-4" />
               Configurer alerte
             </FluentButton>
 
             <div className="flex items-center gap-3">
-              <FluentButton variant="secondary">
+              <FluentButton 
+                variant="secondary"
+                className="bg-slate-800/60 border-slate-700/50 text-slate-300 hover:bg-slate-700/70"
+              >
                 <Edit className="w-4 h-4" />
                 Modifier
               </FluentButton>
@@ -225,9 +296,9 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
         }
       >
         {/* Tab Content */}
-        <div className="p-4">
+        <div className="p-6">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               {/* Description */}
               <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
                 <h3 className="font-semibold mb-2 flex items-center gap-2 text-slate-200">
@@ -300,7 +371,7 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
           )}
 
           {activeTab === 'history' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <InteractiveChart
                 title="Évolution sur 30 jours"
                 data={kpiExtended.history?.map((h: any) => ({
@@ -340,7 +411,7 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
           )}
 
           {activeTab === 'bureaux' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <h3 className="font-semibold text-slate-200">Performance par Bureau</h3>
               {kpiExtended.affectedBureaux?.map((bureau: any) => (
                 <div
@@ -383,7 +454,7 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
           )}
 
           {activeTab === 'related' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <h3 className="font-semibold text-slate-200">KPIs Corrélés</h3>
               {kpiExtended.relatedKPIs?.map((related: any) => (
                 <div
@@ -420,8 +491,527 @@ export function KPIDetailModal({ open, onClose, kpiId }: KPIDetailModalProps) {
               )}
             </div>
           )}
+
+          {activeTab === 'actions' && (
+            <ActionsTab
+              kpiData={kpiData}
+              currentValue={currentValue}
+              targetValue={targetValue}
+              changePercent={changePercent}
+              status={kpiData.status}
+              actionItems={actionItems}
+              setActionItems={setActionItems}
+              newActionTitle={newActionTitle}
+              setNewActionTitle={setNewActionTitle}
+              newActionDescription={newActionDescription}
+              setNewActionDescription={setNewActionDescription}
+              setShowAlertConfig={setShowAlertConfig}
+              kpiId={kpiId}
+            />
+          )}
         </div>
       </ErpModalLayout>
     </FluentModal>
+  );
+}
+
+// ================================
+// Actions Tab Component
+// ================================
+function ActionsTab({
+  kpiData,
+  currentValue,
+  targetValue,
+  changePercent,
+  status,
+  actionItems,
+  setActionItems,
+  newActionTitle,
+  setNewActionTitle,
+  newActionDescription,
+  setNewActionDescription,
+  setShowAlertConfig,
+  kpiId,
+}: {
+  kpiData: any;
+  currentValue: number;
+  targetValue: number;
+  changePercent: number;
+  status?: string;
+  actionItems: Array<{
+    id: string;
+    title: string;
+    description: string;
+    priority: 'high' | 'medium' | 'low';
+    status: 'pending' | 'in-progress' | 'completed';
+    assignedTo?: string;
+    dueDate?: string;
+    createdAt: string;
+  }>;
+  setActionItems: React.Dispatch<React.SetStateAction<typeof actionItems>>;
+  newActionTitle: string;
+  setNewActionTitle: (value: string) => void;
+  newActionDescription: string;
+  setNewActionDescription: (value: string) => void;
+  setShowAlertConfig: (value: boolean) => void;
+  kpiId?: string | null;
+}) {
+  const { openModal } = useAnalyticsCommandCenterStore();
+  const gap = targetValue - currentValue;
+  const gapPercent = targetValue > 0 ? ((gap / targetValue) * 100) : 0;
+  const isBelowTarget = currentValue < targetValue;
+  const isCritical = status === 'critical' || (isBelowTarget && gapPercent > 20);
+
+  // Générer des recommandations basées sur les performances
+  const recommendations = useMemo(() => {
+    const recs: Array<{
+      id: string;
+      title: string;
+      description: string;
+      priority: 'high' | 'medium' | 'low';
+      actionType: 'alert' | 'task' | 'meeting' | 'review' | 'escalate';
+      icon: React.ElementType;
+    }> = [];
+
+    if (isCritical) {
+      recs.push({
+        id: 'rec-1',
+        title: 'Action immédiate requise',
+        description: `Le KPI est ${gapPercent.toFixed(1)}% en dessous de l'objectif. Une intervention urgente est nécessaire.`,
+        priority: 'high',
+        actionType: 'escalate',
+        icon: AlertTriangle,
+      });
+      recs.push({
+        id: 'rec-2',
+        title: 'Planifier une réunion d\'urgence',
+        description: 'Organiser une réunion avec les responsables pour identifier les causes et définir un plan de correction.',
+        priority: 'high',
+        actionType: 'meeting',
+        icon: Calendar,
+      });
+    } else if (isBelowTarget) {
+      recs.push({
+        id: 'rec-3',
+        title: 'Analyser les causes de l\'écart',
+        description: `Écart de ${gapPercent.toFixed(1)}% par rapport à l'objectif. Analyser les facteurs contributifs.`,
+        priority: 'medium',
+        actionType: 'review',
+        icon: Activity,
+      });
+      recs.push({
+        id: 'rec-4',
+        title: 'Créer une alerte de suivi',
+        description: 'Configurer une alerte pour être notifié si la situation se dégrade davantage.',
+        priority: 'medium',
+        actionType: 'alert',
+        icon: Bell,
+      });
+    }
+
+    if (changePercent < -5) {
+      recs.push({
+        id: 'rec-5',
+        title: 'Investigation de la baisse',
+        description: `Baisse de ${Math.abs(changePercent).toFixed(1)}% détectée. Investiguer les causes récentes.`,
+        priority: 'high',
+        actionType: 'review',
+        icon: TrendingDown,
+      });
+    }
+
+    if (changePercent > 5) {
+      recs.push({
+        id: 'rec-6',
+        title: 'Capitaliser sur l\'amélioration',
+        description: `Amélioration de ${changePercent.toFixed(1)}% observée. Identifier les bonnes pratiques à répliquer.`,
+        priority: 'low',
+        actionType: 'review',
+        icon: TrendingUp,
+      });
+    }
+
+    return recs;
+  }, [isCritical, isBelowTarget, gapPercent, changePercent]);
+
+  const handleCreateAction = (recommendation?: typeof recommendations[0]) => {
+    if (recommendation) {
+      // Ouvrir le modal approprié selon le type d'action
+      if (recommendation.actionType === 'alert') {
+        openModal('alert-config', { kpiId, kpiName: kpiData.name });
+      } else if (recommendation.actionType === 'task') {
+        openModal('create-task', { 
+          kpiId, 
+          kpiName: kpiData.name, 
+          kpiData,
+          initialTitle: recommendation.title,
+          initialDescription: recommendation.description,
+          initialPriority: recommendation.priority,
+        });
+      } else if (recommendation.actionType === 'meeting') {
+        openModal('schedule-meeting', { 
+          kpiId, 
+          kpiName: kpiData.name, 
+          kpiData,
+          initialTitle: recommendation.title,
+          initialDescription: recommendation.description,
+          meetingType: recommendation.priority === 'high' ? 'urgent' : 'regular',
+        });
+      } else {
+        // Pour les autres types, créer directement une action
+        const newAction = {
+          id: `action-${Date.now()}`,
+          title: recommendation.title,
+          description: recommendation.description,
+          priority: recommendation.priority,
+          status: 'pending' as const,
+          createdAt: new Date().toISOString(),
+        };
+        setActionItems([...actionItems, newAction]);
+      }
+    } else if (newActionTitle.trim()) {
+      const newAction = {
+        id: `action-${Date.now()}`,
+        title: newActionTitle,
+        description: newActionDescription,
+        priority: 'medium' as const,
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+      };
+      setActionItems([...actionItems, newAction]);
+      setNewActionTitle('');
+      setNewActionDescription('');
+    }
+  };
+
+  const handleUpdateActionStatus = (actionId: string, newStatus: 'pending' | 'in-progress' | 'completed') => {
+    setActionItems(actionItems.map(action =>
+      action.id === actionId ? { ...action, status: newStatus } : action
+    ));
+  };
+
+  const handleDeleteAction = (actionId: string) => {
+    setActionItems(actionItems.filter(action => action.id !== actionId));
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Actions Rapides */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button
+          onClick={() => openModal('alert-config', { kpiId, kpiName: kpiData.name })}
+          className={cn(
+            'flex flex-col items-center gap-2 h-auto py-4 rounded-xl border transition-all',
+            'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-500/50',
+            'text-amber-400 hover:text-amber-300'
+          )}
+        >
+          <Bell className="w-5 h-5" />
+          <span className="text-xs font-medium">Créer Alerte</span>
+        </button>
+        <button
+          onClick={() => openModal('create-task', { kpiId, kpiName: kpiData.name, kpiData })}
+          className={cn(
+            'flex flex-col items-center gap-2 h-auto py-4 rounded-xl border transition-all',
+            'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 hover:border-blue-500/50',
+            'text-blue-400 hover:text-blue-300'
+          )}
+        >
+          <Plus className="w-5 h-5" />
+          <span className="text-xs font-medium">Nouvelle Tâche</span>
+        </button>
+        <button
+          onClick={() => openModal('schedule-meeting', { kpiId, kpiName: kpiData.name, kpiData })}
+          className={cn(
+            'flex flex-col items-center gap-2 h-auto py-4 rounded-xl border transition-all',
+            'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20 hover:border-purple-500/50',
+            'text-purple-400 hover:text-purple-300'
+          )}
+        >
+          <Calendar className="w-5 h-5" />
+          <span className="text-xs font-medium">Planifier Réunion</span>
+        </button>
+        <button
+          onClick={() => openModal('assign-responsible', { kpiId, kpiName: kpiData.name, kpiData })}
+          className={cn(
+            'flex flex-col items-center gap-2 h-auto py-4 rounded-xl border transition-all',
+            'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/50',
+            'text-emerald-400 hover:text-emerald-300'
+          )}
+        >
+          <UserPlus className="w-5 h-5" />
+          <span className="text-xs font-medium">Assigner Responsable</span>
+        </button>
+      </div>
+
+      {/* Recommandations Intelligentes */}
+      {recommendations.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h3 className="font-semibold text-slate-200">Recommandations Automatiques</h3>
+          </div>
+          <div className="space-y-2">
+            {recommendations.map((rec) => {
+              const Icon = rec.icon;
+              return (
+                <div
+                  key={rec.id}
+                  className={cn(
+                    'p-4 rounded-lg border transition-all',
+                    rec.priority === 'high'
+                      ? 'bg-red-500/10 border-red-500/30'
+                      : rec.priority === 'medium'
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-blue-500/10 border-blue-500/30'
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <Icon className={cn(
+                        'w-5 h-5 mt-0.5',
+                        rec.priority === 'high' ? 'text-red-400' :
+                        rec.priority === 'medium' ? 'text-amber-400' :
+                        'text-blue-400'
+                      )} />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-slate-200">{rec.title}</h4>
+                          <Badge
+                            variant={rec.priority === 'high' ? 'urgent' : rec.priority === 'medium' ? 'warning' : 'default'}
+                            className="text-xs"
+                          >
+                            {rec.priority === 'high' ? 'Urgent' : rec.priority === 'medium' ? 'Important' : 'Suggestion'}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-slate-400">{rec.description}</p>
+                      </div>
+                    </div>
+                    <FluentButton
+                      size="sm"
+                      variant="primary"
+                      onClick={() => handleCreateAction(rec)}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Créer
+                    </FluentButton>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Plan d'Action */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-blue-400" />
+            <h3 className="font-semibold text-slate-200">Plan d'Action</h3>
+            <Badge variant="default" className="text-xs">
+              {actionItems.filter(a => a.status === 'pending').length} en attente
+            </Badge>
+          </div>
+          <FluentButton
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const title = prompt('Titre de l\'action:');
+              if (title) {
+                const description = prompt('Description:');
+                handleCreateAction({
+                  id: '',
+                  title,
+                  description: description || '',
+                  priority: 'medium',
+                  actionType: 'task',
+                  icon: CheckCircle,
+                });
+              }
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Ajouter
+          </FluentButton>
+        </div>
+
+        {/* Liste des Actions */}
+        {actionItems.length === 0 ? (
+          <div className="text-center py-8 border border-dashed border-slate-700/50 rounded-lg">
+            <CheckCircle className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <p className="text-slate-400 text-sm">Aucune action planifiée</p>
+            <p className="text-slate-500 text-xs mt-1">Créez une action depuis les recommandations ou manuellement</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {actionItems.map((action) => (
+              <div
+                key={action.id}
+                className={cn(
+                  'p-4 rounded-lg border transition-all',
+                  action.status === 'completed'
+                    ? 'bg-slate-800/30 border-slate-700/30 opacity-60'
+                    : action.priority === 'high'
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : action.priority === 'medium'
+                    ? 'bg-amber-500/10 border-amber-500/30'
+                    : 'bg-blue-500/10 border-blue-500/30'
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 flex-1">
+                    <button
+                      onClick={() => handleUpdateActionStatus(
+                        action.id,
+                        action.status === 'completed' ? 'pending' : 'completed'
+                      )}
+                      className={cn(
+                        'mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all',
+                        action.status === 'completed'
+                          ? 'bg-emerald-500 border-emerald-500'
+                          : 'border-slate-600 hover:border-emerald-500'
+                      )}
+                    >
+                      {action.status === 'completed' && (
+                        <CheckCircle2 className="w-3 h-3 text-white" />
+                      )}
+                    </button>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className={cn(
+                          'font-medium',
+                          action.status === 'completed' ? 'line-through text-slate-500' : 'text-slate-200'
+                        )}>
+                          {action.title}
+                        </h4>
+                        <Badge
+                          variant={action.priority === 'high' ? 'urgent' : action.priority === 'medium' ? 'warning' : 'default'}
+                          className="text-xs"
+                        >
+                          {action.priority}
+                        </Badge>
+                        <Badge
+                          variant={action.status === 'completed' ? 'default' : action.status === 'in-progress' ? 'warning' : 'secondary'}
+                          className="text-xs"
+                        >
+                          {action.status === 'completed' ? 'Terminé' : action.status === 'in-progress' ? 'En cours' : 'En attente'}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-slate-400 mb-2">{action.description}</p>
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        {action.assignedTo && (
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {action.assignedTo}
+                          </span>
+                        )}
+                        {action.dueDate && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(action.dueDate).toLocaleDateString('fr-FR')}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(action.createdAt).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {action.status !== 'completed' && (
+                      <>
+                        {action.status === 'pending' && (
+                          <FluentButton
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleUpdateActionStatus(action.id, 'in-progress')}
+                          >
+                            <PlayCircle className="w-4 h-4" />
+                          </FluentButton>
+                        )}
+                        <FluentButton
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            const assignee = prompt('Assigner à (nom ou email):');
+                            if (assignee) {
+                              setActionItems(actionItems.map(a =>
+                                a.id === action.id ? { ...a, assignedTo: assignee } : a
+                              ));
+                            }
+                          }}
+                        >
+                          <UserPlus className="w-4 h-4" />
+                        </FluentButton>
+                        <FluentButton
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            const date = prompt('Date d\'échéance (YYYY-MM-DD):');
+                            if (date) {
+                              setActionItems(actionItems.map(a =>
+                                a.id === action.id ? { ...a, dueDate: date } : a
+                              ));
+                            }
+                          }}
+                        >
+                          <Calendar className="w-4 h-4" />
+                        </FluentButton>
+                      </>
+                    )}
+                    <FluentButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteAction(action.id)}
+                      className="text-red-400 hover:text-red-300"
+                    >
+                      <X className="w-4 h-4" />
+                    </FluentButton>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Configuration d'Alerte */}
+      <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-amber-400" />
+            <h3 className="font-semibold text-slate-200">Configuration d'Alerte</h3>
+          </div>
+          <FluentButton
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowAlertConfig(true)}
+          >
+            <Settings className="w-4 h-4 mr-1" />
+            Configurer
+          </FluentButton>
+        </div>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Seuil d'alerte critique</span>
+            <Badge variant="urgent">
+              &lt; {kpiData.metadata?.threshold?.critical || 70}%
+            </Badge>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Seuil d'alerte attention</span>
+            <Badge variant="warning">
+              &lt; {kpiData.metadata?.threshold?.warning || 80}%
+            </Badge>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400">Notifications actives</span>
+            <Badge variant="default">3 canaux</Badge>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

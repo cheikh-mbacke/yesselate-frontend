@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { FluentButton } from '@/components/ui/fluent-button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAlertDetail } from '@/lib/api/hooks/useAnalytics';
+import type { Alert } from '@/domain/analytics/schemas/AlertSchema';
 
 interface AlertDetailModalProps {
   open: boolean;
@@ -39,31 +40,13 @@ interface TimelineEvent {
   data?: any;
 }
 
-interface Alert {
-  id: string;
-  title: string;
-  message: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  type: string;
-  category: string;
-  status: 'active' | 'snoozed' | 'resolved';
-  priority: 'low' | 'medium' | 'high';
-  createdAt: string;
-  resolvedAt?: string;
-  assignedTo?: string;
-  kpiId?: string;
+// Type étendu pour inclure les propriétés optionnelles utilisées dans le modal
+type ExtendedAlert = Alert & {
+  message?: string;
   kpiName?: string;
-  bureauId?: string;
   bureauName?: string;
-  affectedBureaux: string[];
-  metric: string;
-  currentValue: number;
-  targetValue: number;
-  unit: string;
-  recommendation?: string;
-  impact?: string;
-  timeline: TimelineEvent[];
-  comments: Array<{
+  timeline?: TimelineEvent[];
+  comments?: Array<{
     id: string;
     user: string;
     message: string;
@@ -81,10 +64,38 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
 
   // Fetch alert details
   const { data: alertResponse, isLoading, error: fetchError } = useAlertDetail(alertId || '');
-  const alert = useMemo(() => {
+  const alert = useMemo((): ExtendedAlert | null => {
     // Use API data if available
     if (alertResponse?.alert) {
-      return alertResponse.alert;
+      // Map API response to ExtendedAlert format
+      const apiAlert = alertResponse.alert as any; // Temporary any for mapping
+      return {
+        id: apiAlert.id || alertId || '',
+        title: apiAlert.title || '',
+        message: apiAlert.message || apiAlert.description || '',
+        description: apiAlert.description || apiAlert.message || '',
+        severity: apiAlert.severity === 'warning' ? 'medium' : apiAlert.severity === 'info' ? 'low' : (apiAlert.severity || 'medium') as 'low' | 'medium' | 'high' | 'critical',
+        type: apiAlert.type || '',
+        category: apiAlert.category || 'general',
+        status: apiAlert.status || 'active',
+        priority: apiAlert.priority || 'medium',
+        createdAt: apiAlert.createdAt || apiAlert.triggeredAt || new Date().toISOString(),
+        resolvedAt: apiAlert.resolvedAt,
+        assignedTo: apiAlert.assignedTo || null,
+        kpiId: apiAlert.kpiId,
+        kpiName: apiAlert.kpiName,
+        bureauId: apiAlert.bureauId,
+        bureauName: apiAlert.bureauName,
+        affectedBureaux: apiAlert.affectedBureaux || [],
+        metric: apiAlert.metric || '',
+        currentValue: apiAlert.currentValue,
+        targetValue: apiAlert.targetValue,
+        unit: apiAlert.unit || '',
+        recommendation: apiAlert.recommendation,
+        impact: apiAlert.impact,
+        timeline: apiAlert.timeline || [],
+        comments: apiAlert.comments || [],
+      } as ExtendedAlert;
     }
     
     // Fallback to mock data for development
@@ -163,9 +174,9 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
 
   if (isLoading) {
     return (
-      <FluentModal open={open} onClose={onClose} title="Chargement..." size="xl">
+      <FluentModal open={open} onClose={onClose} title="Chargement..." maxWidth="xl" dark>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
         </div>
       </FluentModal>
     );
@@ -173,10 +184,10 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
 
   if (fetchError || !alert) {
     return (
-      <FluentModal open={open} onClose={onClose} title="Erreur" size="xl">
+      <FluentModal open={open} onClose={onClose} title="Erreur" maxWidth="xl" dark>
         <div className="flex flex-col items-center justify-center py-12">
-          <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
-          <p className="text-slate-600 dark:text-slate-400">
+          <AlertTriangle className="w-12 h-12 text-red-400 mb-4" />
+          <p className="text-slate-400">
             Impossible de charger les détails de l'alerte
           </p>
         </div>
@@ -189,42 +200,88 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
     medium: { color: 'bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300', icon: AlertTriangle },
     high: { color: 'bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300', icon: AlertTriangle },
     critical: { color: 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300', icon: XCircle },
-  }[alert.severity];
+  }[alert.severity] || {
+    color: 'bg-slate-100 dark:bg-slate-900/20 text-slate-700 dark:text-slate-300',
+    icon: Info,
+  };
 
   const SeverityIcon = severityConfig.icon;
 
+  const commentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleAddComment = async () => {
     if (!comment.trim()) return;
     setIsSubmitting(true);
     
+    // Nettoyer le timer précédent si présent
+    if (commentTimerRef.current) {
+      clearTimeout(commentTimerRef.current);
+    }
+    
     // Simuler API call
-    setTimeout(() => {
-      console.log('Comment added:', comment);
+    commentTimerRef.current = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Comment added:', comment);
+      }
       setComment('');
       setIsSubmitting(false);
+      commentTimerRef.current = null;
     }, 1000);
   };
+  
+  useEffect(() => {
+    return () => {
+      if (commentTimerRef.current) {
+        clearTimeout(commentTimerRef.current);
+      }
+      if (resolveTimerRef.current) {
+        clearTimeout(resolveTimerRef.current);
+      }
+    };
+  }, []);
 
+  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleResolve = async () => {
     if (!resolution.trim()) return;
     setIsSubmitting(true);
 
+    // Nettoyer le timer précédent si présent
+    if (resolveTimerRef.current) {
+      clearTimeout(resolveTimerRef.current);
+    }
+
     // Simuler API call
-    setTimeout(() => {
-      console.log('Alert resolved:', resolution);
+    resolveTimerRef.current = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Alert resolved:', resolution);
+      }
       setShowResolveDialog(false);
       setResolution('');
       setIsSubmitting(false);
       onClose();
+      resolveTimerRef.current = null;
     }, 1000);
   };
+  
+  useEffect(() => {
+    return () => {
+      if (resolveTimerRef.current) {
+        clearTimeout(resolveTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleSnooze = () => {
-    console.log('Alert snoozed');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Alert snoozed');
+    }
   };
 
   const handleEscalate = () => {
-    console.log('Alert escalated');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Alert escalated');
+    }
   };
 
   return (
@@ -238,7 +295,7 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{alert.title}</h2>
+              <h2 className="text-lg font-semibold text-slate-200">{alert.title}</h2>
               <Badge variant={
                 alert.severity === 'critical' ? 'urgent' :
                 alert.severity === 'high' ? 'warning' :
@@ -253,11 +310,12 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
           </div>
         </div>
       }
-      size="xl"
+      maxWidth="5xl"
+      dark
     >
       <div className="space-y-6">
         {/* Status Bar */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
           <div className="flex items-center gap-6">
             <div>
               <p className="text-xs text-slate-500">Statut</p>
@@ -313,7 +371,7 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
           {[
             { id: 'details', label: 'Détails', icon: Info },
             { id: 'timeline', label: 'Timeline', icon: Clock },
-            { id: 'comments', label: `Commentaires (${alert.comments.length})`, icon: MessageSquare },
+            { id: 'comments', label: `Commentaires (${alert.comments?.length || 0})`, icon: MessageSquare },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -426,8 +484,9 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
 
           {activeTab === 'timeline' && (
             <div className="space-y-4">
-              {alert.timeline.map((event, idx) => (
-                <div key={event.id} className="flex gap-4">
+              {alert.timeline && alert.timeline.length > 0 ? (
+                alert.timeline.map((event, idx) => (
+                  <div key={event.id} className="flex gap-4">
                   <div className="flex flex-col items-center">
                     <div className={cn(
                       'w-10 h-10 rounded-full flex items-center justify-center',
@@ -443,7 +502,7 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
                       {event.type === 'status_changed' && <CheckCircle2 className="w-5 h-5 text-orange-600" />}
                       {event.type === 'escalated' && <ArrowUp className="w-5 h-5 text-red-600" />}
                     </div>
-                    {idx < alert.timeline.length - 1 && (
+                    {idx < (alert.timeline?.length || 0) - 1 && (
                       <div className="w-0.5 h-full min-h-[40px] bg-slate-200 dark:bg-slate-700" />
                     )}
                   </div>
@@ -458,8 +517,14 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
                       {event.message}
                     </p>
                   </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Aucun événement dans la timeline</p>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
@@ -467,8 +532,9 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
             <div className="space-y-4">
               {/* Liste des commentaires */}
               <div className="space-y-4 max-h-[300px] overflow-y-auto">
-                {alert.comments.map((comment) => (
-                  <div key={comment.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                {alert.comments && alert.comments.length > 0 ? (
+                  alert.comments.map((comment) => (
+                    <div key={comment.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
@@ -483,17 +549,23 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
                     <p className="text-sm text-slate-600 dark:text-slate-400 ml-10">
                       {comment.message}
                     </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Aucun commentaire</p>
                   </div>
-                ))}
+                )}
               </div>
 
               {/* Ajouter commentaire */}
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+              <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/50">
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="Ajouter un commentaire..."
-                  className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm resize-none"
+                  className="w-full px-4 py-3 rounded-lg border border-slate-700/50 bg-slate-900 text-slate-200 text-sm resize-none"
                   rows={3}
                 />
                 <div className="flex items-center justify-between mt-3">
@@ -556,7 +628,7 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
                 value={resolution}
                 onChange={(e) => setResolution(e.target.value)}
                 placeholder="Décrivez comment l'alerte a été résolue..."
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm resize-none"
+                className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm resize-none placeholder:text-slate-400"
                 rows={4}
               />
             </div>

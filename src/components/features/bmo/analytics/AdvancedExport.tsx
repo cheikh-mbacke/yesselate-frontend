@@ -33,7 +33,7 @@ export function AdvancedExport({ data, type, fileName, targetRef }: AdvancedExpo
         return;
       }
       await exportElementAsPdf(el, `${fileName || 'export'}-${new Date().toISOString().split('T')[0]}.pdf`, {
-        background: darkMode ? '#0f172a' : '#ffffff',
+        background: '#0f172a',
         scale: 2,
       });
       addToast('PDF exporté avec succès !', 'success');
@@ -89,7 +89,7 @@ export function AdvancedExport({ data, type, fileName, targetRef }: AdvancedExpo
       const canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
-        backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+        backgroundColor: '#0f172a',
         scrollX: 0,
         scrollY: -window.scrollY,
       });

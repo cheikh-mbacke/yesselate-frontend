@@ -107,7 +107,7 @@ export function AnalyticsDashboard({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className={cn(
           'border-l-4 border-l-blue-500 transition-all hover:shadow-lg',
-          darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200'
+          'bg-slate-800/50 border-slate-700'
         )}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
@@ -137,7 +137,7 @@ export function AnalyticsDashboard({
 
         <Card className={cn(
           'border-l-4 border-l-emerald-500 transition-all hover:shadow-lg',
-          darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200'
+          'bg-slate-800/50 border-slate-700'
         )}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
@@ -167,7 +167,7 @@ export function AnalyticsDashboard({
 
         <Card className={cn(
           'border-l-4 border-l-red-500 transition-all hover:shadow-lg',
-          darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200'
+          'bg-slate-800/50 border-slate-700'
         )}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
@@ -197,7 +197,7 @@ export function AnalyticsDashboard({
 
         <Card className={cn(
           'border-l-4 border-l-amber-500 transition-all hover:shadow-lg',
-          darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200'
+          'bg-slate-800/50 border-slate-700'
         )}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
@@ -225,7 +225,7 @@ export function AnalyticsDashboard({
       {insights.length > 0 && (
         <Card className={cn(
           'border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-amber-500/5',
-          darkMode ? 'border-slate-700' : 'border-gray-200'
+          'border-slate-700'
         )}>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">

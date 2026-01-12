@@ -48,7 +48,9 @@ class AnalyticsRealtimeService {
    */
   connect(url: string = '/api/analytics/realtime'): void {
     if (this.eventSource) {
-      console.warn('Already connected to realtime service');
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Already connected to realtime service');
+      }
       return;
     }
 
@@ -56,7 +58,9 @@ class AnalyticsRealtimeService {
       this.eventSource = new EventSource(url, { withCredentials: true });
 
       this.eventSource.onopen = () => {
-        console.log('✅ Connected to Analytics realtime service');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Connected to Analytics realtime service');
+        }
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.startHeartbeat();
@@ -67,12 +71,29 @@ class AnalyticsRealtimeService {
           const realtimeEvent: RealtimeEvent = JSON.parse(event.data);
           this.handleEvent(realtimeEvent);
         } catch (error) {
-          console.error('Failed to parse realtime event:', error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Failed to parse realtime event:', error);
+          }
         }
       };
 
-      this.eventSource.onerror = (error) => {
-        console.error('SSE connection error:', error);
+      this.eventSource.onerror = (event: Event) => {
+        const eventSource = event.target as EventSource;
+        const readyState = eventSource?.readyState ?? EventSource.CLOSED;
+        const stateMessage = 
+          readyState === EventSource.CONNECTING ? 'CONNECTING' :
+          readyState === EventSource.OPEN ? 'OPEN' :
+          'CLOSED';
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.error('SSE connection error:', {
+            type: event.type,
+            readyState: stateMessage,
+            url: eventSource?.url || 'unknown',
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
         this.isConnected = false;
         this.handleConnectionError();
       };
@@ -80,7 +101,9 @@ class AnalyticsRealtimeService {
       // Écouter des événements spécifiques
       this.setupEventListeners();
     } catch (error) {
-      console.error('Failed to connect to realtime service:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to connect to realtime service:', error);
+      }
     }
   }
 
@@ -116,7 +139,9 @@ class AnalyticsRealtimeService {
           };
           this.handleEvent(realtimeEvent);
         } catch (error) {
-          console.error(`Failed to parse ${type} event:`, error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`Failed to parse ${type} event:`, error);
+          }
         }
       });
     });
@@ -145,7 +170,9 @@ class AnalyticsRealtimeService {
       try {
         subscription.callback(event);
       } catch (error) {
-        console.error('Error in subscription callback:', error);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error in subscription callback:', error);
+        }
       }
     });
   }
@@ -160,14 +187,18 @@ class AnalyticsRealtimeService {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
       
-      console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      }
       
       setTimeout(() => {
         this.disconnect();
         this.connect();
       }, delay);
     } else {
-      console.error('Max reconnection attempts reached. Please refresh the page.');
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Max reconnection attempts reached. Please refresh the page.');
+      }
     }
   }
 
@@ -239,7 +270,9 @@ class AnalyticsRealtimeService {
     }
     this.stopHeartbeat();
     this.isConnected = false;
-    console.log('Disconnected from Analytics realtime service');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Disconnected from Analytics realtime service');
+    }
   }
 
   /**

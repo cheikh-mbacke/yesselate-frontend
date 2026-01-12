@@ -20,6 +20,12 @@ import {
   Filter, SortAsc, LayoutGrid, List, ExternalLink
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { searchWithScoring, highlightMatch } from '@/application/utils/searchUtils';
+import { useDebounce } from '@/application/hooks/useDebounce';
+import { FadeIn } from '@/presentation/components/Animations';
+import { searchWithScoring, highlightMatch } from '@/application/utils/searchUtils';
+import { useDebounce } from '@/application/hooks/useDebounce';
+import { FadeIn } from '@/presentation/components/Animations';
 
 interface Command {
   id: string;
@@ -505,9 +511,9 @@ export function AnalyticsCommandPalette() {
           <input
             type="text"
             placeholder="Rechercher une commande, vue ou action..."
-            className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200/70 bg-white/90 
+            className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-700/50 bg-slate-800 
                      outline-none focus:ring-2 focus:ring-orange-500/30 
-                     dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                     text-slate-200 placeholder-slate-500"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);

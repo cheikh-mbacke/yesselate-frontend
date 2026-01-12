@@ -32,20 +32,24 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
     const warningKPIs = kpis.filter(k => k.status === 'warning').length;
     const criticalKPIs = kpis.filter(k => k.status === 'critical').length;
 
-    const avgScore = Math.round(
-      bureauPerf.reduce((sum, b) => sum + b.score, 0) / bureauPerf.length
-    );
+    const avgScore = bureauPerf.length > 0
+      ? Math.round(bureauPerf.reduce((sum, b) => sum + b.score, 0) / bureauPerf.length)
+      : 0;
 
-    const topBureau = bureauPerf[0];
-    const weakestBureau = bureauPerf[bureauPerf.length - 1];
+    const topBureau = bureauPerf[0] || null;
+    const weakestBureau = bureauPerf.length > 0 ? bureauPerf[bureauPerf.length - 1] : null;
 
     const totalDemands = bureauPerf.reduce((sum, b) => sum + b.totalDemands, 0);
     const totalValidated = bureauPerf.reduce((sum, b) => sum + b.validated, 0);
     const totalPending = bureauPerf.reduce((sum, b) => sum + b.pending, 0);
     const totalOverdue = bureauPerf.reduce((sum, b) => sum + b.overdue, 0);
 
-    const globalValidationRate = Math.round((totalValidated / totalDemands) * 100);
-    const globalSLA = Math.round(((totalDemands - totalOverdue) / totalDemands) * 100);
+    const globalValidationRate = totalDemands > 0
+      ? Math.round((totalValidated / totalDemands) * 100)
+      : 0;
+    const globalSLA = totalDemands > 0
+      ? Math.round(((totalDemands - totalOverdue) / totalDemands) * 100)
+      : 0;
 
     return {
       goodKPIs,
@@ -88,17 +92,18 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
       open={open}
       onClose={onClose}
       title="📊 Statistiques Complètes"
-      size="xl"
+      maxWidth="4xl"
+      dark
     >
       <div className="space-y-6">
         {/* Vue d'ensemble globale */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20">
+          <div className="p-4 rounded-xl border border-slate-700 bg-gradient-to-br from-blue-950/20 to-blue-900/20">
             <div className="flex items-center gap-2 mb-2">
-              <Activity className="w-5 h-5 text-blue-500" />
-              <span className="text-xs text-slate-600 dark:text-slate-400">Total Demandes</span>
+              <Activity className="w-5 h-5 text-blue-400" />
+              <span className="text-xs text-slate-400">Total Demandes</span>
             </div>
-            <div className="text-3xl font-bold text-blue-600">{stats.totalDemands}</div>
+            <div className="text-3xl font-bold text-blue-400">{stats.totalDemands}</div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
               {monthEvolution.demandsChange > 0 ? (
                 <>
@@ -115,12 +120,12 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20">
+          <div className="p-4 rounded-xl border border-slate-700 bg-gradient-to-br from-emerald-950/20 to-emerald-900/20">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-              <span className="text-xs text-slate-600 dark:text-slate-400">Taux Validation</span>
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <span className="text-xs text-slate-400">Taux Validation</span>
             </div>
-            <div className="text-3xl font-bold text-emerald-600">{stats.globalValidationRate}%</div>
+            <div className="text-3xl font-bold text-emerald-400">{stats.globalValidationRate}%</div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
               {monthEvolution.validationChange > 0 ? (
                 <>
@@ -137,23 +142,23 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/20">
+          <div className="p-4 rounded-xl border border-slate-700 bg-gradient-to-br from-amber-950/20 to-amber-900/20">
             <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-5 h-5 text-amber-500" />
-              <span className="text-xs text-slate-600 dark:text-slate-400">En Attente</span>
+              <Clock className="w-5 h-5 text-amber-400" />
+              <span className="text-xs text-slate-400">En Attente</span>
             </div>
-            <div className="text-3xl font-bold text-amber-600">{stats.totalPending}</div>
+            <div className="text-3xl font-bold text-amber-400">{stats.totalPending}</div>
             <div className="text-xs text-slate-500 mt-1">
               {Math.round((stats.totalPending / stats.totalDemands) * 100)}% du total
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/20 dark:to-purple-900/20">
+          <div className="p-4 rounded-xl border border-slate-700 bg-gradient-to-br from-purple-950/20 to-purple-900/20">
             <div className="flex items-center gap-2 mb-2">
-              <Target className="w-5 h-5 text-purple-500" />
-              <span className="text-xs text-slate-600 dark:text-slate-400">Conformité SLA</span>
+              <Target className="w-5 h-5 text-purple-400" />
+              <span className="text-xs text-slate-400">Conformité SLA</span>
             </div>
-            <div className="text-3xl font-bold text-purple-600">{stats.globalSLA}%</div>
+            <div className="text-3xl font-bold text-purple-400">{stats.globalSLA}%</div>
             <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
               {monthEvolution.slaChange > 0 ? (
                 <>
@@ -172,29 +177,29 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
         </div>
 
         {/* Statut KPIs */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Target className="w-4 h-4 text-orange-500" />
+        <div className="rounded-xl border border-slate-700 p-4">
+          <h3 className="font-semibold mb-4 flex items-center gap-2 text-slate-200">
+            <Target className="w-4 h-4 text-orange-400" />
             Statut des KPIs ({kpis.length} au total)
           </h3>
           <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
-              <div className="text-3xl font-bold text-emerald-600">{stats.goodKPIs}</div>
-              <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">🟢 Good</div>
+            <div className="text-center p-4 rounded-lg bg-emerald-950/20 border border-emerald-800">
+              <div className="text-3xl font-bold text-emerald-400">{stats.goodKPIs}</div>
+              <div className="text-sm text-slate-400 mt-1">🟢 Good</div>
               <div className="text-xs text-slate-500 mt-1">
                 {Math.round((stats.goodKPIs / kpis.length) * 100)}%
               </div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-              <div className="text-3xl font-bold text-amber-600">{stats.warningKPIs}</div>
-              <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">🟡 Warning</div>
+            <div className="text-center p-4 rounded-lg bg-amber-950/20 border border-amber-800">
+              <div className="text-3xl font-bold text-amber-400">{stats.warningKPIs}</div>
+              <div className="text-sm text-slate-400 mt-1">🟡 Warning</div>
               <div className="text-xs text-slate-500 mt-1">
                 {Math.round((stats.warningKPIs / kpis.length) * 100)}%
               </div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
-              <div className="text-3xl font-bold text-red-600">{stats.criticalKPIs}</div>
-              <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">🔴 Critical</div>
+            <div className="text-center p-4 rounded-lg bg-red-950/20 border border-red-800">
+              <div className="text-3xl font-bold text-red-400">{stats.criticalKPIs}</div>
+              <div className="text-sm text-slate-400 mt-1">🔴 Critical</div>
               <div className="text-xs text-slate-500 mt-1">
                 {Math.round((stats.criticalKPIs / kpis.length) * 100)}%
               </div>
@@ -264,7 +269,7 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
             </div>
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-sm">
+          <div className="p-3 rounded-lg bg-slate-800/50 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-slate-600 dark:text-slate-400">Score moyen global</span>
               <span className="font-bold text-lg">{stats.avgScore}/100</span>
@@ -281,7 +286,7 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
             </h3>
             <div className="space-y-2">
               {criticalAlerts.slice(0, 3).map((alert) => (
-                <div key={alert.id} className="p-3 rounded-lg border border-red-300 dark:border-red-700 bg-white dark:bg-slate-900 flex items-start gap-3">
+                <div key={alert.id} className="p-3 rounded-lg border border-red-700/50 bg-slate-900 flex items-start gap-3">
                   <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -293,7 +298,7 @@ export function AnalyticsStatsModal({ open, onClose }: AnalyticsStatsModalProps)
                 </div>
               ))}
               {warningAlerts.slice(0, 2).map((alert) => (
-                <div key={alert.id} className="p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 flex items-start gap-3">
+                <div key={alert.id} className="p-3 rounded-lg border border-amber-700/50 bg-slate-900 flex items-start gap-3">
                   <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

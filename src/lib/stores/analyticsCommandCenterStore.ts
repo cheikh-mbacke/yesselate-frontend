@@ -49,7 +49,10 @@ export type AnalyticsModalType =
   | 'settings'
   | 'shortcuts'
   | 'help'
-  | 'confirm';
+  | 'confirm'
+  | 'create-task'
+  | 'schedule-meeting'
+  | 'assign-responsible';
 
 // État des modals
 export interface AnalyticsModalState {

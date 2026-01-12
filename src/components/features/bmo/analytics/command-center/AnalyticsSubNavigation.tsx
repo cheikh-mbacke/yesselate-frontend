@@ -64,7 +64,7 @@ export const AnalyticsSubNavigation = React.memo(function AnalyticsSubNavigation
       </div>
 
       {/* Sub Categories (Niveau 2) */}
-      <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center gap-1 px-2 sm:px-4 py-2 overflow-x-auto scrollbar-hide">
         {subCategories.map((sub) => {
           const isActive = subCategory === sub.id;
 

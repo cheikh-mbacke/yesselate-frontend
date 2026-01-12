@@ -96,7 +96,7 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
       {isOpen && (
         <Card className={cn(
           'absolute top-full left-0 mt-2 w-[500px] z-50 shadow-xl',
-          darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+          'bg-slate-800 border-slate-700'
         )}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -147,8 +147,8 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                     value={filters.startDate || ''}
                     onChange={(e) => updateFilter('startDate', e.target.value)}
                     className={cn(
-                      'w-full p-2 rounded text-xs',
-                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                      'w-full p-2 rounded text-xs border',
+                      'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                     )}
                   />
                 </div>
@@ -159,8 +159,8 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                     value={filters.endDate || ''}
                     onChange={(e) => updateFilter('endDate', e.target.value)}
                     className={cn(
-                      'w-full p-2 rounded text-xs',
-                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                      'w-full p-2 rounded text-xs border',
+                      'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                     )}
                   />
                 </div>
@@ -204,8 +204,8 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                     value={Number.isFinite(filters.minDemandes) ? String(filters.minDemandes) : ''}
                     onChange={(e) => updateFilter('minDemandes', e.target.value === '' ? undefined : Number(e.target.value))}
                     className={cn(
-                      'w-full p-2 rounded text-xs',
-                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                      'w-full p-2 rounded text-xs border',
+                      'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                     )}
                     placeholder="ex: 50"
                   />
@@ -220,8 +220,8 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                     value={Number.isFinite(filters.maxTauxRejet) ? String(filters.maxTauxRejet) : ''}
                     onChange={(e) => updateFilter('maxTauxRejet', e.target.value === '' ? undefined : Number(e.target.value))}
                     className={cn(
-                      'w-full p-2 rounded text-xs',
-                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                      'w-full p-2 rounded text-xs border',
+                      'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                     )}
                     placeholder="ex: 20"
                   />
@@ -236,8 +236,8 @@ export function AdvancedFilters({ filters, onFiltersChange }: AdvancedFiltersPro
                     value={Number.isFinite(filters.minTauxValidation) ? String(filters.minTauxValidation) : ''}
                     onChange={(e) => updateFilter('minTauxValidation', e.target.value === '' ? undefined : Number(e.target.value))}
                     className={cn(
-                      'w-full p-2 rounded text-xs',
-                      darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                      'w-full p-2 rounded text-xs border',
+                      'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                     )}
                     placeholder="ex: 80"
                   />

@@ -64,7 +64,7 @@ export function AnalyticsDashboardView() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       {/* Header avec KPIs principaux */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {topKPIs.map((kpi) => (
@@ -76,12 +76,12 @@ export function AnalyticsDashboardView() {
             <FluentCardContent className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-sm text-slate-500 mb-1">{kpi.name}</p>
+                  <p className="text-sm text-slate-400 mb-1">{kpi.name}</p>
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-bold">
                       {kpi.value}
                     </span>
-                    <span className="text-lg text-slate-500">{kpi.unit}</span>
+                    <span className="text-lg text-slate-400">{kpi.unit}</span>
                   </div>
                 </div>
                 <div className={`p-3 rounded-xl ${
@@ -98,7 +98,7 @@ export function AnalyticsDashboardView() {
               </div>
               
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">
+                <span className="text-slate-400">
                   Objectif: {kpi.target}{kpi.unit}
                 </span>
                 <div className="flex items-center gap-1">
@@ -108,9 +108,9 @@ export function AnalyticsDashboardView() {
                     <TrendingDown className="w-4 h-4 text-red-500" />
                   ) : null}
                   <span className={
-                    kpi.trend === 'up' ? 'text-emerald-600' :
-                    kpi.trend === 'down' ? 'text-red-600' :
-                    'text-slate-500'
+                    kpi.trend === 'up' ? 'text-emerald-400' :
+                    kpi.trend === 'down' ? 'text-red-400' :
+                    'text-slate-400'
                   }>
                     {kpi.trendValue > 0 ? '+' : ''}{kpi.trendValue}%
                   </span>
@@ -138,25 +138,27 @@ export function AnalyticsDashboardView() {
                       <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis 
                     dataKey="date" 
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                   />
                   <YAxis 
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: 'white',
-                      border: '1px solid #e2e8f0',
+                      background: '#1e293b',
+                      border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '12px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#e2e8f0' }}
                   />
                   <Area
                     type="monotone"
@@ -181,25 +183,27 @@ export function AnalyticsDashboardView() {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={comparisonData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis 
                     dataKey="name" 
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                   />
                   <YAxis 
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: 'white',
-                      border: '1px solid #e2e8f0',
+                      background: '#1e293b',
+                      border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '12px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#e2e8f0' }}
                   />
                   <Bar 
                     dataKey="value" 
@@ -212,19 +216,19 @@ export function AnalyticsDashboardView() {
             </div>
             
             {/* Stats comparaison */}
-            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="mt-4 pt-4 border-t border-slate-700/50">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-slate-500 mb-1">Évolution</div>
+                  <div className="text-slate-400 mb-1">Évolution</div>
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    <span className="font-semibold text-emerald-600">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span className="font-semibold text-emerald-400">
                       +{Math.round(((mockComparisons.thisMonth.validated - mockComparisons.lastMonth.validated) / mockComparisons.lastMonth.validated) * 100)}%
                     </span>
                   </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 mb-1">SLA</div>
+                  <div className="text-slate-400 mb-1">SLA</div>
                   <div className="flex items-center gap-2">
                     <Badge variant="success">{mockComparisons.thisMonth.slaCompliance}%</Badge>
                   </div>
@@ -246,28 +250,30 @@ export function AnalyticsDashboardView() {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={bureauData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis 
                     type="number"
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                   />
                   <YAxis 
                     type="category"
                     dataKey="name"
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#475569' }}
+                    tickLine={{ stroke: '#475569' }}
                     width={60}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: 'white',
-                      border: '1px solid #e2e8f0',
+                      background: '#1e293b',
+                      border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '12px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#e2e8f0' }}
                   />
                   <Bar 
                     dataKey="score" 
@@ -306,25 +312,27 @@ export function AnalyticsDashboardView() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: 'white',
-                      border: '1px solid #e2e8f0',
+                      background: '#1e293b',
+                      border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '12px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#e2e8f0' }}
                     formatter={(value: number) => `${value.toFixed(0)}M FCFA`}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-sm">
+            <div className="mt-4 pt-4 border-t border-slate-700/50 text-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-slate-500">Budget total</span>
-                <span className="font-semibold">{(mockFinancialData.budgetTotal / 1000000000).toFixed(1)} Mds</span>
+                <span className="text-slate-400">Budget total</span>
+                <span className="font-semibold text-slate-200">{(mockFinancialData.budgetTotal / 1000000000).toFixed(1)} Mds</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Consommé</span>
-                <span className="font-semibold text-amber-600">{Math.round((mockFinancialData.budgetConsumed / mockFinancialData.budgetTotal) * 100)}%</span>
+                <span className="text-slate-400">Consommé</span>
+                <span className="font-semibold text-amber-400">{Math.round((mockFinancialData.budgetConsumed / mockFinancialData.budgetTotal) * 100)}%</span>
               </div>
             </div>
           </FluentCardContent>
@@ -333,52 +341,52 @@ export function AnalyticsDashboardView() {
 
       {/* Statistiques supplémentaires */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-blue-500/10">
-              <Activity className="w-5 h-5 text-blue-500" />
+              <Activity className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{mockComparisons.thisMonth.total}</div>
-              <div className="text-xs text-slate-500">Demandes ce mois</div>
+              <div className="text-2xl font-bold text-slate-200">{mockComparisons.thisMonth.total}</div>
+              <div className="text-xs text-slate-400">Demandes ce mois</div>
             </div>
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-emerald-500/10">
-              <Target className="w-5 h-5 text-emerald-500" />
+              <Target className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-emerald-600">
+              <div className="text-2xl font-bold text-emerald-400">
                 {Math.round((mockComparisons.thisMonth.validated / mockComparisons.thisMonth.total) * 100)}%
               </div>
-              <div className="text-xs text-slate-500">Taux validation</div>
+              <div className="text-xs text-slate-400">Taux validation</div>
             </div>
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-amber-500/10">
-              <DollarSign className="w-5 h-5 text-amber-500" />
+              <DollarSign className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{mockComparisons.thisMonth.avgDelay}j</div>
-              <div className="text-xs text-slate-500">Délai moyen</div>
+              <div className="text-2xl font-bold text-slate-200">{mockComparisons.thisMonth.avgDelay}j</div>
+              <div className="text-xs text-slate-400">Délai moyen</div>
             </div>
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/30">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-purple-500/10">
-              <Users className="w-5 h-5 text-purple-500" />
+              <Users className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold">{bureauPerf.length}</div>
-              <div className="text-xs text-slate-500">Bureaux actifs</div>
+              <div className="text-2xl font-bold text-slate-200">{bureauPerf.length}</div>
+              <div className="text-xs text-slate-400">Bureaux actifs</div>
             </div>
           </div>
         </div>

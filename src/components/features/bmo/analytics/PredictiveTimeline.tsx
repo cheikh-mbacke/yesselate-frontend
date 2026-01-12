@@ -228,7 +228,7 @@ export function PredictiveTimeline({ enrichedData, monthsAhead = 3 }: Predictive
                 key={idx}
                 className={cn(
                   'p-2 rounded border',
-                  darkMode ? 'bg-slate-700/30 border-orange-500/30' : 'bg-gray-50 border-orange-200'
+                  'bg-slate-700/30 border-orange-500/30'
                 )}
               >
                 <div className="font-semibold text-orange-400 mb-1">{pred.month}</div>

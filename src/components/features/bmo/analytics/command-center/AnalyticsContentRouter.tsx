@@ -20,8 +20,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
+  Building2,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { FluentCard, FluentCardContent } from '@/components/ui/fluent-card';
 import {
   useAnalyticsDashboard,
   useKpis,
@@ -32,6 +36,9 @@ import {
 import { InteractiveChart, ChartGrid, ChartGridItem } from '../charts';
 import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 import { FinancialView } from './FinancialView';
+import { formatFCFA } from '@/lib/utils/format-currency';
+import { calculateFinancialPerformance } from '@/lib/data/analytics';
+import { bureaux as bureauxList } from '@/lib/data';
 
 interface ContentRouterProps {
   category: string;
@@ -128,7 +135,7 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
         <div className="text-center">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <p className="text-slate-300 mb-2">Erreur de chargement</p>
-          <p className="text-sm text-slate-500">{String(error)}</p>
+          <p className="text-sm text-slate-500">{error instanceof Error ? error.message : String(error)}</p>
         </div>
       </div>
     );
@@ -199,7 +206,7 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
   ];
 
   // Use real trends data when available
-  const displayTrends = trends.slice(0, 3).map((t) => ({
+  const displayTrends = (trends || []).slice(0, 3).map((t) => ({
     id: t.id,
     metric: t.metric,
     current: t.current,
@@ -321,10 +328,10 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
             ) : (
               displayTrends.map((trend) => {
                 const isPositive = trend.trend === 'up';
-                const diff = Math.abs(trend.current - trend.previous);
-                const percentChange = trend.previous > 0
+                const diff = Math.abs(trend.current - (trend.previous || 0));
+                const percentChange = trend.previous && trend.previous > 0
                   ? ((diff / trend.previous) * 100).toFixed(1)
-                  : '0';
+                  : trend.current > 0 ? '100' : '0';
 
                 const handleTrendClick = () => {
                   // Ouvrir le panneau latéral ou modal pour voir les détails de la tendance
@@ -393,13 +400,22 @@ const OverviewDashboard = React.memo(function OverviewDashboard() {
           { label: 'Voir Alertes', icon: AlertTriangle, color: 'amber' },
         ].map((action, idx) => {
           const Icon = action.icon;
+          const colorClasses = {
+            purple: 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300',
+            blue: 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300',
+            emerald: 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300',
+            amber: 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300',
+          };
           return (
             <button
               key={idx}
-              className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all text-left group"
+              className={cn(
+                'p-4 rounded-xl border transition-all text-left group',
+                colorClasses[action.color as keyof typeof colorClasses]
+              )}
             >
-              <Icon className={cn('w-5 h-5 mb-2', `text-${action.color}-400`)} />
-              <p className="text-sm font-medium text-slate-300 group-hover:text-slate-200">
+              <Icon className="w-5 h-5 mb-2" />
+              <p className="text-sm font-medium">
                 {action.label}
               </p>
             </button>
@@ -439,22 +455,170 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
   const allKpis = kpisData?.kpis || [];
 
   // Filter KPIs based on subcategory
-  const filteredKPIs =
-    subCategory === 'all'
-      ? allKpis
-      : subCategory === 'critical'
-      ? allKpis.filter((k) => k.status === 'critical')
-      : subCategory === 'warning'
-      ? allKpis.filter((k) => k.status === 'warning')
-      : allKpis.filter((k) => k.status === 'success');
+  const filteredKPIs = useMemo(() => {
+    if (!Array.isArray(allKpis)) return [];
+    if (subCategory === 'all') return allKpis;
+    if (subCategory === 'critical') return allKpis.filter((k) => k.status === 'critical');
+    if (subCategory === 'warning') return allKpis.filter((k) => k.status === 'warning');
+    return allKpis.filter((k) => k.status === 'success');
+  }, [allKpis, subCategory]);
+
+  // Configuration selon subCategory
+  const config = useMemo(() => {
+    if (subCategory === 'critical') {
+      return {
+        title: 'KPIs Critiques',
+        description: 'Indicateurs nécessitant une attention immédiate',
+        icon: XCircle,
+        color: 'red',
+        bgColor: 'bg-red-500/10',
+        borderColor: 'border-red-500/30',
+        textColor: 'text-red-400',
+      };
+    }
+    if (subCategory === 'warning') {
+      return {
+        title: 'KPIs en Attention',
+        description: 'Indicateurs nécessitant une surveillance particulière',
+        icon: AlertTriangle,
+        color: 'amber',
+        bgColor: 'bg-amber-500/10',
+        borderColor: 'border-amber-500/30',
+        textColor: 'text-amber-400',
+      };
+    }
+    if (subCategory === 'success') {
+      return {
+        title: 'KPIs Performants',
+        description: 'Indicateurs atteignant ou dépassant les objectifs',
+        icon: CheckCircle2,
+        color: 'emerald',
+        bgColor: 'bg-emerald-500/10',
+        borderColor: 'border-emerald-500/30',
+        textColor: 'text-emerald-400',
+      };
+    }
+    return {
+      title: 'KPIs Performance',
+      description: 'Vue d\'ensemble de tous les indicateurs de performance',
+      icon: Target,
+      color: 'blue',
+      bgColor: 'bg-blue-500/10',
+      borderColor: 'border-blue-500/30',
+      textColor: 'text-blue-400',
+    };
+  }, [subCategory]);
+
+  const Icon = config.icon;
+
+  // Statistiques spécifiques au filtre
+  const stats = useMemo(() => {
+    const kpis = filteredKPIs;
+    const avgValue = kpis.length > 0
+      ? kpis.reduce((sum, k) => {
+          const val = typeof k.value === 'number' ? k.value : parseFloat(String(k.value)) || 0;
+          return sum + val;
+        }, 0) / kpis.length
+      : 0;
+    
+    const avgTarget = kpis.length > 0
+      ? kpis.reduce((sum, k) => {
+          const tgt = typeof k.target === 'number' ? k.target : parseFloat(String(k.target || 0)) || 0;
+          return sum + tgt;
+        }, 0) / kpis.length
+      : 0;
+    
+    const avgPercentage = avgTarget > 0 ? (avgValue / avgTarget) * 100 : 0;
+    
+    const categories = kpis.reduce((acc: Record<string, number>, k) => {
+      const cat = k.category || 'autre';
+      acc[cat] = (acc[cat] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      total: kpis.length,
+      avgValue: avgValue.toFixed(1),
+      avgTarget: avgTarget.toFixed(1),
+      avgPercentage: avgPercentage.toFixed(1),
+      categories,
+      categoriesCount: Object.keys(categories).length,
+    };
+  }, [filteredKPIs]);
 
   return (
     <div className="space-y-6">
+      {/* Header contextuel */}
+      <div className={cn('p-6 rounded-xl border', config.bgColor, config.borderColor)}>
+        <div className="flex items-start gap-4">
+          <div className={cn('p-3 rounded-lg', config.bgColor)}>
+            <Icon className={cn('w-8 h-8', config.textColor)} />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold text-slate-200 mb-2">{config.title}</h2>
+            <p className="text-slate-400">{config.description}</p>
+          </div>
+          <Badge variant={subCategory === 'critical' ? 'urgent' : subCategory === 'warning' ? 'warning' : 'default'} className="text-lg px-4 py-2">
+            {stats.total} KPI{stats.total > 1 ? 's' : ''}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Statistiques clés */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <FluentCard>
+          <FluentCardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Total KPIs</p>
+                <p className="text-2xl font-bold text-slate-200">{stats.total}</p>
+              </div>
+              <Target className="w-8 h-8 text-blue-400" />
+            </div>
+          </FluentCardContent>
+        </FluentCard>
+
+        <FluentCard>
+          <FluentCardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Valeur moyenne</p>
+                <p className="text-2xl font-bold text-slate-200">{stats.avgValue}</p>
+              </div>
+              <Activity className="w-8 h-8 text-purple-400" />
+            </div>
+          </FluentCardContent>
+        </FluentCard>
+
+        <FluentCard>
+          <FluentCardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Objectif moyen</p>
+                <p className="text-2xl font-bold text-slate-200">{stats.avgTarget}</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-emerald-400" />
+            </div>
+          </FluentCardContent>
+        </FluentCard>
+
+        <FluentCard>
+          <FluentCardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Performance moyenne</p>
+                <p className="text-2xl font-bold text-slate-200">{stats.avgPercentage}%</p>
+              </div>
+              <BarChart3 className="w-8 h-8 text-amber-400" />
+            </div>
+          </FluentCardContent>
+        </FluentCard>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-200">KPIs Performance</h2>
           <p className="text-sm text-slate-400 mt-1">
-            {filteredKPIs.length} indicateur{filteredKPIs.length > 1 ? 's' : ''}
+            {filteredKPIs.length} indicateur{filteredKPIs.length > 1 ? 's' : ''} • {stats.categoriesCount} catégorie{stats.categoriesCount > 1 ? 's' : ''}
           </p>
         </div>
         <Badge variant="default" className="text-xs">
@@ -568,15 +732,15 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
                 data: [
                   {
                     name: 'Critique',
-                    value: allKpis.filter((k) => k.status === 'critical').length,
+                    value: Array.isArray(allKpis) ? allKpis.filter((k) => k.status === 'critical').length : 0,
                   },
                   {
                     name: 'Attention',
-                    value: allKpis.filter((k) => k.status === 'warning').length,
+                    value: Array.isArray(allKpis) ? allKpis.filter((k) => k.status === 'warning').length : 0,
                   },
                   {
                     name: 'OK',
-                    value: allKpis.filter((k) => k.status === 'success').length,
+                    value: Array.isArray(allKpis) ? allKpis.filter((k) => k.status === 'success').length : 0,
                   },
                 ],
                 type: 'pie',
@@ -633,14 +797,28 @@ const AlertsView = React.memo(function AlertsView({ subCategory }: { subCategory
   }
 
   const alerts = alertsData?.alerts || [];
-  const filteredAlerts =
-    subCategory === 'all'
-      ? alerts
-      : subCategory === 'critical'
-      ? alerts.filter((a) => a.severity === 'critical')
-      : subCategory === 'warning'
-      ? alerts.filter((a) => a.severity === 'warning')
-      : alerts.filter((a) => a.severity === 'info');
+  const filteredAlerts = useMemo(() => {
+    if (!Array.isArray(alerts)) return [];
+    
+    if (subCategory === 'all') {
+      return alerts;
+    }
+    
+    if (subCategory === 'critical') {
+      return alerts.filter((a) => a.severity === 'critical');
+    }
+    
+    if (subCategory === 'warning') {
+      return alerts.filter((a) => a.severity === 'warning');
+    }
+    
+    if (subCategory === 'resolved') {
+      return alerts.filter((a) => a.status === 'resolved');
+    }
+    
+    // Par défaut, retourner toutes les alertes
+    return alerts;
+  }, [alerts, subCategory]);
 
   const handleAlertClick = (alert: any) => {
     openDetailPanel('alert', alert.id, {
@@ -724,21 +902,15 @@ const TrendsView = React.memo(function TrendsView({ subCategory }: { subCategory
   const { openDetailPanel } = useAnalyticsCommandCenterStore();
   const { data: trendsData, isLoading } = useTrends();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
-      </div>
-    );
-  }
-
+  // Extraire les trends de manière inconditionnelle
   const trends = trendsData?.trends || [];
 
-  // Filtrer les trends selon la sous-catégorie
+  // Filtrer les trends selon la sous-catégorie - DOIT être appelé avant tout return
   const filteredTrends = useMemo(() => {
     if (subCategory === 'all') {
       return trends;
     }
+    if (!Array.isArray(trends)) return [];
     if (subCategory === 'positive') {
       return trends.filter((t: any) => t.trend === 'up');
     }
@@ -750,6 +922,15 @@ const TrendsView = React.memo(function TrendsView({ subCategory }: { subCategory
     }
     return trends;
   }, [trends, subCategory]);
+
+  // Maintenant on peut faire les returns conditionnels
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
 
   const handleTrendClick = (trend: any) => {
     openDetailPanel('kpi', trend.id, {
@@ -958,19 +1139,54 @@ const KPIsView = React.memo(function KPIsView({ subCategory }: { subCategory: st
 // ================================
 const ComparisonView = React.memo(function ComparisonView({ subCategory }: { subCategory: string }) {
   const { openModal } = useAnalyticsCommandCenterStore();
+  const { data: bureauPerfData } = useBureauxPerformance();
+
+  const handleOpenComparison = () => {
+    openModal('comparison', { 
+      selectedBureaux: bureauPerfData?.bureaux?.slice(0, 5).map(b => b.bureauCode) || []
+    });
+  };
 
   return (
     <div className="space-y-6">
-      <div className="text-center py-12">
-        <BarChart3 className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-slate-300 mb-2">Comparaisons</h3>
-        <p className="text-slate-500 mb-4">Fonctionnalité de comparaison en développement</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-200 mb-2">Comparaisons & Benchmarks</h2>
+          <p className="text-slate-400 text-sm">
+            Comparez les performances et métriques financières entre bureaux
+          </p>
+        </div>
         <button
-          onClick={() => openModal('comparison')}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          onClick={handleOpenComparison}
+          className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center gap-2"
         >
+          <BarChart3 className="w-4 h-4" />
           Ouvrir la comparaison
         </button>
+      </div>
+
+      <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+        <h3 className="text-lg font-semibold text-slate-200 mb-4">Fonctionnalités disponibles</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center gap-3 mb-2">
+              <Activity className="w-5 h-5 text-blue-400" />
+              <h4 className="font-semibold text-slate-200">Performance</h4>
+            </div>
+            <p className="text-sm text-slate-400">
+              Comparez les scores, taux de validation, conformité SLA et délais moyens entre bureaux
+            </p>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center gap-3 mb-2">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
+              <h4 className="font-semibold text-slate-200">Financier</h4>
+            </div>
+            <p className="text-sm text-slate-400">
+              Analysez les budgets, revenus, dépenses et marges de chaque bureau
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -980,8 +1196,15 @@ const ComparisonView = React.memo(function ComparisonView({ subCategory }: { sub
 // Bureaux View
 // ================================
 const BureauxView = React.memo(function BureauxView({ subCategory }: { subCategory: string }) {
-  const { openDetailPanel } = useAnalyticsCommandCenterStore();
+  const { openModal, openDetailPanel } = useAnalyticsCommandCenterStore();
   const { data: bureauxData, isLoading } = useBureauxPerformance();
+  
+  const bureauPerf = useMemo(() => {
+    if (!bureauxData?.bureaux) return [];
+    return bureauxData.bureaux;
+  }, [bureauxData]);
+
+  const financialPerf = useMemo(() => calculateFinancialPerformance(), []);
 
   if (isLoading) {
     return (
@@ -991,50 +1214,255 @@ const BureauxView = React.memo(function BureauxView({ subCategory }: { subCatego
     );
   }
 
-  const bureaux = bureauxData?.bureaux || [];
+  const handleBureauClick = (bureauCode: string) => {
+    const perf = bureauPerf.find((b: any) => b.bureauCode === bureauCode);
+    const financial = financialPerf.find((b: any) => b.bureauCode === bureauCode);
+    const bureauInfo = bureauxList.find((b: any) => b.code === bureauCode);
 
-  const handleBureauClick = (bureau: any) => {
-    openDetailPanel('kpi', bureau.id, {
-      name: bureau.name,
-      performance: bureau.performance,
-      kpis: bureau.kpis,
-      alerts: bureau.alerts,
+    if (perf) {
+      openDetailPanel('kpi', bureauCode, {
+        name: bureauInfo?.name || bureauCode,
+        code: bureauCode,
+        performance: perf,
+        financial: financial,
+        icon: bureauInfo?.icon,
+      });
+    }
+  };
+
+  const handleCompareBureaux = (bureauCode: string) => {
+    openModal('comparison', { 
+      selectedBureaux: [bureauCode]
     });
   };
 
+  // Filtrer selon la sous-catégorie
+  const filteredBureaux = useMemo(() => {
+    if (subCategory === 'all') return bureauPerf;
+    // Filtrer par code de bureau si nécessaire
+    return bureauPerf.filter((b: any) => {
+      const bureauInfo = bureauxList.find((bu: any) => bu.code === b.bureauCode);
+      if (subCategory === 'btp' && bureauInfo?.code?.includes('BTP')) return true;
+      if (subCategory === 'bj' && bureauInfo?.code?.includes('BJ')) return true;
+      if (subCategory === 'bs' && bureauInfo?.code?.includes('BS')) return true;
+      return false;
+    });
+  }, [bureauPerf, subCategory]);
+
   return (
     <div className="space-y-6">
+      {/* Header avec statistiques globales */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <Building2 className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-200">{filteredBureaux.length}</div>
+              <div className="text-xs text-slate-400">Bureaux actifs</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+              <Target className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-200">
+                {filteredBureaux.length > 0 
+                  ? Math.round(filteredBureaux.reduce((sum: number, b: any) => sum + b.score, 0) / filteredBureaux.length)
+                  : 0}
+              </div>
+              <div className="text-xs text-slate-400">Score moyen</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-200">
+                {Array.isArray(filteredBureaux) && filteredBureaux.length > 0
+                  ? filteredBureaux.reduce((sum: number, b: any) => sum + (b.totalDemands || 0), 0)
+                  : 0}
+              </div>
+              <div className="text-xs text-slate-400">Total demandes</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-200">
+                {filteredBureaux.length > 0
+                  ? Math.round(
+                      filteredBureaux.reduce((sum: number, b: any) => sum + b.validationRate, 0) / 
+                      filteredBureaux.length
+                    )
+                  : 0}%
+              </div>
+              <div className="text-xs text-slate-400">Taux validation moyen</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Grille des bureaux */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {bureaux.length === 0 ? (
+        {filteredBureaux.length === 0 ? (
           <div className="col-span-full text-center py-12">
             <Users className="w-16 h-16 text-slate-600 mx-auto mb-4" />
             <p className="text-slate-400">Aucun bureau disponible</p>
           </div>
         ) : (
-          bureaux.map((bureau) => (
-            <div
-              key={bureau.id}
-              onClick={() => handleBureauClick(bureau)}
-              className="p-5 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/50 transition-all cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <h4 className="text-base font-semibold text-slate-200">{bureau.name}</h4>
-                <Badge variant="default" className="text-xs">
-                  {bureau.performance}%
-                </Badge>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">KPIs</span>
-                  <span className="text-slate-300 font-medium">{bureau.kpis || 0}</span>
+          filteredBureaux.map((bureau: any) => {
+            const bureauInfo = bureauxList.find((b: any) => b.code === bureau.bureauCode);
+            const financial = financialPerf.find((b: any) => b.bureauCode === bureau.bureauCode);
+            
+            return (
+              <div
+                key={bureau.bureauCode}
+                className="bg-slate-800/50 rounded-xl p-5 border border-slate-700 hover:border-slate-600 transition-all hover:shadow-lg hover:shadow-slate-900/50"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg bg-slate-700/50 flex items-center justify-center text-2xl">
+                      {bureauInfo?.icon || '🏢'}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-slate-200 text-lg">{bureau.bureauCode}</h3>
+                      <p className="text-xs text-slate-400">{bureau.bureauName}</p>
+                    </div>
+                  </div>
+                  <Badge 
+                    className={cn(
+                      'text-xs font-semibold',
+                      bureau.score >= 80 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                      bureau.score >= 60 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                      'bg-red-500/20 text-red-400 border-red-500/30'
+                    )}
+                  >
+                    {bureau.score}
+                  </Badge>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Alertes</span>
-                  <span className="text-slate-300 font-medium">{bureau.alerts || 0}</span>
+
+                {/* Métriques principales */}
+                <div className="space-y-3 mb-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-900/50 rounded-lg p-2">
+                      <div className="text-xs text-slate-400 mb-1">Total</div>
+                      <div className="text-sm font-semibold text-slate-200">{bureau.totalDemands}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2">
+                      <div className="text-xs text-slate-400 mb-1">Validées</div>
+                      <div className="text-sm font-semibold text-emerald-400">{bureau.validated}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2">
+                      <div className="text-xs text-slate-400 mb-1">En attente</div>
+                      <div className="text-sm font-semibold text-amber-400">{bureau.pending}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2">
+                      <div className="text-xs text-slate-400 mb-1">Retard</div>
+                      <div className="text-sm font-semibold text-red-400">{bureau.overdue}</div>
+                    </div>
+                  </div>
+
+                  {/* Barre de progression validation */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-slate-400">Taux de validation</span>
+                      <span className="text-slate-300 font-medium">{bureau.validationRate}%</span>
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-2">
+                      <div 
+                        className={cn(
+                          'h-2 rounded-full transition-all',
+                          bureau.validationRate >= 80 ? 'bg-emerald-500' :
+                          bureau.validationRate >= 60 ? 'bg-amber-500' :
+                          'bg-red-500'
+                        )}
+                        style={{ width: `${bureau.validationRate}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Barre de progression SLA */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-slate-400">Conformité SLA</span>
+                      <span className="text-slate-300 font-medium">{bureau.slaCompliance}%</span>
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-2">
+                      <div 
+                        className={cn(
+                          'h-2 rounded-full transition-all',
+                          bureau.slaCompliance >= 90 ? 'bg-emerald-500' :
+                          bureau.slaCompliance >= 75 ? 'bg-amber-500' :
+                          'bg-red-500'
+                        )}
+                        style={{ width: `${bureau.slaCompliance}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Informations financières */}
+                {financial && (
+                  <div className="border-t border-slate-700 pt-3 mb-4">
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-slate-400">Budget utilisé</span>
+                      <span className="text-slate-300 font-medium">{financial.budgetUtilization}%</span>
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-1.5 mb-2">
+                      <div 
+                        className={cn(
+                          'h-1.5 rounded-full transition-all',
+                          financial.budgetUtilization >= 90 ? 'bg-red-500' :
+                          financial.budgetUtilization >= 75 ? 'bg-amber-500' :
+                          'bg-emerald-500'
+                        )}
+                        style={{ width: `${financial.budgetUtilization}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Résultat net</span>
+                      <span className={cn(
+                        'font-medium',
+                        financial.netResult >= 0 ? 'text-emerald-400' : 'text-red-400'
+                      )}>
+                        {financial.netResult >= 0 ? '+' : ''}{formatFCFA(financial.netResult)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-700">
+                  <button
+                    onClick={() => handleBureauClick(bureau.bureauCode)}
+                    className="flex-1 px-3 py-1.5 text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
+                  >
+                    Voir détails
+                  </button>
+                  <button
+                    onClick={() => handleCompareBureaux(bureau.bureauCode)}
+                    className="px-3 py-1.5 text-xs font-medium bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-lg transition-colors"
+                    title="Comparer avec d'autres bureaux"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

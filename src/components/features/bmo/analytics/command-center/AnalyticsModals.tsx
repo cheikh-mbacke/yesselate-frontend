@@ -5,7 +5,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
 import { AnalyticsStatsModal } from '../workspace/AnalyticsStatsModal';
 import { AnalyticsExportModal } from '../workspace/AnalyticsExportModal';
@@ -13,6 +13,11 @@ import { AnalyticsReportModal } from '../workspace/AnalyticsReportModal';
 import { AnalyticsAlertConfigModal } from '../workspace/AnalyticsAlertConfigModal';
 import { KPIDetailModal } from '../workspace/KPIDetailModal';
 import { AlertDetailModal } from '../workspace/AlertDetailModal';
+import { BureauComparisonModal } from '../workspace/BureauComparisonModal';
+import { CreateTaskModal } from '../workspace/CreateTaskModal';
+import { ScheduleMeetingModal } from '../workspace/ScheduleMeetingModal';
+import { AssignResponsibleModal } from '../workspace/AssignResponsibleModal';
+import { AnalyticsFiltersPanel } from './AnalyticsFiltersPanel';
 
 export function AnalyticsModals() {
   const { modal, closeModal } = useAnalyticsCommandCenterStore();
@@ -46,6 +51,7 @@ export function AnalyticsModals() {
         open={true}
         onClose={closeModal}
         kpiId={(modal.data?.kpiId as string) || null}
+        fallbackData={modal.data?.fallbackData as Record<string, unknown> | undefined}
       />
     );
   }
@@ -78,12 +84,50 @@ export function AnalyticsModals() {
 
   // Comparison Modal
   if (modal.type === 'comparison') {
-    return <ComparisonModal onClose={closeModal} data={modal.data} />;
+    return (
+      <BureauComparisonModal 
+        open={true} 
+        onClose={closeModal} 
+        data={modal.data as { selectedBureaux?: string[] } | undefined}
+      />
+    );
   }
 
   // Confirm Modal
   if (modal.type === 'confirm') {
     return <ConfirmModal onClose={closeModal} data={modal.data} />;
+  }
+
+  // Create Task Modal
+  if (modal.type === 'create-task') {
+    return <CreateTaskModal open={true} onClose={closeModal} data={modal.data} />;
+  }
+
+  // Schedule Meeting Modal
+  if (modal.type === 'schedule-meeting') {
+    return <ScheduleMeetingModal open={true} onClose={closeModal} data={modal.data} />;
+  }
+
+  // Assign Responsible Modal
+  if (modal.type === 'assign-responsible') {
+    return <AssignResponsibleModal open={true} onClose={closeModal} data={modal.data} />;
+  }
+
+  // Filters Modal
+  if (modal.type === 'filters') {
+    return (
+      <AnalyticsFiltersPanel
+        isOpen={true}
+        onClose={closeModal}
+        onApplyFilters={(filters) => {
+          // Appliquer les filtres via le store ou callback
+          if (modal.data?.onApplyFilters) {
+            (modal.data.onApplyFilters as (filters: Record<string, string[]>) => void)(filters);
+          }
+          closeModal();
+        }}
+      />
+    );
   }
 
   return null;
@@ -93,6 +137,14 @@ export function AnalyticsModals() {
 // Shortcuts Modal
 // ================================
 function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const shortcuts = [
     { key: '⌘K', label: 'Palette de commandes' },
     { key: '⌘B', label: 'Afficher/Masquer sidebar' },
@@ -151,9 +203,17 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
 // Help Modal
 // ================================
 function HelpModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[1001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -222,6 +282,14 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 // ================================
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const { kpiConfig, setKPIConfig } = useAnalyticsCommandCenterStore();
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
   const [settings, setSettings] = React.useState({
     autoRefresh: kpiConfig.autoRefresh,
     refreshInterval: kpiConfig.refreshInterval,
@@ -241,7 +309,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[1001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -349,56 +417,6 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ================================
-// Comparison Modal
-// ================================
-function ComparisonModal({
-  onClose,
-  data,
-}: {
-  onClose: () => void;
-  data?: Record<string, unknown>;
-}) {
-  const comparisonType = (data?.type as 'bureaux' | 'periods') || 'bureaux';
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700/50 bg-slate-900 p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold flex items-center gap-2 text-slate-100">
-            <span className="text-2xl">📊</span>
-            Comparaison
-            {comparisonType === 'bureaux' ? ' des Bureaux' : ' des Périodes'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="text-center py-12">
-          <div className="text-slate-400 mb-4">
-            Fonctionnalité de comparaison en développement
-          </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-800 text-slate-200 font-medium hover:bg-slate-700 transition-colors"
-          >
-            Fermer
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ================================
 // Confirm Modal
@@ -434,9 +452,17 @@ function ConfirmModal({
     onClose();
   };
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[1001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div

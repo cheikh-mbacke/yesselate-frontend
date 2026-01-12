@@ -56,12 +56,21 @@ export function useRealtimeAnalytics(options: UseRealtimeAnalyticsOptions = {}) 
   useEffect(() => {
     if (!autoConnect) return;
 
-    // Connexion au service
-    analyticsRealtimeService.connect(serviceUrl);
+    // Connexion au service avec gestion d'erreur
+    try {
+      analyticsRealtimeService.connect(serviceUrl);
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to connect to realtime service:', error);
+      }
+      return;
+    }
 
     // Abonnement aux événements
     const handleEvent = (event: RealtimeEvent) => {
-      console.log('📡 Realtime event received:', event);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📡 Realtime event received:', event);
+      }
 
       // Afficher les toasts si activé
       if (showToasts) {
@@ -84,10 +93,11 @@ export function useRealtimeAnalytics(options: UseRealtimeAnalyticsOptions = {}) 
     return () => {
       if (subscriptionIdRef.current) {
         analyticsRealtimeService.unsubscribe(subscriptionIdRef.current);
+        subscriptionIdRef.current = null;
       }
       analyticsRealtimeService.disconnect();
     };
-  }, [autoConnect, serviceUrl]); // Dependencies minimales pour éviter les reconnexions
+  }, [autoConnect, serviceUrl, eventTypes, filters, showToasts, autoInvalidateQueries, toast, queryClient]);
 
   return {
     isConnected: analyticsRealtimeService.getConnectionStatus(),
@@ -104,9 +114,9 @@ function handleToastNotification(
 ) {
   switch (event.type) {
     case 'alert_new': {
-      const severity = event.data.severity || 'warning';
-      const title = event.data.title || 'Nouvelle alerte';
-      const message = event.data.message || 'Une nouvelle alerte nécessite votre attention';
+      const severity = event.data?.severity || 'warning';
+      const title = event.data?.title || 'Nouvelle alerte';
+      const message = event.data?.message || 'Une nouvelle alerte nécessite votre attention';
       
       if (severity === 'critical' || severity === 'error') {
         toast.error(title, message);
@@ -120,13 +130,13 @@ function handleToastNotification(
 
     case 'alert_resolved':
       toast.success(
-        event.data.message || 'Alerte résolue',
+        event.data?.message || 'Alerte résolue',
         'L\'alerte a été traitée avec succès'
       );
       break;
 
     case 'export_ready': {
-      const fileName = event.data.fileName || 'export.xlsx';
+      const fileName = event.data?.fileName || 'export.xlsx';
       const format = fileName.split('.').pop()?.toUpperCase() || 'XLSX';
       toast.exportSuccess(format);
       break;
@@ -135,7 +145,7 @@ function handleToastNotification(
     case 'report_completed':
       toast.success(
         'Rapport généré',
-        event.data.message || 'Votre rapport est prêt à être consulté'
+        event.data?.message || 'Votre rapport est prêt à être consulté'
       );
       break;
 
@@ -143,7 +153,7 @@ function handleToastNotification(
       if (event.priority === 'high' || event.priority === 'critical') {
         toast.info(
           'KPI mis à jour',
-          event.data.message || 'Les indicateurs ont été actualisés'
+          event.data?.message || 'Les indicateurs ont été actualisés'
         );
       }
       break;
@@ -155,18 +165,18 @@ function handleToastNotification(
     case 'system_notification':
       if (event.priority === 'critical') {
         toast.error(
-          event.data.title || 'Notification système',
-          event.data.message
+          event.data?.title || 'Notification système',
+          event.data?.message || 'Notification système critique'
         );
       } else if (event.priority === 'high') {
         toast.warning(
-          event.data.title || 'Notification système',
-          event.data.message
+          event.data?.title || 'Notification système',
+          event.data?.message || 'Notification système importante'
         );
       } else {
         toast.info(
-          event.data.title || 'Notification système',
-          event.data.message
+          event.data?.title || 'Notification système',
+          event.data?.message || 'Notification système'
         );
       }
       break;
@@ -201,7 +211,7 @@ function handleQueryInvalidation(
       break;
 
     case 'user_action':
-      if (event.data.action === 'bureau_created' || event.data.action === 'bureau_updated') {
+      if (event.data?.action === 'bureau_created' || event.data?.action === 'bureau_updated') {
         queryClient.invalidateQueries({ queryKey: ['analytics', 'bureaux'] });
       }
       break;

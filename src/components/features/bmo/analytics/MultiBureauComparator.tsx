@@ -111,8 +111,8 @@ export function MultiBureauComparator({
               value={selectedMetric}
               onChange={(e) => setSelectedMetric(e.target.value as any)}
               className={cn(
-                'text-xs px-2 py-1 rounded',
-                darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                'text-xs px-2 py-1 rounded border',
+                'bg-slate-700 border-slate-600 text-white'
               )}
             >
               <option value="score">Score global</option>
@@ -142,7 +142,7 @@ export function MultiBureauComparator({
                 key={bureau.code}
                 className={cn(
                   'p-4 rounded-lg border-l-4 transition-all hover:shadow-md',
-                  darkMode ? 'bg-slate-700/30 border-slate-600' : 'bg-gray-50 border-gray-200',
+                  'bg-slate-700/30 border-slate-600',
                   rank <= 3 && 'border-l-orange-500'
                 )}
               >
@@ -153,7 +153,7 @@ export function MultiBureauComparator({
                       rank === 1 && 'bg-amber-500 text-white',
                       rank === 2 && 'bg-slate-500 text-white',
                       rank === 3 && 'bg-orange-600 text-white',
-                      rank > 3 && darkMode ? 'bg-slate-600 text-slate-300' : 'bg-gray-200 text-gray-600'
+                      rank > 3 && 'bg-slate-600 text-slate-300'
                     )}>
                       {rank}
                     </div>
@@ -199,7 +199,7 @@ export function MultiBureauComparator({
                     </div>
                     <div className={cn(
                       'h-2 rounded-full overflow-hidden',
-                      darkMode ? 'bg-slate-700' : 'bg-gray-200'
+                      'bg-slate-700'
                     )}>
                       <div
                         className={cn(
@@ -225,7 +225,7 @@ export function MultiBureauComparator({
                     </div>
                     <div className={cn(
                       'h-2 rounded-full overflow-hidden',
-                      darkMode ? 'bg-slate-700' : 'bg-gray-200'
+                      'bg-slate-700'
                     )}>
                       <div
                         className={cn(

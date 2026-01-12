@@ -204,17 +204,18 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
       open={open}
       onClose={onClose}
       title="🔔 Configuration des alertes"
-      size="xl"
+      maxWidth="4xl"
+      dark
     >
       <div className="space-y-6">
         {/* Header stats */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+        <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/50">
           <div className="flex items-center gap-4">
             <div className="p-3 rounded-xl bg-orange-500/10">
-              <Bell className="w-6 h-6 text-orange-500" />
+              <Bell className="w-6 h-6 text-orange-400" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <p className="text-sm font-medium text-slate-200">
                 {activeRulesCount} alerte(s) active(s)
               </p>
               <p className="text-xs text-slate-500">
@@ -234,10 +235,10 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
             <div
               key={rule.id}
               className={cn(
-                'p-4 rounded-xl border transition-all cursor-pointer',
+                'p-4 rounded-xl border transition-all cursor-pointer bg-slate-900/50 border-slate-700',
                 editingRule?.id === rule.id
-                  ? 'border-orange-500/50 bg-orange-500/5'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600',
+                  ? 'border-orange-500/50 bg-orange-500/10'
+                  : 'hover:border-slate-600 hover:bg-slate-800/50',
                 !rule.enabled && 'opacity-60'
               )}
               onClick={() => setEditingRule(editingRule?.id === rule.id ? null : rule)}
@@ -250,8 +251,8 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
                     className={cn(
                       'p-2 rounded-lg transition-colors',
                       rule.enabled
-                        ? 'bg-emerald-500/10 text-emerald-500'
-                        : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-slate-700 text-slate-500'
                     )}
                   >
                     {rule.enabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
@@ -295,26 +296,26 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
 
               {/* Détails édition */}
               {editingRule?.id === rule.id && (
-                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                <div className="mt-4 pt-4 border-t border-slate-700 space-y-4">
                   {/* Nom */}
                   <div>
-                    <label className="text-xs font-medium text-slate-500 mb-1 block">Nom de l'alerte</label>
+                    <label className="text-xs font-medium text-slate-400 mb-1 block">Nom de l'alerte</label>
                     <input
                       type="text"
                       value={editingRule.name}
                       onChange={(e) => updateEditingRule({ name: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-sm"
                     />
                   </div>
 
                   {/* Métrique et condition */}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-slate-500 mb-1 block">Métrique</label>
+                      <label className="text-xs font-medium text-slate-400 mb-1 block">Métrique</label>
                       <select
                         value={editingRule.metric}
                         onChange={(e) => updateEditingRule({ metric: e.target.value })}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-sm"
                       >
                         {METRIC_OPTIONS.map(m => (
                           <option key={m.id} value={m.id}>{m.label}</option>
@@ -322,11 +323,11 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-slate-500 mb-1 block">Condition</label>
+                      <label className="text-xs font-medium text-slate-400 mb-1 block">Condition</label>
                       <select
                         value={editingRule.condition}
                         onChange={(e) => updateEditingRule({ condition: e.target.value as AlertRule['condition'] })}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-sm"
                       >
                         {CONDITION_OPTIONS.map(c => (
                           <option key={c.id} value={c.id}>{c.label}</option>
@@ -334,12 +335,12 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-slate-500 mb-1 block">Seuil</label>
+                      <label className="text-xs font-medium text-slate-400 mb-1 block">Seuil</label>
                       <input
                         type="number"
                         value={editingRule.threshold}
                         onChange={(e) => updateEditingRule({ threshold: Number(e.target.value) })}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-sm"
                       />
                     </div>
                   </div>
@@ -357,7 +358,7 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
                             'px-3 py-1.5 rounded-lg border text-sm transition-colors',
                             editingRule.severity === s.id
                               ? `${s.color} text-white border-transparent`
-                              : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                              : 'border-slate-700 hover:bg-slate-800/50 text-slate-400'
                           )}
                         >
                           {s.label}
@@ -378,8 +379,8 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
                           className={cn(
                             'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
                             editingRule.channels.includes(c.id)
-                              ? 'border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-300'
-                              : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                              ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
+                              : 'border-slate-700 hover:bg-slate-800/50 text-slate-400'
                           )}
                         >
                           {c.icon}
@@ -416,7 +417,7 @@ export function AnalyticsAlertConfigModal({ open, onClose }: AnalyticsAlertConfi
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700">
           <FluentButton variant="secondary" onClick={onClose}>
             Annuler
           </FluentButton>

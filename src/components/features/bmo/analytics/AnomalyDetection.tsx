@@ -142,7 +142,7 @@ export function AnomalyDetection({ performanceData, enrichedData }: AnomalyDetec
   return (
     <Card className={cn(
       'border-red-500/30',
-      darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200'
+      'bg-slate-800/50 border-slate-700'
     )}>
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">

@@ -68,10 +68,24 @@ import {
 
 import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
 import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
+import { AnalyticsErrorBoundary } from '@/presentation/components/ErrorBoundary';
 import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
 import { useKpis, useAlerts, useReports } from '@/lib/api/hooks/useAnalytics';
-import { AnalyticsDashboardView } from '@/components/features/bmo/analytics/workspace/views/AnalyticsDashboardView';
-import { AnalyticsComparisonView } from '@/components/features/bmo/analytics/workspace/views/AnalyticsComparisonView';
+// Lazy load des vues pour améliorer les performances
+import { lazy, Suspense } from 'react';
+import { LoadingSkeleton } from '@/presentation/components/LazyLoad';
+
+const AnalyticsDashboardView = lazy(() => 
+  import('@/components/features/bmo/analytics/workspace/views/AnalyticsDashboardView').then(m => ({ default: m.AnalyticsDashboardView }))
+);
+
+const AlertsDashboardView = lazy(() => 
+  import('@/components/features/bmo/analytics/workspace/views/AlertsDashboardView').then(m => ({ default: m.AlertsDashboardView }))
+);
+
+const AnalyticsComparisonView = lazy(() => 
+  import('@/components/features/bmo/analytics/workspace/views/AnalyticsComparisonView').then(m => ({ default: m.AnalyticsComparisonView }))
+);
 
 // ================================
 // Types
@@ -573,7 +587,9 @@ function AnalyticsPageContent() {
 
       // NOUVEAU v3.0: Restaurer viewMode
       if (st.view && ['grid', 'dashboard', 'comparative'].includes(st.view)) {
-        console.log('🔍 [DEBUG] Setting viewMode from applyState:', st.view);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [DEBUG] Setting viewMode from applyState:', st.view);
+        }
         setViewMode(st.view as ViewMode);
       }
 
@@ -610,12 +626,17 @@ function AnalyticsPageContent() {
     const kc = url.searchParams.get('kc');
     const np = url.searchParams.get('np');
 
-    console.log('🔍 [DEBUG] URL params:', { cat, sub, view, fs, sc, kv, kc, np });
+    // Debug logs (can be removed in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 [DEBUG] URL params:', { cat, sub, view, fs, sc, kv, kc, np });
+    }
 
     const hasAnyParam = !!(cat || sub || view || fs || sc || kv || kc || np);
 
     if (hasAnyParam) {
-      console.log('🔍 [DEBUG] Applying state from URL:', { cat: cat || activeCategory, sub: sub || activeSubCategory, view: view || viewMode });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 [DEBUG] Applying state from URL:', { cat: cat || activeCategory, sub: sub || activeSubCategory, view: view || viewMode });
+      }
       applyState(
         {
           cat: cat || activeCategory,
@@ -889,6 +910,9 @@ function AnalyticsPageContent() {
       if (isMod && e.key === '1') {
         e.preventDefault();
         setViewMode('grid');
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'grid');
+        window.history.replaceState(null, '', url.toString());
         audit.log('VIEW_CHANGE_SHORTCUT', { view: 'grid' });
         return;
       }
@@ -896,6 +920,9 @@ function AnalyticsPageContent() {
       if (isMod && e.key === '2') {
         e.preventDefault();
         setViewMode('dashboard');
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'dashboard');
+        window.history.replaceState(null, '', url.toString());
         audit.log('VIEW_CHANGE_SHORTCUT', { view: 'dashboard' });
         return;
       }
@@ -903,6 +930,9 @@ function AnalyticsPageContent() {
       if (isMod && e.key === '3') {
         e.preventDefault();
         setViewMode('comparative');
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'comparative');
+        window.history.replaceState(null, '', url.toString());
         audit.log('VIEW_CHANGE_SHORTCUT', { view: 'comparative' });
         return;
       }
@@ -946,6 +976,14 @@ function AnalyticsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
+      {/* Mobile overlay for sidebar */}
+      {!sidebarCollapsed && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden"
+          onClick={() => toggleSidebar()}
+        />
+      )}
+
       <AnalyticsCommandSidebar
         activeCategory={activeCategory}
         collapsed={sidebarCollapsed}
@@ -961,7 +999,7 @@ function AnalyticsPageContent() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+        <header className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             {(navigationHistory.length > 0 || drillDownPath.length > 0) && (
               <Button
@@ -1066,7 +1104,7 @@ function AnalyticsPageContent() {
         )}
 
         {/* NOUVEAU v3.0: Barre sélecteur de vue + indicateur filtres */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800/60 bg-slate-900/80">
+        <div className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-slate-800/60 bg-slate-900/80">
           <div className="flex gap-1">
             {[
               { id: 'grid' as const, label: 'Grille', icon: Grid3x3, kbd: '⌘1' },
@@ -1078,6 +1116,10 @@ function AnalyticsPageContent() {
                 onClick={() => {
                   audit.log('VIEW_CHANGE', { from: viewMode, to: view.id });
                   setViewMode(view.id);
+                  // Force URL update
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('view', view.id);
+                  window.history.replaceState(null, '', url.toString());
                 }}
                 className={cn(
                   'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5',
@@ -1088,7 +1130,7 @@ function AnalyticsPageContent() {
                 title={`${view.label} (${view.kbd})`}
               >
                 <view.icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{view.label}</span>
+                <span className="hidden md:inline">{view.label}</span>
               </button>
             ))}
           </div>
@@ -1134,10 +1176,19 @@ function AnalyticsPageContent() {
 
         <main className="flex-1 overflow-hidden">
           <div ref={scrollRef} className="h-full overflow-y-auto">
-            <ClientErrorBoundary title="Erreur d'affichage du contenu Analytics" className="p-0">
+            <AnalyticsErrorBoundary
+              showDetails={process.env.NODE_ENV === 'development'}
+              onError={(error, errorInfo) => {
+                if (process.env.NODE_ENV === 'development') {
+                  console.error('Analytics Error:', error, errorInfo);
+                }
+              }}
+            >
               {/* NOUVEAU v3.0: Router selon viewMode */}
               {(() => {
-                console.log('🔍 [DEBUG] Rendering viewMode:', viewMode, 'category:', activeCategory, 'subCategory:', activeSubCategory);
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('🔍 [DEBUG] Rendering viewMode:', viewMode, 'category:', activeCategory, 'subCategory:', activeSubCategory);
+                }
                 if (viewMode === 'grid') {
                   return (
                     <AnalyticsContentRouter
@@ -1147,33 +1198,49 @@ function AnalyticsPageContent() {
                   );
                 }
                 if (viewMode === 'dashboard') {
-                  return <AnalyticsDashboardView />;
+                  // Si on est sur la catégorie alerts, utiliser AlertsDashboardView avec subCategory
+                  if (activeCategory === 'alerts') {
+                    return (
+                      <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
+                        <AlertsDashboardView subCategory={activeSubCategory} />
+                      </Suspense>
+                    );
+                  }
+                  return (
+                    <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
+                      <AnalyticsDashboardView />
+                    </Suspense>
+                  );
                 }
                 if (viewMode === 'comparative') {
-                  return <AnalyticsComparisonView category={activeCategory} subCategory={activeSubCategory} />;
+                  return (
+                    <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
+                      <AnalyticsComparisonView category={activeCategory} subCategory={activeSubCategory} />
+                    </Suspense>
+                  );
                 }
                 return null;
               })()}
-            </ClientErrorBoundary>
+            </AnalyticsErrorBoundary>
           </div>
         </main>
 
         {/* NOUVEAU v3.0: Footer avec stats dynamiques */}
-        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
-          <div className="flex items-center gap-4">
-            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
-            <span className="text-slate-700">•</span>
-            <span className="text-slate-600">
+        <footer className="flex items-center justify-between px-2 sm:px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <span className="text-slate-600 text-xs">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700 hidden sm:inline">•</span>
+            <span className="text-slate-600 text-xs">
               {dynamicStats.kpis} KPIs • {dynamicStats.alerts} alertes • {dynamicStats.reports} rapports
             </span>
             {isConnected && (
               <>
-                <span className="text-slate-700">•</span>
-                <span className="text-slate-600">🟢 Temps réel ({subscriptionsCount} abonnements)</span>
+                <span className="text-slate-700 hidden sm:inline">•</span>
+                <span className="text-slate-600 text-xs">🟢 Temps réel ({subscriptionsCount} abonnements)</span>
               </>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <div className="flex items-center gap-1.5">
               <div
                 className={cn(

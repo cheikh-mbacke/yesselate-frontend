@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { FluentButton } from '@/components/ui/fluent-button';
 import {
@@ -111,13 +111,34 @@ export function ComparisonPanel({ type }: ComparisonPanelProps) {
     }
   }, [type, selectedBureaux, selectedPeriods]);
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleRefresh = () => {
     setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1000);
+    
+    // Nettoyer le timer précédent si présent
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    
+    refreshTimerRef.current = setTimeout(() => {
+      setIsLoading(false);
+      refreshTimerRef.current = null;
+    }, 1000);
   };
+  
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleExport = () => {
-    console.log('Exporting comparison data...');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Exporting comparison data...');
+    }
   };
 
   const bestPerformer = useMemo(() => {
@@ -216,7 +237,7 @@ export function ComparisonPanel({ type }: ComparisonPanelProps) {
               BUREAUX_OPTIONS.map((bureau) => (
                 <label
                   key={bureau.id}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -237,7 +258,7 @@ export function ComparisonPanel({ type }: ComparisonPanelProps) {
               PERIOD_OPTIONS.map((period) => (
                 <label
                   key={period.id}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -340,7 +361,7 @@ export function ComparisonPanel({ type }: ComparisonPanelProps) {
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <thead className="bg-slate-800/50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">
                     {type === 'bureaux' ? 'Bureau' : 'Période'}
@@ -357,7 +378,7 @@ export function ComparisonPanel({ type }: ComparisonPanelProps) {
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {comparisonData.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={item.id} className="hover:bg-slate-800/50">
                     <td className="px-4 py-3">
                       <p className="font-semibold">{item.name}</p>
                       {type === 'bureaux' && (

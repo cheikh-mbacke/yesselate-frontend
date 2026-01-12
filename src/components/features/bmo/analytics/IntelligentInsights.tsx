@@ -206,7 +206,7 @@ export function IntelligentInsights({
   return (
     <Card className={cn(
       'border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-pink-500/5',
-      darkMode ? 'border-slate-700' : 'border-gray-200'
+      'border-slate-700'
     )}>
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">

@@ -98,7 +98,7 @@ export function PerformanceScore({ yearlyTotals, enrichedData }: PerformanceScor
   return (
     <Card className={cn(
       'border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-amber-500/5',
-      darkMode ? 'border-slate-700' : 'border-gray-200'
+      'border-slate-700'
     )}>
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">
@@ -159,7 +159,7 @@ export function PerformanceScore({ yearlyTotals, enrichedData }: PerformanceScor
         {/* Benchmarking */}
         <div className={cn(
           'p-3 rounded-lg mt-4',
-          darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
+          'bg-slate-700/30'
         )}>
           <p className="text-xs font-semibold mb-2">💡 Benchmarking</p>
           <div className="space-y-1 text-xs text-slate-400">

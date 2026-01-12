@@ -166,7 +166,7 @@ export function SavedViews({
         <Card
           className={cn(
             'absolute top-full right-0 mt-2 w-[420px] z-50 shadow-xl',
-            darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+            'bg-slate-800 border-slate-700'
           )}
         >
           <CardHeader className="pb-3">
@@ -184,7 +184,7 @@ export function SavedViews({
                 aria-label="Nom de la vue à sauvegarder"
                 className={cn(
                   'flex-1 px-3 py-2 rounded text-xs border',
-                  darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'
+                  'bg-slate-700 border-slate-600 text-white placeholder:text-slate-400'
                 )}
               />
               <Button size="sm" onClick={saveCurrent} disabled={!canSave} className="gap-2">
@@ -194,7 +194,7 @@ export function SavedViews({
             </div>
 
             {views.length === 0 ? (
-              <div className={cn('p-3 rounded border text-xs', darkMode ? 'border-slate-700 text-slate-300' : 'border-gray-200 text-slate-600')}>
+              <div className={cn('p-3 rounded border text-xs', 'border-slate-700 text-slate-300')}>
                 Aucune vue enregistrée. Sauvegardez une configuration de filtres/onglets pour la rappeler en 1 clic.
               </div>
             ) : (
@@ -204,7 +204,7 @@ export function SavedViews({
                     key={v.id}
                     className={cn(
                       'p-3 rounded border flex items-start justify-between gap-3',
-                      darkMode ? 'border-slate-700 hover:bg-slate-700/30' : 'border-gray-200 hover:bg-gray-50'
+                      'border-slate-700 hover:bg-slate-700/30'
                     )}
                   >
                     <div className="min-w-0">

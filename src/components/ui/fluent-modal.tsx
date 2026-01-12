@@ -11,7 +11,7 @@ type Props = {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
   noPadding?: boolean;
   dark?: boolean; // Force dark theme (ERP)
 };
@@ -25,6 +25,9 @@ const maxWidthClasses: Record<string, string> = {
   '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
   '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
+  '7xl': 'max-w-7xl',
+  full: 'max-w-[95vw]',
 };
 
 export function FluentModal({ open, title, onClose, children, className, maxWidth = '3xl', noPadding = false, dark = false }: Props) {
@@ -55,7 +58,7 @@ export function FluentModal({ open, title, onClose, children, className, maxWidt
         onClick={onClose}
       />
       {/* panel */}
-      <div className="absolute inset-0 flex items-center justify-center p-4">
+      <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-4">
         <div
           className={cn(
             "w-full rounded-2xl backdrop-blur-xl shadow-xl",
@@ -96,8 +99,8 @@ export function FluentModal({ open, title, onClose, children, className, maxWidt
           </div>
 
           <div className={cn(
-            "overflow-auto max-h-[calc(85vh-56px)]",
-            !noPadding && "p-4",
+            "overflow-auto max-h-[calc(90vh-56px)]",
+            !noPadding && "p-6",
             noPadding && "!p-0 !overflow-visible"
           )}>
             {children}

@@ -30,26 +30,176 @@ export async function GET(
       return history;
     };
 
-    const kpi = {
-      id: kpiId,
-      name: 'Taux de validation',
+    // Mapper les IDs de trends vers des IDs de KPIs équivalents
+    const trendToKpiMapping: Record<string, string> = {
+      'trend-sla-compliance': 'kpi-sla-compliance',
+      'trend-validation-rate': 'kpi-validation-rate',
+      'trend-avg-delay': 'kpi-avg-delay',
+      'trend-pending': 'kpi-pending',
+      'trend-pending-count': 'kpi-pending',
+      'trend-productivity': 'kpi-productivity',
+      'trend-quality-score': 'kpi-quality-score',
+      'trend-demand-count': 'kpi-1', // Nombre de demandes -> Taux de validation
+    };
+
+    // Normaliser l'ID (convertir trend-* en kpi-* si nécessaire)
+    const normalizedKpiId = trendToKpiMapping[kpiId] || kpiId.replace(/^trend-/, 'kpi-');
+
+    // Générer des données dynamiques basées sur l'ID du KPI
+    const kpiConfigs: Record<string, any> = {
+      'kpi-1': {
+        name: 'Taux de validation',
+        category: 'performance',
+        value: 85,
+        target: 90,
+        unit: '%',
+        description: 'Pourcentage de demandes validées par rapport au total traité',
+      },
+      'kpi-2': {
+        name: 'Délai moyen',
+        category: 'operations',
+        value: 2.8,
+        target: 3,
+        unit: 'jours',
+        description: 'Temps moyen de traitement des demandes',
+      },
+      'kpi-3': {
+        name: 'Conformité SLA',
+        category: 'quality',
+        value: 92,
+        target: 90,
+        unit: '%',
+        description: 'Respect des délais contractuels (SLA)',
+      },
+      'kpi-4': {
+        name: 'Demandes en attente',
+        category: 'operations',
+        value: 8,
+        target: 10,
+        unit: '',
+        description: 'Nombre de demandes nécessitant une action',
+      },
+      'kpi-5': {
+        name: 'Productivité',
+        category: 'performance',
+        value: 78,
+        target: 75,
+        unit: '%',
+        description: 'Ratio validation vs total des demandes',
+      },
+      'kpi-6': {
+        name: 'Score qualité',
+        category: 'quality',
+        value: 82,
+        target: 80,
+        unit: '/100',
+        description: 'Score global de qualité composite',
+      },
+      'kpi-7': {
+        name: 'Budget consommé',
+        category: 'financier',
+        value: 75,
+        target: 80,
+        unit: '%',
+        description: 'Pourcentage du budget utilisé',
+      },
+      'kpi-8': {
+        name: 'Coût moyen/demande',
+        category: 'financier',
+        value: 45,
+        target: 50,
+        unit: 'M FCFA',
+        description: 'Coût unitaire moyen par demande',
+      },
+      'kpi-9': {
+        name: 'Taux de satisfaction',
+        category: 'quality',
+        value: 88,
+        target: 85,
+        unit: '%',
+        description: 'Satisfaction globale des utilisateurs',
+      },
+      // Support pour les IDs avec tirets (format alternatif)
+      'kpi-validation-rate': {
+        name: 'Taux de validation',
+        category: 'performance',
+        value: 85,
+        target: 90,
+        unit: '%',
+        description: 'Pourcentage de demandes validées par rapport au total traité',
+      },
+      'kpi-avg-delay': {
+        name: 'Délai moyen',
+        category: 'operations',
+        value: 2.8,
+        target: 3,
+        unit: 'jours',
+        description: 'Temps moyen de traitement des demandes',
+      },
+      'kpi-sla-compliance': {
+        name: 'Conformité SLA',
+        category: 'quality',
+        value: 92,
+        target: 90,
+        unit: '%',
+        description: 'Respect des délais contractuels (SLA)',
+      },
+      'kpi-pending': {
+        name: 'Demandes en attente',
+        category: 'operations',
+        value: 8,
+        target: 10,
+        unit: '',
+        description: 'Nombre de demandes nécessitant une action',
+      },
+      'kpi-productivity': {
+        name: 'Productivité',
+        category: 'performance',
+        value: 78,
+        target: 75,
+        unit: '%',
+        description: 'Ratio validation vs total des demandes',
+      },
+      'kpi-quality-score': {
+        name: 'Score qualité',
+        category: 'quality',
+        value: 82,
+        target: 80,
+        unit: '/100',
+        description: 'Score global de qualité composite',
+      },
+    };
+
+    // Trouver la config ou utiliser des valeurs par défaut
+    const config = kpiConfigs[normalizedKpiId] || kpiConfigs[kpiId] || {
+      name: 'KPI',
       category: 'performance',
-      value: 85,
+      value: 75,
+      target: 80,
       unit: '%',
-      target: 90,
-      current: 85,
-      previous: 80,
-      status: 'warning',
-      trend: 'up',
-      changePercent: 6.25,
+      description: 'Indicateur de performance',
+    };
+
+    const kpi = {
+      id: kpiId, // Garder l'ID original pour la cohérence
+      name: config.name,
+      category: config.category,
+      value: config.value,
+      unit: config.unit || (normalizedKpiId.includes('rate') || normalizedKpiId.includes('compliance') || normalizedKpiId.includes('productivity') || normalizedKpiId.includes('score') ? '%' : normalizedKpiId.includes('delay') ? 'jours' : ''),
+      target: config.target,
+      current: config.value,
+      previous: config.value - (Math.random() * 10 - 5),
+      status: config.value >= config.target ? 'success' : config.value >= config.target * 0.8 ? 'warning' : 'critical',
+      trend: config.value >= config.target ? 'up' : 'stable',
+      changePercent: Math.round(((config.value - (config.value - 5)) / (config.value - 5)) * 100),
       history: generateHistory(),
       metadata: {
-        description: 'Pourcentage de demandes validées par rapport au total traité',
-        formula: '(Validées / Total) * 100',
+        description: config.description,
+        formula: normalizedKpiId.includes('validation') ? '(Validées / Total) * 100' : normalizedKpiId.includes('delay') ? 'Moyenne des délais' : 'Calcul composite',
         threshold: {
-          success: 90,
-          warning: 80,
-          critical: 70,
+          success: config.target,
+          warning: config.target * 0.8,
+          critical: config.target * 0.7,
         },
         updateFrequency: 'hourly',
         dataSource: 'system',
@@ -68,7 +218,9 @@ export async function GET(
     };
 
     return NextResponse.json({
-      ...kpi,
+      kpi: {
+        ...kpi,
+      },
       generatedAt: new Date().toISOString(),
     }, {
       status: 200,

@@ -31,8 +31,11 @@ import {
   Users,
   Zap,
   Link2,
+  Building2,
+  DollarSign,
 } from 'lucide-react';
 import { useAnalyticsCommandCenterStore } from '@/lib/stores/analyticsCommandCenterStore';
+import { formatFCFA } from '@/lib/utils/format-currency';
 
 export function AnalyticsDetailPanel() {
   const { detailPanel, closeDetailPanel, openModal } = useAnalyticsCommandCenterStore();
@@ -43,14 +46,39 @@ export function AnalyticsDetailPanel() {
   const type = detailPanel.type;
 
   const handleOpenFullModal = () => {
-    if (type === 'kpi') {
-      openModal('kpi-detail', { kpiId: detailPanel.entityId });
+    // Vérifier si c'est un bureau (a un code et performance)
+    const isBureau = data.code && data.performance;
+    
+    if (isBureau) {
+      // Ouvrir le modal de comparaison avec ce bureau
+      openModal('comparison', { selectedBureaux: [data.code as string] });
+      closeDetailPanel();
+    } else if (type === 'kpi') {
+      // Vérifier que l'ID est un vrai ID de KPI (commence par 'kpi-' ou contient un tiret)
+      const entityId = detailPanel.entityId;
+      // Passer aussi les données du detailPanel pour le fallback
+      if (entityId) {
+        // Passer les données avant de fermer le panel
+        const fallbackDataCopy = { ...data };
+        openModal('kpi-detail', { 
+          kpiId: entityId,
+          fallbackData: fallbackDataCopy // Passer une copie des données en fallback
+        });
+        // Fermer le panel après avoir ouvert le modal
+        setTimeout(() => closeDetailPanel(), 100);
+      } else {
+        // Si pas d'ID, ne rien faire
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Cannot open KPI modal: no KPI ID provided');
+        }
+      }
     } else if (type === 'alert') {
       openModal('alert-detail', { alertId: detailPanel.entityId });
+      closeDetailPanel();
     } else if (type === 'report') {
       openModal('report', { reportId: detailPanel.entityId });
+      closeDetailPanel();
     }
-    closeDetailPanel();
   };
 
   return (
@@ -62,29 +90,44 @@ export function AnalyticsDetailPanel() {
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col shadow-2xl">
+      <div className="fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
           <div className="flex items-center gap-2">
-            {type === 'kpi' && <Target className="h-4 w-4 text-blue-400" />}
+            {type === 'kpi' && (detailPanel.data?.code ? <Building2 className="h-4 w-4 text-blue-400" /> : <Target className="h-4 w-4 text-blue-400" />)}
             {type === 'alert' && <AlertTriangle className="h-4 w-4 text-amber-400" />}
             {type === 'report' && <FileText className="h-4 w-4 text-purple-400" />}
             <h3 className="text-sm font-medium text-slate-200">
-              {type === 'kpi' && 'Détail KPI'}
+              {type === 'kpi' && (detailPanel.data?.code ? 'Détail Bureau' : 'Détail KPI')}
               {type === 'alert' && 'Détail Alerte'}
               {type === 'report' && 'Détail Rapport'}
             </h3>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleOpenFullModal}
-              className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
-            >
-              <ExternalLink className="h-3 w-3 mr-1" />
-              Voir plus
-            </Button>
+            {type === 'kpi' && data.code && data.performance ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  openModal('comparison', { selectedBureaux: [data.code as string] });
+                  closeDetailPanel();
+                }}
+                className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Comparer
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenFullModal}
+                className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Voir plus
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -98,7 +141,7 @@ export function AnalyticsDetailPanel() {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {type === 'kpi' && <KPIDetailContent data={data} />}
+          {type === 'kpi' && (data.code && data.performance ? <BureauDetailContent data={data} /> : <KPIDetailContent data={data} />)}
           {type === 'alert' && <AlertDetailContent data={data} />}
           {type === 'report' && <ReportDetailContent data={data} />}
         </div>
@@ -111,7 +154,7 @@ export function AnalyticsDetailPanel() {
             size="sm"
           >
             <ExternalLink className="h-4 w-4 mr-2" />
-            Ouvrir en modal complète
+            {type === 'kpi' && data.code && data.performance ? 'Comparer ce bureau' : 'Ouvrir en modal complète'}
           </Button>
           <Button
             variant="outline"
@@ -124,6 +167,153 @@ export function AnalyticsDetailPanel() {
         </div>
       </div>
     </>
+  );
+}
+
+// ================================
+// Bureau Detail Content
+// ================================
+function BureauDetailContent({ data }: { data: Record<string, unknown> }) {
+  const perf = data.performance as any;
+  const financial = data.financial as any;
+  const icon = data.icon as string;
+  const code = data.code as string;
+  const name = data.name as string;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-12 h-12 rounded-lg bg-slate-700/50 flex items-center justify-center text-2xl">
+          {icon || '🏢'}
+        </div>
+        <div>
+          <h4 className="text-lg font-semibold text-slate-200">{code}</h4>
+          <p className="text-sm text-slate-400">{name}</p>
+        </div>
+      </div>
+
+      {/* Score */}
+      {perf?.score !== undefined && (
+        <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-slate-400">Score de performance</span>
+            <Badge 
+              className={cn(
+                'text-sm font-semibold',
+                perf.score >= 80 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                perf.score >= 60 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                'bg-red-500/20 text-red-400 border-red-500/30'
+              )}
+            >
+              {perf.score}
+            </Badge>
+          </div>
+        </div>
+      )}
+
+      {/* Métriques de performance */}
+      {perf && (
+        <div className="space-y-3">
+          <h5 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2">
+            <Activity className="h-3.5 w-3.5" />
+            Performance
+          </h5>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-slate-800/30 rounded-lg p-2">
+              <div className="text-xs text-slate-500 mb-1">Total demandes</div>
+              <div className="text-sm font-semibold text-slate-200">{perf.totalDemands || 0}</div>
+            </div>
+            <div className="bg-slate-800/30 rounded-lg p-2">
+              <div className="text-xs text-slate-500 mb-1">Validées</div>
+              <div className="text-sm font-semibold text-emerald-400">{perf.validated || 0}</div>
+            </div>
+            <div className="bg-slate-800/30 rounded-lg p-2">
+              <div className="text-xs text-slate-500 mb-1">En attente</div>
+              <div className="text-sm font-semibold text-amber-400">{perf.pending || 0}</div>
+            </div>
+            <div className="bg-slate-800/30 rounded-lg p-2">
+              <div className="text-xs text-slate-500 mb-1">Retard</div>
+              <div className="text-sm font-semibold text-red-400">{perf.overdue || 0}</div>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-slate-400">Taux de validation</span>
+                <span className="text-slate-300 font-medium">{perf.validationRate || 0}%</span>
+              </div>
+              <div className="w-full bg-slate-700/50 rounded-full h-2">
+                <div 
+                  className={cn(
+                    'h-2 rounded-full transition-all',
+                    (perf.validationRate || 0) >= 80 ? 'bg-emerald-500' :
+                    (perf.validationRate || 0) >= 60 ? 'bg-amber-500' :
+                    'bg-red-500'
+                  )}
+                  style={{ width: `${perf.validationRate || 0}%` }}
+                />
+              </div>
+            </div>
+            
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-slate-400">Conformité SLA</span>
+                <span className="text-slate-300 font-medium">{perf.slaCompliance || 0}%</span>
+              </div>
+              <div className="w-full bg-slate-700/50 rounded-full h-2">
+                <div 
+                  className={cn(
+                    'h-2 rounded-full transition-all',
+                    (perf.slaCompliance || 0) >= 90 ? 'bg-emerald-500' :
+                    (perf.slaCompliance || 0) >= 75 ? 'bg-amber-500' :
+                    'bg-red-500'
+                  )}
+                  style={{ width: `${perf.slaCompliance || 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Métriques financières */}
+      {financial && (
+        <div className="space-y-3 pt-3 border-t border-slate-700/50">
+          <h5 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2">
+            <DollarSign className="h-3.5 w-3.5" />
+            Financier
+          </h5>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Budget utilisé</span>
+              <span className="text-slate-300 font-medium">{financial.budgetUtilization || 0}%</span>
+            </div>
+            <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+              <div 
+                className={cn(
+                  'h-1.5 rounded-full transition-all',
+                  (financial.budgetUtilization || 0) >= 90 ? 'bg-red-500' :
+                  (financial.budgetUtilization || 0) >= 75 ? 'bg-amber-500' :
+                  'bg-emerald-500'
+                )}
+                style={{ width: `${financial.budgetUtilization || 0}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Résultat net</span>
+              <span className={cn(
+                'font-medium',
+                (financial.netResult || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
+              )}>
+                {financial.netResult >= 0 ? '+' : ''}{formatFCFA(financial.netResult || 0)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

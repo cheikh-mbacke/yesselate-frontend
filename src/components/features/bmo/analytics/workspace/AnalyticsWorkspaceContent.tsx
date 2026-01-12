@@ -24,12 +24,12 @@ export function AnalyticsWorkspaceContent() {
   // ================================
   if (!activeTab) {
     return (
-      <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-8 dark:border-slate-800 dark:bg-[#1f1f1f]/70 flex flex-col items-center justify-center text-center min-h-[500px]">
+      <div className="rounded-2xl border border-slate-800 bg-[#1f1f1f]/70 p-8 flex flex-col items-center justify-center text-center min-h-[500px]">
         <BarChart3 className="w-20 h-20 text-orange-400 mb-6" />
-        <h2 className="text-3xl font-bold text-slate-700 dark:text-slate-200 mb-3">
+        <h2 className="text-3xl font-bold text-slate-200 mb-3">
           Analytics & Insights
         </h2>
-        <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-2xl text-lg">
+        <p className="text-slate-400 mb-8 max-w-2xl text-lg">
           Analysez les performances, identifiez les tendances et prenez des décisions éclairées
           avec des indicateurs en temps réel et des rapports détaillés.
         </p>
@@ -43,15 +43,15 @@ export function AnalyticsWorkspaceContent() {
               icon: '📊',
               data: { view: 'overview' }
             })}
-            className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-700 hover:border-orange-500/50 
-                     bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20
+            className="p-6 rounded-2xl border-2 border-slate-700 hover:border-orange-500/50 
+                     bg-gradient-to-br from-orange-950/20 to-amber-950/20
                      transition-all hover:scale-105 group"
           >
             <div className="text-4xl mb-3">📊</div>
-            <h3 className="text-lg font-semibold mb-2 text-slate-700 dark:text-slate-200">
+            <h3 className="text-lg font-semibold mb-2 text-slate-200">
               Vue d'ensemble
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-slate-400">
               KPIs globaux, tendances et alertes
             </p>
           </button>
@@ -64,15 +64,15 @@ export function AnalyticsWorkspaceContent() {
               icon: '⚡',
               data: { queue: 'performance' }
             })}
-            className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 
-                     bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20
+            className="p-6 rounded-2xl border-2 border-slate-700 hover:border-emerald-500/50 
+                     bg-gradient-to-br from-emerald-950/20 to-green-950/20
                      transition-all hover:scale-105 group"
           >
             <div className="text-4xl mb-3">⚡</div>
-            <h3 className="text-lg font-semibold mb-2 text-slate-700 dark:text-slate-200">
+            <h3 className="text-lg font-semibold mb-2 text-slate-200">
               Performance
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-slate-400">
               Indicateurs de performance opérationnelle
             </p>
           </button>
@@ -85,15 +85,15 @@ export function AnalyticsWorkspaceContent() {
               icon: '💰',
               data: { queue: 'financial' }
             })}
-            className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-700 hover:border-amber-500/50 
-                     bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20
+            className="p-6 rounded-2xl border-2 border-slate-700 hover:border-amber-500/50 
+                     bg-gradient-to-br from-amber-950/20 to-yellow-950/20
                      transition-all hover:scale-105 group"
           >
             <div className="text-4xl mb-3">💰</div>
-            <h3 className="text-lg font-semibold mb-2 text-slate-700 dark:text-slate-200">
+            <h3 className="text-lg font-semibold mb-2 text-slate-200">
               Financier
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-slate-400">
               Budget, dépenses et rentabilité
             </p>
           </button>
@@ -141,7 +141,7 @@ export function AnalyticsWorkspaceContent() {
         </div>
         
         <p className="text-xs text-slate-400 mt-10">
-          💡 Astuce: Utilisez <kbd className="px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">Ctrl+K</kbd> pour ouvrir la palette de commandes
+          💡 Astuce: Utilisez <kbd className="px-2 py-1 rounded bg-slate-700 text-xs font-mono text-slate-200">Ctrl+K</kbd> pour ouvrir la palette de commandes
         </p>
       </div>
     );

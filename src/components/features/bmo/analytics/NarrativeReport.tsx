@@ -157,7 +157,7 @@ export function NarrativeReport({
               key={idx}
               className={cn(
                 'p-4 rounded-lg border-l-4',
-                darkMode ? 'bg-slate-700/30 border-slate-600' : 'bg-gray-50 border-gray-200'
+                'bg-slate-700/30 border-slate-600'
               )}
             >
               <h3 className="font-bold text-sm mb-2 text-orange-400">{section.title}</h3>
@@ -171,7 +171,7 @@ export function NarrativeReport({
         {/* Métadonnées */}
         <div className={cn(
           'mt-4 p-3 rounded-lg text-xs',
-          darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
+          'bg-slate-700/30'
         )}>
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Généré le:</span>

@@ -227,12 +227,13 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
       open={open}
       onClose={onClose}
       title="📊 Génération de rapport"
-      size="xl"
+      maxWidth="5xl"
+      dark
     >
       <div className="space-y-6">
         {/* Type de rapport */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Type de rapport
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -242,16 +243,16 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
                 type="button"
                 onClick={() => applyReportTypePreset(type.id)}
                 className={cn(
-                  'p-3 rounded-xl border-2 transition-all text-left',
+                  'p-3 rounded-xl border-2 transition-all text-left bg-slate-900/50 border-slate-700',
                   config.type === type.id
-                    ? 'border-orange-500/50 bg-orange-500/5'
-                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                    ? 'border-orange-500/50 bg-orange-500/10'
+                    : 'hover:border-slate-600 hover:bg-slate-800/50'
                 )}
               >
                 <div className="flex items-center gap-2 mb-1 text-orange-500">
                   {type.icon}
                 </div>
-                <p className="font-medium text-xs">{type.label}</p>
+                <p className="font-medium text-xs text-slate-200">{type.label}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">{type.description}</p>
               </button>
             ))}
@@ -261,19 +262,19 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
         {/* Titre et période */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2 block">
+            <label className="text-sm font-medium text-slate-200 mb-2 block">
               Titre du rapport
             </label>
             <input
               type="text"
               value={config.title}
               onChange={(e) => setConfig(prev => ({ ...prev, title: e.target.value }))}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 placeholder:text-slate-500"
               placeholder="Titre du rapport..."
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2 block">
+            <label className="text-sm font-medium text-slate-200 mb-2 block">
               Période
             </label>
             <div className="flex flex-wrap gap-2">
@@ -283,10 +284,10 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
                   type="button"
                   onClick={() => setConfig(prev => ({ ...prev, period: period.id }))}
                   className={cn(
-                    'px-3 py-2 rounded-lg border text-sm transition-colors',
+                    'px-3 py-2 rounded-lg border text-sm transition-colors bg-slate-900/50 border-slate-700',
                     config.period === period.id
-                      ? 'border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-300'
-                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
+                      : 'hover:bg-slate-800/50 text-slate-400'
                   )}
                 >
                   {period.label}
@@ -298,7 +299,7 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
 
         {/* Sections à inclure */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Sections à inclure
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -308,10 +309,10 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
                 type="button"
                 onClick={() => toggleSection(section.id)}
                 className={cn(
-                  'flex items-center gap-2 p-3 rounded-lg border text-left transition-colors',
+                  'flex items-center gap-2 p-3 rounded-lg border text-left transition-colors bg-slate-900/50 border-slate-700',
                   section.included
-                    ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                    : 'hover:bg-slate-800/50 text-slate-400'
                 )}
               >
                 <div className={cn(
@@ -321,7 +322,10 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
                   {section.icon}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium truncate">{section.name}</p>
+                  <p className={cn(
+                    'text-xs font-medium truncate',
+                    section.included ? 'text-emerald-300' : 'text-slate-400'
+                  )}>{section.name}</p>
                 </div>
               </button>
             ))}
@@ -330,50 +334,50 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
 
         {/* Options avancées */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <h4 className="text-sm font-medium mb-3">Options de contenu</h4>
+          <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50">
+            <h4 className="text-sm font-medium mb-3 text-slate-200">Options de contenu</h4>
             <div className="space-y-2">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeExecutiveSummary}
                   onChange={(e) => setConfig(prev => ({ ...prev, includeExecutiveSummary: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Résumé exécutif</span>
+                <span className="text-sm text-slate-300">Résumé exécutif</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeRecommendations}
                   onChange={(e) => setConfig(prev => ({ ...prev, includeRecommendations: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Recommandations</span>
+                <span className="text-sm text-slate-300">Recommandations</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeCharts}
                   onChange={(e) => setConfig(prev => ({ ...prev, includeCharts: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Inclure graphiques</span>
+                <span className="text-sm text-slate-300">Inclure graphiques</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.compareWithPrevious}
                   onChange={(e) => setConfig(prev => ({ ...prev, compareWithPrevious: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Comparer période précédente</span>
+                <span className="text-sm text-slate-300">Comparer période précédente</span>
               </label>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <h4 className="text-sm font-medium mb-3">Filtrer par bureau</h4>
+          <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50">
+            <h4 className="text-sm font-medium mb-3 text-slate-200">Filtrer par bureau</h4>
             <div className="space-y-2 max-h-32 overflow-y-auto">
               {MOCK_BUREAUX.map((bureau) => (
                 <label key={bureau.code} className="flex items-center gap-3 cursor-pointer">
@@ -381,9 +385,9 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
                     type="checkbox"
                     checked={config.bureauFilter.includes(bureau.code)}
                     onChange={() => toggleBureau(bureau.code)}
-                    className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                   />
-                  <span className="text-sm">{bureau.code} - {bureau.name}</span>
+                  <span className="text-sm text-slate-300">{bureau.code} - {bureau.name}</span>
                 </label>
               ))}
             </div>
@@ -394,10 +398,10 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
         </div>
 
         {/* Estimation */}
-        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <p className="text-sm font-medium text-slate-200">
                 Estimation du rapport
               </p>
               <p className="text-xs text-slate-500 mt-1">
@@ -447,7 +451,7 @@ export function AnalyticsReportModal({ open, onClose }: AnalyticsReportModalProp
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between pt-4 border-t border-slate-700">
           <FluentButton variant="secondary" onClick={() => setPreviewMode(!previewMode)}>
             <Eye className="w-4 h-4" />
             {previewMode ? 'Masquer aperçu' : 'Aperçu'}

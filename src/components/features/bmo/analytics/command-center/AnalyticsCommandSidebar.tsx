@@ -65,7 +65,11 @@ export const AnalyticsCommandSidebar = React.memo(function AnalyticsCommandSideb
     <aside
       className={cn(
         'flex flex-col border-r border-slate-700/50 bg-slate-900/80 backdrop-blur-xl transition-all duration-300',
-        collapsed ? 'w-16' : 'w-64'
+        'fixed sm:relative z-40 h-full',
+        'transform transition-transform',
+        collapsed 
+          ? 'w-16 -translate-x-full sm:translate-x-0' 
+          : 'w-64 translate-x-0'
       )}
     >
       {/* Header */}

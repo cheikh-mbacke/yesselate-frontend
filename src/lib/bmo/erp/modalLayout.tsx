@@ -17,7 +17,7 @@ export function ErpModalLayout({
   return (
     <div
       className={cn(
-        'flex max-h-[85vh] w-full flex-col overflow-hidden bg-slate-900/60 text-slate-100',
+        'flex max-h-[90vh] w-full flex-col overflow-hidden bg-slate-900/60 text-slate-100',
         className
       )}
     >

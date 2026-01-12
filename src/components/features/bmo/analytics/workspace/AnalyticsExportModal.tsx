@@ -148,12 +148,13 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
       open={open}
       onClose={onClose}
       title="📥 Export des données Analytics"
-      size="xl"
+      maxWidth="4xl"
+      dark
     >
       <div className="space-y-6">
         {/* Format de sortie */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Format d'export
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -163,10 +164,10 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
                 type="button"
                 onClick={() => setConfig(prev => ({ ...prev, format: format.id }))}
                 className={cn(
-                  'p-4 rounded-xl border-2 transition-all text-left',
+                  'p-4 rounded-xl border-2 transition-all text-left bg-slate-900/50 border-slate-700',
                   config.format === format.id
-                    ? 'border-orange-500/50 bg-orange-500/5'
-                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                    ? 'border-orange-500/50 bg-orange-500/10'
+                    : 'hover:border-slate-600 hover:bg-slate-800/50'
                 )}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -181,7 +182,7 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
 
         {/* Périmètre des données */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Données à exporter
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -191,10 +192,10 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
                 type="button"
                 onClick={() => toggleScope(scope.id)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors',
+                  'flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors bg-slate-900/50 border-slate-700',
                   config.scope.includes(scope.id)
-                    ? 'border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-300'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
+                    : 'hover:bg-slate-800/50 text-slate-400'
                 )}
               >
                 {scope.icon}
@@ -206,7 +207,7 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
 
         {/* Période */}
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Période
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -216,10 +217,10 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
                 type="button"
                 onClick={() => setConfig(prev => ({ ...prev, dateRange: range.id }))}
                 className={cn(
-                  'px-4 py-2 rounded-lg border transition-colors text-sm',
+                  'px-4 py-2 rounded-lg border transition-colors text-sm bg-slate-900/50 border-slate-700',
                   config.dateRange === range.id
-                    ? 'border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-300'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
+                    : 'hover:bg-slate-800/50 text-slate-400'
                 )}
               >
                 {range.label}
@@ -230,32 +231,32 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
 
         {/* Options avancées */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <h4 className="text-sm font-medium mb-3">Options de contenu</h4>
+          <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50">
+            <h4 className="text-sm font-medium mb-3 text-slate-200">Options de contenu</h4>
             <div className="space-y-3">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeCharts}
                   onChange={(e) => setConfig(prev => ({ ...prev, includeCharts: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Inclure les graphiques</span>
+                <span className="text-sm text-slate-300">Inclure les graphiques</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeRawData}
                   onChange={(e) => setConfig(prev => ({ ...prev, includeRawData: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
                 />
-                <span className="text-sm">Inclure les données brutes</span>
+                <span className="text-sm text-slate-300">Inclure les données brutes</span>
               </label>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <h4 className="text-sm font-medium mb-3">Export planifié</h4>
+          <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50">
+            <h4 className="text-sm font-medium mb-3 text-slate-200">Export planifié</h4>
             <label className="flex items-center gap-3 cursor-pointer mb-3">
               <input
                 type="checkbox"
@@ -265,9 +266,9 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
                   scheduledExport: e.target.checked,
                   scheduleFrequency: e.target.checked ? 'weekly' : null
                 }))}
-                className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
               />
-              <span className="text-sm">Programmer un export récurrent</span>
+              <span className="text-sm text-slate-300">Programmer un export récurrent</span>
             </label>
             {config.scheduledExport && (
               <select
@@ -276,7 +277,7 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
                   ...prev, 
                   scheduleFrequency: e.target.value as 'daily' | 'weekly' | 'monthly'
                 }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-sm"
               >
                 <option value="daily">Quotidien</option>
                 <option value="weekly">Hebdomadaire</option>
@@ -287,10 +288,10 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
         </div>
 
         {/* Résumé et estimation */}
-        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <p className="text-sm font-medium text-slate-200">
                 Résumé de l'export
               </p>
               <p className="text-xs text-slate-500 mt-1">
@@ -328,7 +329,7 @@ export function AnalyticsExportModal({ open, onClose }: AnalyticsExportModalProp
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700">
           <FluentButton variant="secondary" onClick={onClose}>
             Annuler
           </FluentButton>

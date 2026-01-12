@@ -113,12 +113,16 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
             setResults(getDemoResults(query).slice(0, maxResults));
           }
         } catch (error) {
-          console.error('Search error:', error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Search error:', error);
+          }
           setResults([]);
         } finally {
           setIsSearching(false);
         }
       }, 300);
+      
+      return () => clearTimeout(timer);
 
       return () => clearTimeout(timer);
     }, [query, filters, maxResults, onSearch]);
@@ -198,13 +202,13 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
             }}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder}
-            className="w-full pl-10 pr-20 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
+            className="w-full pl-10 pr-20 py-3 bg-slate-800 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
             {showFilters && (
               <button
                 onClick={() => setShowFilterPanel(!showFilterPanel)}
-                className={`p-1.5 rounded hover:bg-gray-700 transition-colors ${
+                className={`p-1.5 rounded hover:bg-slate-700/50 transition-colors ${
                   Object.keys(filters).length > 0 ? 'text-blue-400' : 'text-gray-400'
                 }`}
                 title="Filtres"
@@ -215,7 +219,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
             {query && (
               <button
                 onClick={handleClearSearch}
-                className="p-1.5 rounded hover:bg-gray-700 transition-colors text-gray-400"
+                className="p-1.5 rounded hover:bg-slate-700/50 transition-colors text-slate-400"
                 title="Effacer"
               >
                 <X className="w-4 h-4" />
@@ -226,7 +230,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
 
         {/* Panel de résultats */}
         {isOpen && (
-          <div className="absolute top-full mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl max-h-96 overflow-y-auto z-50">
+          <div className="absolute top-full mt-2 w-full bg-slate-900 border border-slate-700/50 rounded-lg shadow-2xl max-h-96 overflow-y-auto z-50">
             {isSearching ? (
               <div className="p-4 text-center text-gray-400">
                 Recherche en cours...
@@ -241,8 +245,8 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
                     <button
                       key={result.id}
                       onClick={() => handleSelectResult(result)}
-                      className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-gray-700 transition-colors text-left ${
-                        index === selectedIndex ? 'bg-gray-700' : ''
+                      className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-slate-800/50 transition-colors text-left ${
+                        index === selectedIndex ? 'bg-slate-800/50' : ''
                       }`}
                     >
                       <Icon className={`w-5 h-5 mt-0.5 ${config.color} flex-shrink-0`} />
@@ -251,7 +255,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
                           <span className="font-medium text-white">
                             {highlightMatch(result.title, query)}
                           </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${config.color} bg-gray-900`}>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${config.color} bg-slate-800`}>
                             {config.label}
                           </span>
                         </div>
@@ -283,7 +287,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
                   <button
                     key={index}
                     onClick={() => setQuery(search)}
-                    className="w-full px-4 py-2 flex items-center gap-3 hover:bg-gray-700 transition-colors text-left"
+                    className="w-full px-4 py-2 flex items-center gap-3 hover:bg-slate-800/50 transition-colors text-left"
                   >
                     <Clock className="w-4 h-4 text-gray-500" />
                     <span className="text-white">{search}</span>
@@ -296,12 +300,12 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
 
         {/* Panel de filtres */}
         {showFilterPanel && (
-          <div className="absolute top-full mt-2 right-0 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-4 z-50">
+          <div className="absolute top-full mt-2 right-0 w-80 bg-slate-900 border border-slate-700/50 rounded-lg shadow-2xl p-4 z-50">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-white">Filtres de recherche</h3>
               <button
                 onClick={() => setShowFilterPanel(false)}
-                className="p-1 hover:bg-gray-700 rounded transition-colors"
+                className="p-1 hover:bg-slate-800/50 rounded transition-colors"
               >
                 <X className="w-4 h-4 text-gray-400" />
               </button>
@@ -327,7 +331,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
                             : types.filter((t) => t !== type),
                         });
                       }}
-                      className="rounded border-gray-600 bg-gray-700 text-blue-500"
+                      className="rounded border-slate-600 bg-slate-800 text-blue-400"
                     />
                     <span className="text-sm text-gray-300">{config.label}</span>
                   </label>
@@ -339,7 +343,7 @@ export const GlobalSearch = React.memo<GlobalSearchProps>(
             <div className="flex gap-2">
               <button
                 onClick={() => setFilters({})}
-                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors"
+                className="flex-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm text-slate-200 transition-colors"
               >
                 Réinitialiser
               </button>

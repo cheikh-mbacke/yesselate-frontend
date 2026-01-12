@@ -27,4 +27,9 @@ export * from './eventUtils';
 export * from './performanceUtils';
 export * from './stringUtils';
 export * from './numberUtils';
+export * from './fileUtils';
+export * from './regexUtils';
+export * from './formValidationUtils';
+export * from './dateUtilsAdvanced';
+export * from './permissionUtilsAdvanced';
 

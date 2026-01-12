@@ -433,27 +433,9 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
   const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
   const { data: kpisData, isLoading, error } = useKpis();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-slate-300">Erreur de chargement des KPIs</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Hooks must be called before any conditional returns
   const allKpis = kpisData?.kpis || [];
-
+  
   // Filter KPIs based on subcategory
   const filteredKPIs = useMemo(() => {
     if (!Array.isArray(allKpis)) return [];
@@ -545,6 +527,25 @@ const PerformanceView = React.memo(function PerformanceView({ subCategory }: { s
       categoriesCount: Object.keys(categories).length,
     };
   }, [filteredKPIs]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-slate-300">Erreur de chargement des KPIs</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -777,27 +778,9 @@ const AlertsView = React.memo(function AlertsView({ subCategory }: { subCategory
   const { openDetailPanel, openModal } = useAnalyticsCommandCenterStore();
   const { data: alertsData, isLoading, error } = useAlerts();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-slate-300">Erreur de chargement des alertes</p>
-        </div>
-      </div>
-    );
-  }
-
-  const alerts = alertsData?.alerts || [];
+  // Hooks must be called before any conditional returns
   const filteredAlerts = useMemo(() => {
+    const alerts = alertsData?.alerts || [];
     if (!Array.isArray(alerts)) return [];
     
     if (subCategory === 'all') {
@@ -818,7 +801,26 @@ const AlertsView = React.memo(function AlertsView({ subCategory }: { subCategory
     
     // Par défaut, retourner toutes les alertes
     return alerts;
-  }, [alerts, subCategory]);
+  }, [alertsData?.alerts, subCategory]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-12 h-12 text-blue-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-slate-300">Erreur de chargement des alertes</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleAlertClick = (alert: any) => {
     openDetailPanel('alert', alert.id, {
@@ -1199,12 +1201,26 @@ const BureauxView = React.memo(function BureauxView({ subCategory }: { subCatego
   const { openModal, openDetailPanel } = useAnalyticsCommandCenterStore();
   const { data: bureauxData, isLoading } = useBureauxPerformance();
   
+  // Hooks must be called before any conditional returns
   const bureauPerf = useMemo(() => {
     if (!bureauxData?.bureaux) return [];
     return bureauxData.bureaux;
   }, [bureauxData]);
 
   const financialPerf = useMemo(() => calculateFinancialPerformance(), []);
+
+  // Filtrer selon la sous-catégorie
+  const filteredBureaux = useMemo(() => {
+    if (subCategory === 'all') return bureauPerf;
+    // Filtrer par code de bureau si nécessaire
+    return bureauPerf.filter((b: any) => {
+      const bureauInfo = bureauxList.find((bu: any) => bu.code === b.bureauCode);
+      if (subCategory === 'btp' && bureauInfo?.code?.includes('BTP')) return true;
+      if (subCategory === 'bj' && bureauInfo?.code?.includes('BJ')) return true;
+      if (subCategory === 'bs' && bureauInfo?.code?.includes('BS')) return true;
+      return false;
+    });
+  }, [bureauPerf, subCategory]);
 
   if (isLoading) {
     return (
@@ -1235,19 +1251,6 @@ const BureauxView = React.memo(function BureauxView({ subCategory }: { subCatego
       selectedBureaux: [bureauCode]
     });
   };
-
-  // Filtrer selon la sous-catégorie
-  const filteredBureaux = useMemo(() => {
-    if (subCategory === 'all') return bureauPerf;
-    // Filtrer par code de bureau si nécessaire
-    return bureauPerf.filter((b: any) => {
-      const bureauInfo = bureauxList.find((bu: any) => bu.code === b.bureauCode);
-      if (subCategory === 'btp' && bureauInfo?.code?.includes('BTP')) return true;
-      if (subCategory === 'bj' && bureauInfo?.code?.includes('BJ')) return true;
-      if (subCategory === 'bs' && bureauInfo?.code?.includes('BS')) return true;
-      return false;
-    });
-  }, [bureauPerf, subCategory]);
 
   return (
     <div className="space-y-6">

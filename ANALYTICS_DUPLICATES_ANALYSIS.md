@@ -58,12 +58,18 @@
 
 ### Corrections appliquées
 1. ✅ Indentation EnhancedActionsMenu corrigée (2 espaces par niveau)
+2. ✅ Syntaxe JSX AnalyticsCommandPalette corrigée (accolades manquantes ligne 561)
 
 ### Vérifications
 1. ✅ Emoji temps réel (déjà 🟢 vert)
 2. ✅ Typage ClientErrorBoundary (déjà correct)
 3. ✅ Props inutilisées (déjà corrigées)
 4. ✅ Typage newFilters (déjà correct)
+5. ✅ Variable currentPeriod (une seule déclaration trouvée)
+
+### Erreurs de build corrigées
+- ✅ **AnalyticsCommandPalette.tsx ligne 561**: Ajout des accolades `{}` autour de `Object.entries(groupedCommands).map(...)`
+- ✅ **AnalyticsCommandPalette.tsx ligne 619**: Ajout de `</>` pour fermer le fragment React
 
 ### Fichiers en doublon
 - **2 fichiers identifiés**: `AnalyticsSideRail.tsx` et `AnalyticsSideRailClean.tsx`

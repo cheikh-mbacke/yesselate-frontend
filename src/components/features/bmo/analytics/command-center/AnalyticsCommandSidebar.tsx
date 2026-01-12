@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { KeyboardShortcut } from '@/components/ui/keyboard-shortcut';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -107,7 +108,9 @@ export const AnalyticsCommandSidebar = React.memo(function AnalyticsCommandSideb
           >
             <Search className="h-4 w-4" />
             <span className="text-sm">Rechercher...</span>
-            <kbd className="ml-auto text-xs bg-slate-700/50 px-1.5 py-0.5 rounded">⌘K</kbd>
+            <kbd className="ml-auto text-xs bg-slate-700/50 px-1.5 py-0.5 rounded">
+              <KeyboardShortcut shortcut="⌘K" />
+            </kbd>
           </Button>
         </div>
       )}

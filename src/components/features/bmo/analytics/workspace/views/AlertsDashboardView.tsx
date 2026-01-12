@@ -503,10 +503,9 @@ export function AlertsDashboardView({ subCategory = 'all' }: AlertsDashboardView
                       </span>
                     )}
                   </div>
-                    </div>
-                  ))
-                  )}
                 </div>
+              ))}
+            </div>
           )}
         </FluentCardContent>
       </FluentCard>

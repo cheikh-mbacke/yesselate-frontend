@@ -170,6 +170,21 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
     };
   }, [alertId, alertResponse]);
 
+  // Hooks must be called before any conditional returns
+  const commentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (commentTimerRef.current) {
+        clearTimeout(commentTimerRef.current);
+      }
+      if (resolveTimerRef.current) {
+        clearTimeout(resolveTimerRef.current);
+      }
+    };
+  }, []);
+
   if (!open || !alertId) return null;
 
   if (isLoading) {
@@ -206,8 +221,6 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
   };
 
   const SeverityIcon = severityConfig.icon;
-
-  const commentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const handleAddComment = async () => {
     if (!comment.trim()) return;
@@ -228,19 +241,6 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
       commentTimerRef.current = null;
     }, 1000);
   };
-  
-  useEffect(() => {
-    return () => {
-      if (commentTimerRef.current) {
-        clearTimeout(commentTimerRef.current);
-      }
-      if (resolveTimerRef.current) {
-        clearTimeout(resolveTimerRef.current);
-      }
-    };
-  }, []);
-
-  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const handleResolve = async () => {
     if (!resolution.trim()) return;
@@ -263,14 +263,6 @@ export function AlertDetailModal({ open, onClose, alertId }: AlertDetailModalPro
       resolveTimerRef.current = null;
     }, 1000);
   };
-  
-  useEffect(() => {
-    return () => {
-      if (resolveTimerRef.current) {
-        clearTimeout(resolveTimerRef.current);
-      }
-    };
-  }, []);
 
   const handleSnooze = () => {
     if (process.env.NODE_ENV === 'development') {

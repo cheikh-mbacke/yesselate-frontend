@@ -27,6 +27,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { KeyboardShortcut } from '@/components/ui/keyboard-shortcut';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -1047,7 +1048,7 @@ function AnalyticsPageContent() {
               <Search className="h-4 w-4 mr-2" />
               <span className="text-xs hidden sm:inline">Rechercher</span>
               <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
-                ⌘K
+                <KeyboardShortcut shortcut="⌘K" />
               </kbd>
             </Button>
 
@@ -1066,7 +1067,7 @@ function AnalyticsPageContent() {
                   ? 'text-slate-200 bg-slate-800/50'
                   : 'text-slate-500 hover:text-slate-300'
               )}
-              title="Notifications (⌘N)"
+              title={`Notifications (⌘N)`}
               aria-label="Notifications"
             >
               <Bell className="h-4 w-4" />
@@ -1156,7 +1157,7 @@ function AnalyticsPageContent() {
               <Filter className="h-3.5 w-3.5 mr-1.5" />
               Filtres
               <kbd className="ml-2 text-[10px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded">
-                ⌘F
+                <KeyboardShortcut shortcut="⌘F" />
               </kbd>
             </Button>
           </div>

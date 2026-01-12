@@ -1105,7 +1105,6 @@ function PeriodsComparisonView({
 
   // Utiliser les hooks personnalisés pour l'analyse et les actions
   const trendAnalysis = useTrendAnalysis(periodData, subCategory || 'all');
-  const currentPeriod = periodData[periodData.length - 1];
   const periodActions = usePeriodActions(currentPeriod, category, subCategory);
   
   const recommendations = useRecommendations(trendAnalysis, {

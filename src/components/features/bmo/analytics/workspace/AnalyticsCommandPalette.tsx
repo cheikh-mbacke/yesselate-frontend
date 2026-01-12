@@ -20,9 +20,7 @@ import {
   Filter, SortAsc, LayoutGrid, List, ExternalLink
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { searchWithScoring, highlightMatch } from '@/application/utils/searchUtils';
-import { useDebounce } from '@/application/hooks/useDebounce';
-import { FadeIn } from '@/presentation/components/Animations';
+import { KeyboardShortcut } from '@/components/ui/keyboard-shortcut';
 import { searchWithScoring, highlightMatch } from '@/application/utils/searchUtils';
 import { useDebounce } from '@/application/hooks/useDebounce';
 import { FadeIn } from '@/presentation/components/Animations';
@@ -43,6 +41,7 @@ export function AnalyticsCommandPalette() {
   const { commandPaletteOpen, closeCommandPalette, openTab } = useAnalyticsWorkspaceStore();
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const debouncedSearch = useDebounce(search, 200);
 
   // Dispatcher des événements personnalisés pour les modals
   const dispatchEvent = useCallback((eventName: string) => {
@@ -434,17 +433,25 @@ export function AnalyticsCommandPalette() {
     },
   ], [openTab, closeCommandPalette, dispatchEvent]);
 
-  // Filtrer les commandes selon la recherche
+  // Filtrer les commandes avec recherche intelligente et scoring
   const filteredCommands = useMemo(() => {
-    if (!search) return commands;
-    
-    const query = search.toLowerCase();
-    return commands.filter(cmd => 
-      cmd.label.toLowerCase().includes(query) ||
-      cmd.category.toLowerCase().includes(query) ||
-      cmd.keywords?.some(kw => kw.toLowerCase().includes(query))
+    if (!debouncedSearch.trim()) {
+      return commands.map(cmd => ({ ...cmd, score: 0, matches: [] }));
+    }
+
+    // Utiliser la recherche avec scoring
+    const searchResults = searchWithScoring(
+      commands,
+      debouncedSearch,
+      ['label', 'category', ...(commands[0]?.keywords || [])]
     );
-  }, [commands, search]);
+
+    return searchResults.map(result => ({
+      ...result.item,
+      score: result.score,
+      matches: result.matches,
+    }));
+  }, [commands, debouncedSearch]);
 
   // Grouper par catégorie
   const groupedCommands = useMemo(() => {
@@ -531,13 +538,21 @@ export function AnalyticsCommandPalette() {
         {/* Résultats */}
         <div className="max-h-[400px] overflow-y-auto space-y-4">
           {Object.keys(groupedCommands).length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p>Aucune commande trouvée</p>
-              <p className="text-xs mt-1">Essayez un autre terme de recherche</p>
-            </div>
+            <FadeIn>
+              <div className="text-center py-8 text-slate-500">
+                <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p>Aucune commande trouvée pour "{debouncedSearch}"</p>
+                <p className="text-xs mt-1">Essayez un autre terme de recherche</p>
+              </div>
+            </FadeIn>
           ) : (
-            Object.entries(groupedCommands).map(([category, cmds]) => (
+            <>
+              {debouncedSearch && (
+                <div className="px-2 py-1 text-xs text-slate-500">
+                  {filteredCommands.length} résultat{filteredCommands.length > 1 ? 's' : ''} trouvé{filteredCommands.length > 1 ? 's' : ''}
+                </div>
+              )}
+              {Object.entries(groupedCommands).map(([category, cmds]) => (
               <div key={category}>
                 <div className="text-xs font-semibold text-slate-500 mb-2 px-2">
                   {category}
@@ -561,7 +576,14 @@ export function AnalyticsCommandPalette() {
                         <div className="flex-shrink-0">{cmd.icon}</div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm truncate">{cmd.label}</span>
+                            <span 
+                              className="font-medium text-sm truncate"
+                              dangerouslySetInnerHTML={{ 
+                                __html: debouncedSearch 
+                                  ? highlightMatch(cmd.label, debouncedSearch)
+                                  : cmd.label
+                              }}
+                            />
                             {cmd.badge && (
                               <Badge 
                                 variant={cmd.badgeVariant || 'default'} 
@@ -575,7 +597,7 @@ export function AnalyticsCommandPalette() {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {cmd.shortcut && (
                             <kbd className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-[10px] font-mono">
-                              {cmd.shortcut}
+                              <KeyboardShortcut shortcut={cmd.shortcut} />
                             </kbd>
                           )}
                           {isSelected && (
@@ -587,7 +609,8 @@ export function AnalyticsCommandPalette() {
                   })}
                 </div>
               </div>
-            ))
+            ))}
+            </>
           )}
         </div>
 

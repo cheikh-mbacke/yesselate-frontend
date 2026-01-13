@@ -1,18 +1,80 @@
-// ============================================
-// Export centralisé des composants BMO
-// ============================================
+/**
+ * BMO Features Components Index
+ * ==============================
+ * 
+ * Point d'entrée centralisé pour tous les composants BMO
+ */
 
-// Layout components
-export { BMOSidebar } from './Sidebar';
-export { BMOHeader, BMOToolbar } from './Header';
+// Composants UI Critiques (NOUVEAU)
+export { ErrorBoundary, useErrorHandler, withErrorBoundary } from './ErrorBoundary';
+export { ToastProvider, useToast } from './ToastProvider';
+export type { Toast, ToastType } from './ToastProvider';
+export {
+  Spinner,
+  Skeleton,
+  SkeletonTable,
+  SkeletonCard,
+  SkeletonList,
+  LoadingOverlay,
+  LoadingButton,
+  PulseDots,
+} from './LoadingStates';
+export {
+  EmptyState,
+  EmptySearch,
+  EmptyList,
+  EmptyError,
+  EmptyFilters,
+} from './EmptyStates';
+export type { EmptyStateType, EmptyStateProps } from './EmptyStates';
 
-// UI components
-export { KPICard } from './KPICard';
-export { BureauTag } from './BureauTag';
+// Composants principaux
+export { NotificationCenter } from './NotificationCenter';
+export { CommentSection } from './CommentSection';
+export { AlertsPanel } from './AlertsPanel';
+export { WorkflowViewer } from './WorkflowViewer';
+export { AnalyticsDashboard } from './AnalyticsDashboard';
 
-// Overlay components
-export { SearchModal } from './SearchModal';
-export { AIAssistant } from './AIAssistant';
-export { NotificationsPanel } from './NotificationsPanel';
-export { ToastContainer } from './ToastContainer';
-export { QuickPanel } from './QuickPanel';
+// Composants workspace - Finances
+export { 
+  FinancesWorkspaceTabs,
+  FinancesWorkspaceContent,
+  FinancesLiveCounters,
+  FinancesCommandPalette,
+  FinancesStatsModal,
+  FinancesDashboardView,
+  FinancesTresorerieView
+} from './workspace/finances';
+
+// Composants workspace - Recouvrements
+export {
+  RecouvrementsWorkspaceTabs,
+  RecouvrementsWorkspaceContent,
+  RecouvrementsLiveCounters,
+  RecouvrementsCommandPalette,
+  RecouvrementsStatsModal,
+  RecouvrementsDashboardView,
+  RecouvrementsQueueView
+} from './workspace/recouvrements';
+
+// Composants workspace - Litiges
+export {
+  LitigesWorkspaceTabs,
+  LitigesWorkspaceContent,
+  LitigesLiveCounters,
+  LitigesCommandPalette,
+  LitigesStatsModal,
+  LitigesDashboardView,
+  LitigesQueueView
+} from './workspace/litiges';
+
+// Composants workspace - Missions
+export {
+  MissionsWorkspaceTabs,
+  MissionsWorkspaceContent,
+  MissionsLiveCounters,
+  MissionsCommandPalette,
+  MissionsStatsModal,
+  MissionsDashboardView,
+  MissionsQueueView
+} from './workspace/missions';

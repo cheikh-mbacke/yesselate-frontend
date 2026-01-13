@@ -14,6 +14,7 @@ const badgeVariants = cva(
         info: 'bg-blue-500 text-white',
         gold: 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900',
         gray: 'bg-slate-500 text-white',
+        destructive: 'bg-rose-600 text-white',
       },
       pulse: {
         true: 'animate-pulse',

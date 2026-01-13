@@ -1,0 +1,19 @@
+{
+  "name": "yesselate-frontend-scripts",
+  "version": "1.0.0",
+  "description": "Scripts pour le projet Yesselate",
+  "main": "index.js",
+  "scripts": {
+    "ws": "node websocket-server.js",
+    "ws:dev": "nodemon websocket-server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}

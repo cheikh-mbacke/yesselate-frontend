@@ -1,557 +1,453 @@
+/**
+ * Dashboard Maître d'Ouvrage - Command Center v3.0
+ * Architecture identique à Gouvernance
+ * Pilotage stratégique et opérationnel du BMO
+ */
+
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import Link from 'next/link';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { KPICard } from '@/components/features/bmo/KPICard';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
+import { Badge } from '@/components/ui/badge';
 import {
-  performanceData,
-  bureauPieData,
-  systemAlerts,
-  blockedDossiers,
-  paymentsN1,
-  contractsToSign,
-  decisions,
-  bureaux,
-} from '@/lib/data';
+  ChevronLeft,
+  Bell,
+  Search,
+  LayoutDashboard,
+  MoreVertical,
+  RefreshCw,
+  Download,
+  Settings,
+  Maximize2,
+  Keyboard,
+} from 'lucide-react';
+import { useDashboardCommandCenterStore } from '@/lib/stores/dashboardCommandCenterStore';
+import {
+  DashboardSidebar,
+  DashboardKPIBar,
+  DashboardSubNavigation,
+  DashboardContentRouter,
+  DashboardCommandPalette,
+  DashboardModals,
+} from '@/components/features/bmo/dashboard/command-center';
 
 export default function DashboardPage() {
-  const { darkMode } = useAppStore();
-  const { liveStats, addToast, openSubstitutionModal, openBlocageModal } = useBMOStore();
+  const {
+    fullscreen,
+    notificationsPanelOpen,
+    liveStats,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    goBack,
+    navigationHistory,
+    openModal,
+    startRefresh,
+    endRefresh,
+  } = useDashboardCommandCenterStore();
 
-  // Animation des KPIs
-  const [animatedKPIs, setAnimatedKPIs] = useState({
-    demandes: 0,
-    validations: 0,
-    rejets: 0,
-    budget: 0,
-  });
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
-  // Calculs des totaux annuels
-  const yearlyTotals = useMemo(() => {
-    return performanceData.reduce(
-      (acc, month) => ({
-        demandes: acc.demandes + month.demandes,
-        validations: acc.validations + month.validations,
-        rejets: acc.rejets + month.rejets,
-        budget: acc.budget + month.budget,
-      }),
-      { demandes: 0, validations: 0, rejets: 0, budget: 0 }
-    );
-  }, []);
+  const handleRefresh = () => {
+    startRefresh();
+    setTimeout(() => {
+      endRefresh();
+      setLastUpdate(new Date());
+    }, 1500);
+  };
 
+  // Raccourcis clavier globaux
   useEffect(() => {
-    const targets = yearlyTotals;
-    let step = 0;
-    const timer = setInterval(() => {
-      step++;
-      const p = 1 - Math.pow(1 - step / 30, 3);
-      setAnimatedKPIs({
-        demandes: Math.round(targets.demandes * p),
-        validations: Math.round(targets.validations * p),
-        rejets: Math.round(targets.rejets * p),
-        budget: parseFloat((targets.budget * p).toFixed(1)),
-      });
-      if (step >= 30) clearInterval(timer);
-    }, 50);
-    return () => clearInterval(timer);
-  }, [yearlyTotals]);
-
-  // Top risques combinés (systemAlerts critiques + blockedDossiers)
-  const topRisques = useMemo(() => {
-    const alertsRisks = systemAlerts
-      .filter((a) => a.type === 'critical' || a.type === 'warning')
-      .map((a) => ({
-        id: a.id,
-        type: 'alert' as const,
-        title: a.title,
-        action: a.action,
-        severity: a.type,
-        source: 'Système',
-      }));
-
-    const blockedRisks = blockedDossiers
-      .filter((d) => d.delay >= 5)
-      .map((d) => ({
-        id: d.id,
-        type: 'blocked' as const,
-        title: `${d.type} bloqué ${d.delay}j`,
-        action: d.subject,
-        severity: d.impact === 'critical' ? 'critical' : 'warning',
-        source: d.bureau,
-        dossier: d,
-      }));
-
-    return [...alertsRisks, ...blockedRisks].slice(0, 5);
-  }, []);
-
-  // 3 actions les plus rentables maintenant
-  const actionsRentables = useMemo(() => {
-    const actions: Array<{
-      id: string;
-      type: string;
-      title: string;
-      subtitle: string;
-      amount?: string;
-      urgency: 'critical' | 'high' | 'medium';
-      link: string;
-      icon: string;
-    }> = [];
-
-    // 1. Dossiers bloqués > 5 jours (priorité max)
-    const criticalBlocked = blockedDossiers.filter((d) => d.delay >= 5);
-    if (criticalBlocked.length > 0) {
-      const mostUrgent = criticalBlocked.sort((a, b) => b.delay - a.delay)[0];
-      actions.push({
-        id: mostUrgent.id,
-        type: 'substitution',
-        title: `Débloquer ${mostUrgent.id}`,
-        subtitle: `${mostUrgent.subject} - Bloqué depuis ${mostUrgent.delay} jours`,
-        amount: mostUrgent.amount,
-        urgency: 'critical',
-        link: '/maitre-ouvrage/substitution',
-        icon: '🔄',
-      });
-    }
-
-    // 2. Paiements proches échéance (< 5 jours)
-    const urgentPayments = paymentsN1.filter((p) => {
-      const dueDate = new Date(p.dueDate.split('/').reverse().join('-'));
-      const today = new Date();
-      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      return diffDays <= 5 && diffDays >= 0;
-    });
-    if (urgentPayments.length > 0) {
-      actions.push({
-        id: urgentPayments[0].id,
-        type: 'paiement',
-        title: `Valider ${urgentPayments.length} paiement(s) urgent(s)`,
-        subtitle: `Échéance < 5 jours - ${urgentPayments[0].beneficiary}`,
-        amount: urgentPayments[0].amount,
-        urgency: 'high',
-        link: '/maitre-ouvrage/validation-paiements',
-        icon: '💳',
-      });
-    }
-
-    // 3. Contrats à signer
-    if (contractsToSign.length > 0) {
-      const pendingContracts = contractsToSign.filter((c) => c.status === 'pending');
-      if (pendingContracts.length > 0) {
-        actions.push({
-          id: pendingContracts[0].id,
-          type: 'contrat',
-          title: `Signer ${pendingContracts.length} contrat(s)`,
-          subtitle: pendingContracts[0].subject,
-          amount: pendingContracts[0].amount,
-          urgency: 'medium',
-          link: '/maitre-ouvrage/validation-contrats',
-          icon: '📜',
-        });
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + K : Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
       }
-    }
 
-    return actions.slice(0, 3);
-  }, []);
+      // Ctrl/Cmd + E : Export
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
 
-  // Santé organisationnelle par bureau
-  const bureauHealth = useMemo(() => {
-    return bureaux.map((b) => {
-      const blockedCount = blockedDossiers.filter((d) => d.bureau === b.code).length;
-      const health = blockedCount === 0 ? 'good' : blockedCount <= 1 ? 'warning' : 'critical';
-      return {
-        ...b,
-        blockedCount,
-        health,
-      };
-    });
-  }, []);
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt + Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // ? : Help (when not in input)
+      if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          openModal('shortcuts');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, goBack, openModal]);
+
+  const formatLastUpdate = () => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Alerte critique si dossiers bloqués > 5 jours */}
-      {blockedDossiers.filter((d) => d.delay >= 5).length > 0 && (
-        <div
-          className={cn(
-            'rounded-xl p-3 flex items-center gap-3 border animate-pulse',
-            darkMode
-              ? 'bg-red-500/10 border-red-500/30'
-              : 'bg-red-50 border-red-200'
-          )}
-        >
-          <span className="text-2xl">🚨</span>
-          <div className="flex-1">
-            <p className="font-bold text-sm text-red-400">
-              {blockedDossiers.filter((d) => d.delay >= 5).length} dossier(s) bloqué(s) depuis plus de 5 jours
-            </p>
-            <p className="text-xs text-slate-400">
-              Substitution requise pour débloquer la chaîne de validation
-            </p>
-          </div>
-          <Link href="/maitre-ouvrage/substitution">
-            <Button size="sm" variant="destructive">
-              ⚡ Intervenir
-            </Button>
-          </Link>
-        </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation */}
+      <DashboardSidebar />
 
-      {/* KPIs globaux (demandes, validations, rejets, budget) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard
-          icon="📋"
-          label="Demandes"
-          value={animatedKPIs.demandes}
-          trend="Total annuel"
-          color="#3B82F6"
-        />
-        <KPICard
-          icon="✅"
-          label="Validations"
-          value={animatedKPIs.validations}
-          trend={`${((animatedKPIs.validations / (animatedKPIs.demandes || 1)) * 100).toFixed(1)}% taux`}
-          up={true}
-          color="#10B981"
-        />
-        <KPICard
-          icon="❌"
-          label="Rejets"
-          value={animatedKPIs.rejets}
-          trend={`${((animatedKPIs.rejets / (animatedKPIs.demandes || 1)) * 100).toFixed(1)}% taux`}
-          up={false}
-          color="#EF4444"
-        />
-        <KPICard
-          icon="💰"
-          label="Budget traité"
-          value={`${animatedKPIs.budget}Mds`}
-          sub="FCFA"
-          trend="Cumul annuel"
-          color="#D4AF37"
-        />
-      </div>
-
-      {/* Ligne principale: Santé organisationnelle + Top risques */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        {/* Santé organisationnelle (répartition par bureaux) */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              🏢 Santé organisationnelle
-              <Badge variant="info">{bureaux.length} bureaux</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              {/* Pie Chart */}
-              <div className="w-32 h-32">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={bureauPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={25}
-                      outerRadius={45}
-                      dataKey="value"
-                    >
-                      {bureauPieData.map((entry, index) => (
-                        <Cell key={index} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Liste bureaux avec indicateur santé */}
-              <div className="flex-1 grid grid-cols-2 gap-1">
-                {bureauHealth.map((bureau) => (
-                  <div
-                    key={bureau.code}
-                    className={cn(
-                      'flex items-center gap-2 p-1.5 rounded text-xs',
-                      darkMode ? 'bg-slate-700/30' : 'bg-gray-50'
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        'w-2 h-2 rounded-full',
-                        bureau.health === 'good'
-                          ? 'bg-emerald-500'
-                          : bureau.health === 'warning'
-                          ? 'bg-amber-500'
-                          : 'bg-red-500 animate-pulse'
-                      )}
-                    />
-                    <span className="font-medium">{bureau.code}</span>
-                    <span className="text-slate-400 text-[10px]">{bureau.completion}%</span>
-                    {bureau.blockedCount > 0 && (
-                      <Badge variant="urgent" className="ml-auto text-[9px]">
-                        {bureau.blockedCount}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Top risques */}
-        <Card className="border-amber-500/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              ⚠️ Top risques
-              <Badge variant="warning">{topRisques.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {topRisques.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-4">
-                ✅ Aucun risque critique détecté
-              </p>
-            ) : (
-              topRisques.map((risque, i) => (
-                <div
-                  key={risque.id}
-                  className={cn(
-                    'flex items-center gap-2 p-2 rounded-lg border-l-4',
-                    risque.severity === 'critical'
-                      ? 'border-l-red-500 bg-red-500/5'
-                      : 'border-l-amber-500 bg-amber-500/5'
-                  )}
-                >
-                  <span className="text-lg">
-                    {risque.severity === 'critical' ? '🚨' : '⚠️'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate">{risque.title}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{risque.action}</p>
-                  </div>
-                  <BureauTag bureau={risque.source} />
-                  {risque.type === 'blocked' && risque.dossier && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => openBlocageModal(risque.dossier!)}
-                    >
-                      👁️
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 3 actions les plus rentables maintenant */}
-      <Card className="border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            ⚡ 3 actions les plus rentables maintenant
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-3">
-            {actionsRentables.length === 0 ? (
-              <p className="text-xs text-slate-400 col-span-3 text-center py-4">
-                ✅ Aucune action urgente requise
-              </p>
-            ) : (
-              actionsRentables.map((action, i) => (
-                <div
-                  key={action.id}
-                  className={cn(
-                    'p-3 rounded-lg border',
-                    action.urgency === 'critical'
-                      ? 'border-red-500/50 bg-red-500/10'
-                      : action.urgency === 'high'
-                      ? 'border-amber-500/50 bg-amber-500/10'
-                      : 'border-blue-500/50 bg-blue-500/10'
-                  )}
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="text-xl">{action.icon}</span>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold">#{i + 1}</span>
-                        <Badge
-                          variant={
-                            action.urgency === 'critical'
-                              ? 'urgent'
-                              : action.urgency === 'high'
-                              ? 'warning'
-                              : 'info'
-                          }
-                        >
-                          {action.urgency}
-                        </Badge>
-                      </div>
-                      <p className="text-sm font-semibold mt-1">{action.title}</p>
-                      <p className="text-[10px] text-slate-400">{action.subtitle}</p>
-                      {action.amount && action.amount !== '—' && (
-                        <p className="text-xs font-mono text-amber-400 mt-1">
-                          {action.amount} FCFA
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <Link href={action.link}>
-                    <Button
-                      size="sm"
-                      variant={action.urgency === 'critical' ? 'destructive' : 'warning'}
-                      className="w-full mt-2"
-                    >
-                      Traiter →
-                    </Button>
-                  </Link>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Timeline des décisions avec preuves */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              ⚖️ Timeline des décisions
-              <Badge variant="info">{decisions.length}</Badge>
-            </span>
-            <Link href="/maitre-ouvrage/decisions">
-              <Button size="xs" variant="ghost">
-                Voir tout →
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </Link>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {decisions.slice(0, 5).map((decision, i) => (
-            <div
-              key={decision.id}
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <LayoutDashboard className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">
+                Dashboard BMO
+              </h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v3.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
               className={cn(
-                'flex items-center gap-3 p-2 rounded-lg border-l-4',
-                decision.status === 'executed'
-                  ? 'border-l-emerald-500'
-                  : decision.status === 'pending'
-                  ? 'border-l-amber-500'
-                  : 'border-l-slate-500',
-                darkMode ? 'bg-slate-700/20' : 'bg-gray-50'
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-blue-400 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
               )}
+              title="Notifications"
             >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                3
+              </span>
+            </Button>
+
+            {/* Actions Menu */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <DashboardSubNavigation />
+
+        {/* KPI Bar */}
+        <DashboardKPIBar onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <DashboardContentRouter />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              247 demandes • 5 blocages • 8 décisions
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
               <div
                 className={cn(
-                  'w-8 h-8 rounded-full flex items-center justify-center text-sm',
-                  decision.type === 'Validation N+1'
-                    ? 'bg-emerald-500/20 text-emerald-400'
-                    : decision.type === 'Substitution'
-                    ? 'bg-orange-500/20 text-orange-400'
-                    : decision.type === 'Délégation'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-purple-500/20 text-purple-400'
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
                 )}
-              >
-                {decision.type === 'Validation N+1'
-                  ? '✓'
-                  : decision.type === 'Substitution'
-                  ? '🔄'
-                  : decision.type === 'Délégation'
-                  ? '🔑'
-                  : '⚖️'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-orange-400">{decision.id}</span>
-                  <Badge
-                    variant={
-                      decision.status === 'executed'
-                        ? 'success'
-                        : decision.status === 'pending'
-                        ? 'warning'
-                        : 'default'
-                    }
-                  >
-                    {decision.status}
-                  </Badge>
-                </div>
-                <p className="text-xs font-semibold truncate">
-                  {decision.type}: {decision.subject}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  Par {decision.author} • {decision.date}
-                </p>
-              </div>
-              <div className="text-right">
-                {/* Hash de preuve */}
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Modals */}
+      <DashboardModals />
+
+      {/* Command Palette */}
+      <DashboardCommandPalette />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+    </div>
+  );
+}
+
+// Actions Menu Component
+function ActionsMenu({
+  onRefresh,
+  isRefreshing,
+}: {
+  onRefresh: () => void;
+  isRefreshing: boolean;
+}) {
+  const { toggleFullscreen, openModal, toggleCommandPalette } = useDashboardCommandCenterStore();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+        title="Actions"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-56 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+            {/* Recherche */}
+            <button
+              onClick={() => {
+                toggleCommandPalette();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="w-4 h-4" />
+              <span>Rechercher</span>
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ⌘K
+              </kbd>
+            </button>
+            
+            <div className="border-t border-slate-700/50 my-1" />
+            
+            {/* Rafraîchir */}
+            <button
+              onClick={() => {
+                onRefresh();
+                setOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50 disabled:opacity-50"
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+              Rafraîchir
+            </button>
+            
+            {/* Exporter */}
+            <button
+              onClick={() => {
+                openModal('export');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Download className="w-4 h-4" />
+              Exporter
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ⌘E
+              </kbd>
+            </button>
+            
+            <div className="border-t border-slate-700/50 my-1" />
+            
+            {/* Plein écran */}
+            <button
+              onClick={() => {
+                toggleFullscreen();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Maximize2 className="w-4 h-4" />
+              Plein écran
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                F11
+              </kbd>
+            </button>
+            
+            {/* Raccourcis */}
+            <button
+              onClick={() => {
+                openModal('shortcuts');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Keyboard className="w-4 h-4" />
+              Raccourcis
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ?
+              </kbd>
+            </button>
+            
+            {/* Paramètres */}
+            <button
+              onClick={() => {
+                openModal('settings');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Settings className="w-4 h-4" />
+              Paramètres
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Notifications Panel
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'BC bloqué depuis 5 jours',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Paiement en retard',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Validation BC-2024-0852 terminée',
+      time: 'il y a 2h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-80 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
                 <div
                   className={cn(
-                    'px-2 py-1 rounded text-[9px] font-mono cursor-pointer',
-                    darkMode ? 'bg-slate-700/50' : 'bg-gray-100'
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
                   )}
-                  onClick={() => {
-                    navigator.clipboard.writeText(decision.hash);
-                    addToast('Hash copié dans le presse-papier', 'success');
-                  }}
-                  title="Cliquer pour copier le hash"
-                >
-                  🔒 {decision.hash.slice(0, 12)}...
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
                 </div>
               </div>
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Stats temps réel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">
-              {liveStats.tauxValidation}%
-            </p>
-            <p className="text-[10px] text-slate-400">Taux validation</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">
-              {liveStats.tempsReponse}
-            </p>
-            <p className="text-[10px] text-slate-400">Temps moyen réponse</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">
-              {liveStats.validationsJour}
-            </p>
-            <p className="text-[10px] text-slate-400">Validations aujourd'hui</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-orange-400">
-              {liveStats.montantTraite}
-            </p>
-            <p className="text-[10px] text-slate-400">Montant traité (FCFA)</p>
-          </CardContent>
-        </Card>
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

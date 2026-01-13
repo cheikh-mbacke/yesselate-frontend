@@ -112,6 +112,14 @@ interface BMOState {
   };
   openBureauDetailsModal: (bureauCode: string) => void;
   closeBureauDetailsModal: () => void;
+  
+  // Utilisateur actuel
+  currentUser: {
+    id: string;
+    name: string;
+    role: string;
+    bureau: string;
+  };
 }
 
 // Données initiales
@@ -432,5 +440,13 @@ export const useBMOStore = create<BMOState>()((set, get) => ({
         bureauCode: null,
       },
     });
+  },
+  
+  // Utilisateur actuel
+  currentUser: {
+    id: 'USR-001',
+    name: 'A. DIALLO',
+    role: 'Directeur Général',
+    bureau: 'BMO',
   },
 }));

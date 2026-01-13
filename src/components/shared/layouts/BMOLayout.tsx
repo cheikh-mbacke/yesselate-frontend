@@ -3,53 +3,50 @@
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/stores';
 import { BMOSidebar } from '@/components/features/bmo/Sidebar';
-import { BMOHeader, BMOToolbar } from '@/components/features/bmo/Header';
-import { SearchModal } from '@/components/features/bmo/SearchModal';
+import { BMOHeader } from '@/components/features/bmo/Header';
 import { AIAssistant } from '@/components/features/bmo/AIAssistant';
 import { NotificationsPanel } from '@/components/features/bmo/NotificationsPanel';
 import { ToastContainer } from '@/components/features/bmo/ToastContainer';
-import { QuickPanel } from '@/components/features/bmo/QuickPanel';
+import { AutoSyncProvider } from '@/components/shared/AutoSyncProvider';
 
 interface BMOLayoutProps {
   children: React.ReactNode;
 }
 
 export function BMOLayout({ children }: BMOLayoutProps) {
-  const { darkMode, sidebarOpen } = useAppStore();
+  const { sidebarOpen, darkMode } = useAppStore();
 
   return (
-    <div
-      className={cn(
-        'min-h-screen flex',
-        darkMode ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-900'
-      )}
-    >
-      {/* Sidebar */}
-      <BMOSidebar />
-
-      {/* Main content */}
-      <main
+    <AutoSyncProvider>
+      <div
         className={cn(
-          'flex-1 flex flex-col transition-all duration-300',
-          sidebarOpen ? 'ml-52' : 'ml-14'
+          'min-h-screen flex',
+          'bg-[rgb(var(--bg))] text-[rgb(var(--text))]',
+          darkMode ? 'dark' : 'light'
         )}
       >
-        {/* Header */}
-        <BMOHeader />
+        {/* Sidebar */}
+        <BMOSidebar />
 
-        {/* Toolbar */}
-        <BMOToolbar />
+        {/* Main content */}
+        <main
+          className={cn(
+            'flex-1 flex flex-col transition-all duration-300',
+            sidebarOpen ? 'ml-52' : 'ml-14'
+          )}
+        >
+          {/* Header */}
+          <BMOHeader />
 
-        {/* Page content */}
-        <div className="flex-1 p-4 overflow-auto">{children}</div>
-      </main>
+          {/* Page content */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">{children}</div>
+        </main>
 
-      {/* Overlays & Modals */}
-      <SearchModal />
-      <NotificationsPanel />
-      <QuickPanel />
-      <AIAssistant />
-      <ToastContainer />
-    </div>
+        {/* Overlays & Modals */}
+        <NotificationsPanel />
+        <AIAssistant />
+        <ToastContainer />
+      </div>
+    </AutoSyncProvider>
   );
 }

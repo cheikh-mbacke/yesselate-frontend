@@ -1,0 +1,10 @@
+{
+  "name": "yesselate-frontend",
+  "scripts": {
+    "blocked:init": "pwsh -File scripts/init-blocked-complete.ps1",
+    "blocked:seed": "node scripts/seed-blocked-test-data.js",
+    "blocked:studio": "npx prisma studio",
+    "blocked:test": "echo '🧪 Tests du module Blocked...' && curl http://localhost:3000/api/bmo/blocked/stats"
+  }
+}
+

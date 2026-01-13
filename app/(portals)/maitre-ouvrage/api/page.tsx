@@ -1,325 +1,595 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Analytics - Version 2.0
+ * Plateforme de pilotage et analyse des KPIs
+ * Architecture cohérente avec la page Gouvernance
+ * 
+ * Note: Cette page utilise l'architecture Analytics pour la page API
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { apiEndpoints, apiIntegrations } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  BarChart3,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useAnalyticsCommandCenterStore,
+  type AnalyticsMainCategory,
+} from '@/lib/stores/analyticsCommandCenterStore';
+import {
+  AnalyticsCommandSidebar,
+  AnalyticsSubNavigation,
+  AnalyticsKPIBar,
+  AnalyticsContentRouter,
+  AnalyticsFiltersPanel,
+  AnalyticsModals,
+  AnalyticsDetailPanel,
+  AnalyticsBatchActionsBar,
+  ActionsMenu,
+  analyticsCategories,
+} from '@/components/features/bmo/analytics/command-center';
+import { AnalyticsCommandPalette } from '@/components/features/bmo/analytics/workspace/AnalyticsCommandPalette';
+import { AnalyticsToastProvider, useAnalyticsToast } from '@/components/features/bmo/analytics/workspace/AnalyticsToast';
+import { useRealtimeAnalytics } from '@/components/features/bmo/analytics/hooks/useRealtimeAnalytics';
 
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  performance: [
+    { id: 'all', label: 'Tous les KPIs' },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'warning', label: 'Attention', badge: 5, badgeType: 'warning' },
+    { id: 'success', label: 'OK' },
+  ],
+  financial: [
+    { id: 'budget', label: 'Budget' },
+    { id: 'expenses', label: 'Dépenses' },
+    { id: 'forecasts', label: 'Prévisions' },
+  ],
+  trends: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'positive', label: 'Positives' },
+    { id: 'negative', label: 'Négatives', badge: 4, badgeType: 'warning' },
+    { id: 'stable', label: 'Stables' },
+  ],
+  alerts: [
+    { id: 'all', label: 'Toutes', badge: 8 },
+    { id: 'critical', label: 'Critiques', badge: 2, badgeType: 'critical' },
+    { id: 'warning', label: 'Avertissements', badge: 6, badgeType: 'warning' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  reports: [
+    { id: 'all', label: 'Tous' },
+    { id: 'recent', label: 'Récents' },
+    { id: 'scheduled', label: 'Planifiés' },
+    { id: 'favorites', label: 'Favoris' },
+  ],
+  kpis: [
+    { id: 'all', label: 'Tous' },
+    { id: 'operational', label: 'Opérationnels' },
+    { id: 'strategic', label: 'Stratégiques' },
+    { id: 'custom', label: 'Personnalisés' },
+  ],
+  comparison: [
+    { id: 'bureaux', label: 'Par bureau' },
+    { id: 'period', label: 'Par période' },
+    { id: 'category', label: 'Par catégorie' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous' },
+    { id: 'btp', label: 'BTP' },
+    { id: 'bj', label: 'BJ' },
+    { id: 'bs', label: 'BS' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function ApiPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [viewTab, setViewTab] = useState<'endpoints' | 'integrations'>('endpoints');
-  const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
-
-  const stats = useMemo(() => {
-    const endpointsActive = apiEndpoints.filter(e => e.status === 'active').length;
-    const endpointsError = apiEndpoints.filter(e => e.status === 'error' || e.status === 'degraded').length;
-    const integrationsActive = apiIntegrations.filter(i => i.status === 'active').length;
-    const integrationsError = apiIntegrations.filter(i => i.status === 'error').length;
-    const rotationRequired = apiIntegrations.filter(i => i.credentials.rotationRequired).length;
-    const totalCalls = apiEndpoints.reduce((acc, e) => acc + e.callsToday, 0);
-    return { endpointsActive, endpointsError, integrationsActive, integrationsError, rotationRequired, totalCalls };
-  }, []);
-
-  const selectedI = selectedIntegration ? apiIntegrations.find(i => i.id === selectedIntegration) : null;
-
-  const handleRotateCredentials = (integration: typeof selectedI) => {
-    if (!integration) return;
-    addActionLog({
-      module: 'api',
-      action: 'rotate_credentials',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Rotation credentials ${integration.provider}`,
-      status: 'success',
-      hash: `SHA3-256:cred_${Date.now().toString(16)}`,
-    });
-    addToast('Credentials rotés - Action loguée', 'success');
-  };
-
-  const handleTestConnection = (integration: typeof selectedI) => {
-    if (!integration) return;
-    addActionLog({
-      module: 'api',
-      action: 'test_connection',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Test connexion ${integration.provider}`,
-      status: 'info',
-    });
-    addToast(`Test ${integration.provider} en cours...`, 'info');
-  };
-
-  const handleDisable = (integration: typeof selectedI) => {
-    if (!integration) return;
-    addActionLog({
-      module: 'api',
-      action: 'disable',
-      targetId: integration.id,
-      targetType: 'ApiIntegration',
-      details: `Désactivation ${integration.provider}`,
-      status: 'warning',
-    });
-    addToast('Intégration désactivée', 'warning');
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = { active: 'emerald', degraded: 'amber', error: 'red', maintenance: 'blue' };
-    return colors[status] || 'slate';
-  };
-
-  const getTypeIcon = (type: string) => {
-    const icons: Record<string, string> = { payment: '💳', banking: '🏦', sms: '📱', email: '📧', storage: '☁️', erp: '🏢' };
-    return icons[type] || '🔌';
-  };
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🔌 API & Intégrations
-            <Badge variant="info">{apiIntegrations.length} intégrations</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">Monitoring endpoints, intégrations externes et rotation credentials</p>
-        </div>
-      </div>
+    <AnalyticsToastProvider>
+      <ApiPageContent />
+    </AnalyticsToastProvider>
+  );
+}
 
-      {/* Alertes */}
-      {(stats.endpointsError > 0 || stats.integrationsError > 0 || stats.rotationRequired > 0) && (
-        <Card className="border-red-500/50 bg-red-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🚨</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-red-400">Alertes système</h3>
-                <p className="text-sm text-slate-400">
-                  {stats.endpointsError > 0 && `${stats.endpointsError} endpoint(s) en erreur • `}
-                  {stats.integrationsError > 0 && `${stats.integrationsError} intégration(s) en erreur • `}
-                  {stats.rotationRequired > 0 && `${stats.rotationRequired} rotation(s) requise(s)`}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+function ApiPageContent() {
+  const toast = useAnalyticsToast();
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useAnalyticsCommandCenterStore();
+
+  // Activer les notifications temps réel
+  const { isConnected, subscriptionsCount } = useRealtimeAnalytics({
+    autoConnect: true,
+    showToasts: true,
+    autoInvalidateQueries: true,
+  });
+
+  // État local pour refresh (comme Governance)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return analyticsCategories.find((c) => c.id === activeCategory)?.label || 'Analytics';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      toast.dataRefreshed();
+    }, 1500);
+  }, [toast]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as AnalyticsMainCategory, 'all', null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        // Ouvrir le premier item sélectionné
+        if (ids.length > 0) {
+          // TODO: Détecter le type (KPI, Alerte, Rapport) et ouvrir le modal approprié
+          openModal('kpi-detail', { kpiId: ids[0] });
+        }
+        break;
+      case 'delete':
+        // TODO: Implémenter suppression batch
+        toast.warning('Suppression batch', `${ids.length} item(s) à supprimer`);
+        break;
+      case 'archive':
+        // TODO: Implémenter archivage batch
+        toast.info('Archivage batch', `${ids.length} item(s) à archiver`);
+        break;
+      default:
+        break;
+    }
+  }, [openModal, toast]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation */}
+      <AnalyticsCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.totalCalls.toLocaleString()}</p>
-            <p className="text-[10px] text-slate-400">Appels aujourd'hui</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.endpointsActive}</p>
-            <p className="text-[10px] text-slate-400">Endpoints OK</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.endpointsError}</p>
-            <p className="text-[10px] text-slate-400">Endpoints KO</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.integrationsActive}</p>
-            <p className="text-[10px] text-slate-400">Intégrations OK</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.integrationsError}</p>
-            <p className="text-[10px] text-slate-400">Intégrations KO</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.rotationRequired}</p>
-            <p className="text-[10px] text-slate-400">Rotations</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
 
-      {/* Onglets */}
-      <div className="flex gap-2">
-        <Button size="sm" variant={viewTab === 'endpoints' ? 'default' : 'secondary'} onClick={() => setViewTab('endpoints')}>📡 Endpoints ({apiEndpoints.length})</Button>
-        <Button size="sm" variant={viewTab === 'integrations' ? 'default' : 'secondary'} onClick={() => setViewTab('integrations')}>🔗 Intégrations ({apiIntegrations.length})</Button>
-      </div>
-
-      {viewTab === 'endpoints' ? (
-        <div className="grid md:grid-cols-2 gap-4">
-          {apiEndpoints.map((endpoint) => {
-            const statusColor = getStatusColor(endpoint.status);
-            return (
-              <Card key={endpoint.id} className={cn(`border-l-4 border-l-${statusColor}-500`)}>
-                <CardContent className="p-4">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={endpoint.status === 'active' ? 'success' : endpoint.status === 'degraded' ? 'warning' : 'urgent'}>{endpoint.status}</Badge>
-                        <span className="font-mono text-xs text-slate-400">{endpoint.method}</span>
-                      </div>
-                      <h3 className="font-bold mt-1">{endpoint.name}</h3>
-                      <p className="text-xs text-slate-400 font-mono">{endpoint.path}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className="text-lg font-bold text-blue-400">{endpoint.callsToday.toLocaleString()}</p>
-                      <p className="text-[10px] text-slate-400">Appels/jour</p>
-                    </div>
-                    <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className={cn("text-lg font-bold", endpoint.avgResponseTime < 200 ? "text-emerald-400" : endpoint.avgResponseTime < 500 ? "text-amber-400" : "text-red-400")}>
-                        {endpoint.avgResponseTime}ms
-                      </p>
-                      <p className="text-[10px] text-slate-400">Temps moy.</p>
-                    </div>
-                    <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className={cn("text-lg font-bold", endpoint.errorRate < 1 ? "text-emerald-400" : endpoint.errorRate < 5 ? "text-amber-400" : "text-red-400")}>
-                        {endpoint.errorRate}%
-                      </p>
-                      <p className="text-[10px] text-slate-400">Erreurs</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-400 flex justify-between">
-                    <span>Rate limit: {endpoint.rateLimit}/min</span>
-                    <span>{endpoint.callsMonth.toLocaleString()} ce mois</span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-3">
-            {apiIntegrations.map((integration) => {
-              const isSelected = selectedIntegration === integration.id;
-              const statusColor = getStatusColor(integration.status);
-              
-              return (
-                <Card
-                  key={integration.id}
-                  className={cn(
-                    'cursor-pointer transition-all',
-                    isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50',
-                    `border-l-4 border-l-${statusColor}-500`,
-                  )}
-                  onClick={() => setSelectedIntegration(integration.id)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{getTypeIcon(integration.type)}</span>
-                          <Badge variant={integration.status === 'active' ? 'success' : integration.status === 'error' ? 'urgent' : 'warning'}>{integration.status}</Badge>
-                          <Badge variant="default">{integration.type}</Badge>
-                          {integration.credentials.rotationRequired && <Badge variant="warning" pulse>Rotation requise</Badge>}
-                        </div>
-                        <h3 className="font-bold mt-1">{integration.provider}</h3>
-                      </div>
-                      <div className="text-right text-xs text-slate-400">
-                        <p>Dernière sync: {integration.lastSync}</p>
-                      </div>
-                    </div>
-
-                    {integration.status === 'error' && integration.errorMessage && (
-                      <div className="p-2 rounded bg-red-500/10 border border-red-500/30 mb-3">
-                        <p className="text-xs text-red-400">⚠️ {integration.errorMessage}</p>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); handleTestConnection(integration); }}>🔍 Tester</Button>
-                      {integration.credentials.rotationRequired && (
-                        <Button size="sm" variant="warning" onClick={(e) => { e.stopPropagation(); handleRotateCredentials(integration); }}>🔑 Rotation</Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Analytics</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
           </div>
 
-          <div className="lg:col-span-1">
-            {selectedI ? (
-              <Card className="sticky top-4">
-                <CardContent className="p-4">
-                  <div className="mb-4 pb-4 border-b border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-2xl">{getTypeIcon(selectedI.type)}</span>
-                      <Badge variant={selectedI.status === 'active' ? 'success' : 'urgent'}>{selectedI.status}</Badge>
-                    </div>
-                    <h3 className="font-bold">{selectedI.provider}</h3>
-                  </div>
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-                  <div className="space-y-3 text-sm">
-                    <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-xs text-slate-400">Type</p>
-                          <p className="capitalize">{selectedI.type}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Dernière sync</p>
-                          <p>{selectedI.lastSync}</p>
-                        </div>
-                      </div>
-                    </div>
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-                    <div className={cn("p-3 rounded", selectedI.credentials.rotationRequired ? "bg-amber-500/10 border border-amber-500/30" : darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className="text-xs text-slate-400 mb-2">🔑 Credentials</p>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span>Dernière rotation</span>
-                          <span className="font-mono">{selectedI.credentials.lastRotation}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Expiration</span>
-                          <span className={cn("font-mono", selectedI.credentials.rotationRequired ? "text-amber-400" : "text-slate-300")}>{selectedI.credentials.expiresAt}</span>
-                        </div>
-                      </div>
-                    </div>
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
 
-                    {selectedI.webhooks && selectedI.webhooks.length > 0 && (
-                      <div>
-                        <p className="text-xs text-slate-400 mb-2">🔔 Webhooks ({selectedI.webhooks.length})</p>
-                        <div className="space-y-1">
-                          {selectedI.webhooks.map((wh, idx) => (
-                            <div key={idx} className={cn("p-2 rounded text-xs flex justify-between items-center", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                              <span>{wh.event}</span>
-                              <Badge variant={wh.status === 'active' ? 'success' : wh.status === 'failing' ? 'urgent' : 'default'}>{wh.status}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
 
-                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                    <Button size="sm" variant="info" onClick={() => handleTestConnection(selectedI)}>🔍 Tester connexion</Button>
-                    {selectedI.credentials.rotationRequired && (
-                      <Button size="sm" variant="warning" onClick={() => handleRotateCredentials(selectedI)}>🔑 Rotation credentials</Button>
-                    )}
-                    <Button size="sm" variant="destructive" onClick={() => handleDisable(selectedI)}>⛔ Désactiver</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="sticky top-4"><CardContent className="p-8 text-center"><span className="text-4xl mb-4 block">🔗</span><p className="text-slate-400">Sélectionnez une intégration</p></CardContent></Card>
+        {/* Sub Navigation */}
+        <AnalyticsSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <AnalyticsKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <AnalyticsContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              24 KPIs • 8 alertes • 45 rapports
+            </span>
+            {isConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Temps réel ({subscriptionsCount} abonnements)
+                </span>
+              </>
             )}
           </div>
-        </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && <AnalyticsCommandPalette />}
+
+      {/* Modals */}
+      <AnalyticsModals />
+
+      {/* Detail Panel */}
+      <AnalyticsDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <AnalyticsBatchActionsBar onAction={handleBatchAction} />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <AnalyticsFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            // Convertir les filtres au format du store
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value);
+              }
+            });
+            closeModal();
+            toast.info('Filtres appliqués', `${Object.keys(newFilters).length} filtre(s) actif(s)`);
+          }}
+        />
       )}
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'KPI Performance critique',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Tendance négative détectée',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Rapport hebdomadaire disponible',
+      time: 'il y a 3h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: 'Seuil budget atteint à 80%',
+      time: 'il y a 5h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Nouvelle analyse disponible',
+      time: 'hier',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

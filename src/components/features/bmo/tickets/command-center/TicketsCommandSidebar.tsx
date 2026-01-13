@@ -1,0 +1,326 @@
+/**
+ * Sidebar de navigation pour Tickets Clients
+ * Architecture Command Center
+ */
+
+'use client';
+
+import React, { useMemo } from 'react';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  MessageSquare,
+  LayoutDashboard,
+  Inbox,
+  PlayCircle,
+  Clock,
+  AlertOctagon,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
+  Archive,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+} from 'lucide-react';
+
+// ================================
+// TYPES
+// ================================
+
+export interface TicketsCategory {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical' | 'success';
+  description?: string;
+}
+
+// ================================
+// CATÉGORIES
+// ================================
+
+export const ticketsCategories: TicketsCategory[] = [
+  {
+    id: 'overview',
+    label: 'Vue d\'ensemble',
+    icon: LayoutDashboard,
+    description: 'Tableau de bord support',
+  },
+  {
+    id: 'new',
+    label: 'Nouveaux',
+    icon: Inbox,
+    badge: 0,
+    badgeType: 'warning',
+    description: 'Tickets non assignés',
+  },
+  {
+    id: 'in-progress',
+    label: 'En cours',
+    icon: PlayCircle,
+    badge: 0,
+    badgeType: 'default',
+    description: 'Tickets en traitement',
+  },
+  {
+    id: 'waiting-customer',
+    label: 'Attente client',
+    icon: Clock,
+    badge: 0,
+    badgeType: 'default',
+    description: 'En attente réponse client',
+  },
+  {
+    id: 'escalated',
+    label: 'Escaladés',
+    icon: AlertOctagon,
+    badge: 0,
+    badgeType: 'critical',
+    description: 'Tickets escaladés',
+  },
+  {
+    id: 'resolved',
+    label: 'Résolus',
+    icon: CheckCircle2,
+    badge: 0,
+    badgeType: 'success',
+    description: 'Tickets résolus',
+  },
+  {
+    id: 'closed',
+    label: 'Fermés',
+    icon: XCircle,
+    badge: 0,
+    badgeType: 'default',
+    description: 'Tickets fermés',
+  },
+  {
+    id: 'by-priority',
+    label: 'Par priorité',
+    icon: AlertOctagon,
+    badge: 0,
+    badgeType: 'warning',
+    description: 'Vue par priorité',
+  },
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    icon: BarChart3,
+    description: 'Statistiques support',
+  },
+  {
+    id: 'archive',
+    label: 'Archives',
+    icon: Archive,
+    description: 'Historique tickets',
+  },
+];
+
+// ================================
+// PROPS
+// ================================
+
+interface TicketsCommandSidebarProps {
+  activeCategory: string;
+  onCategoryChange: (categoryId: string) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  stats?: {
+    new: number;
+    inProgress: number;
+    waitingCustomer: number;
+    escalated: number;
+    resolved: number;
+    closed: number;
+    byPriority: number;
+  };
+}
+
+// ================================
+// COMPONENT
+// ================================
+
+export function TicketsCommandSidebar({
+  activeCategory,
+  onCategoryChange,
+  collapsed = false,
+  onToggleCollapse,
+  stats,
+}: TicketsCommandSidebarProps) {
+  const categoriesWithStats = useMemo(() => {
+    return ticketsCategories.map((cat) => {
+      let badge = cat.badge;
+      
+      if (stats) {
+        switch (cat.id) {
+          case 'new':
+            badge = stats.new;
+            break;
+          case 'in-progress':
+            badge = stats.inProgress;
+            break;
+          case 'waiting-customer':
+            badge = stats.waitingCustomer;
+            break;
+          case 'escalated':
+            badge = stats.escalated;
+            break;
+          case 'resolved':
+            badge = stats.resolved;
+            break;
+          case 'closed':
+            badge = stats.closed;
+            break;
+          case 'by-priority':
+            badge = stats.byPriority;
+            break;
+        }
+      }
+      
+      return { ...cat, badge };
+    });
+  }, [stats]);
+
+  return (
+    <div
+      className={cn(
+        'h-full bg-slate-900 border-r border-slate-700/50 flex flex-col transition-all duration-300',
+        collapsed ? 'w-16' : 'w-64'
+      )}
+    >
+      {/* Header */}
+      <div className="flex-shrink-0 px-4 py-4 border-b border-slate-800/50">
+        <div className="flex items-center justify-between">
+          {!collapsed && (
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-orange-400" />
+              <h2 className="text-sm font-semibold text-slate-200">Tickets</h2>
+            </div>
+          )}
+          {collapsed && (
+            <div className="w-full flex justify-center">
+              <MessageSquare className="h-5 w-5 text-orange-400" />
+            </div>
+          )}
+          {onToggleCollapse && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleCollapse}
+              className={cn(
+                'h-6 w-6 p-0 hover:bg-slate-800',
+                collapsed && 'hidden'
+              )}
+            >
+              {collapsed ? (
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+              ) : (
+                <ChevronLeft className="h-4 w-4 text-slate-400" />
+              )}
+            </Button>
+          )}
+        </div>
+
+        {!collapsed && (
+          <div className="mt-3 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Rechercher... ⌘K"
+              className="w-full pl-9 pr-3 py-1.5 text-sm bg-slate-800/50 border border-slate-700 rounded-lg text-slate-300 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+              readOnly
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('tickets:open-command-palette'));
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        <div className="space-y-1">
+          {categoriesWithStats.map((category) => {
+            const Icon = category.icon;
+            const isActive = activeCategory === category.id;
+            const hasBadge = category.badge !== undefined && category.badge !== null;
+
+            return (
+              <button
+                key={category.id}
+                onClick={() => onCategoryChange(category.id)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group',
+                  isActive
+                    ? 'bg-orange-500/10 text-orange-400 border border-orange-500/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent',
+                  collapsed && 'justify-center px-2'
+                )}
+                title={collapsed ? category.label : category.description}
+              >
+                <Icon
+                  className={cn(
+                    'h-5 w-5 flex-shrink-0',
+                    isActive ? 'text-orange-400' : 'text-slate-500 group-hover:text-slate-400'
+                  )}
+                />
+
+                {!collapsed && (
+                  <>
+                    <span className="flex-1 text-left truncate">{category.label}</span>
+
+                    {hasBadge && category.badge !== 0 && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'h-5 min-w-5 px-1.5 text-xs font-medium',
+                          category.badgeType === 'critical'
+                            ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                            : category.badgeType === 'warning'
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                            : category.badgeType === 'success'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : 'bg-slate-600/40 text-slate-400 border-slate-600/50'
+                        )}
+                      >
+                        {category.badge}
+                      </Badge>
+                    )}
+                  </>
+                )}
+
+                {collapsed && isActive && (
+                  <div className="absolute left-0 w-1 h-8 bg-orange-400 rounded-r" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* Footer */}
+      {!collapsed && stats && (
+        <div className="flex-shrink-0 px-4 py-3 border-t border-slate-800/50">
+          <div className="text-xs text-slate-500">
+            <div className="flex items-center justify-between mb-1">
+              <span>Escaladés</span>
+              <span className="font-medium text-rose-400">
+                {stats.escalated || 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Nouveaux</span>
+              <span className="font-medium text-amber-400">
+                {stats.new || 0}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

@@ -1,0 +1,224 @@
+'use client';
+
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+// Context for dropdown state
+interface DropdownContextType {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
+
+const DropdownContext = React.createContext<DropdownContextType | undefined>(undefined);
+
+function useDropdownContext() {
+  const context = React.useContext(DropdownContext);
+  if (!context) {
+    throw new Error('Dropdown components must be used within DropdownMenu');
+  }
+  return context;
+}
+
+// DropdownMenu Root
+interface DropdownMenuProps {
+  children: React.ReactNode;
+}
+
+function DropdownMenu({ children }: DropdownMenuProps) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <DropdownContext.Provider value={{ open, setOpen }}>
+      <div className="relative inline-block text-left">{children}</div>
+    </DropdownContext.Provider>
+  );
+}
+
+// DropdownMenuTrigger
+interface DropdownMenuTriggerProps {
+  asChild?: boolean;
+  children: React.ReactNode;
+}
+
+function DropdownMenuTrigger({ asChild, children }: DropdownMenuTriggerProps) {
+  const { open, setOpen } = useDropdownContext();
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(!open);
+  };
+
+  if (asChild && React.isValidElement(children)) {
+    return React.cloneElement(children as React.ReactElement<any>, {
+      onClick: (e: React.MouseEvent) => {
+        handleClick(e);
+        (children as React.ReactElement<any>).props?.onClick?.(e);
+      },
+      'aria-expanded': open,
+      'aria-haspopup': true,
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-expanded={open}
+      aria-haspopup="true"
+    >
+      {children}
+    </button>
+  );
+}
+
+// DropdownMenuContent
+interface DropdownMenuContentProps {
+  align?: 'start' | 'center' | 'end';
+  className?: string;
+  children: React.ReactNode;
+}
+
+function DropdownMenuContent({
+  align = 'end',
+  className,
+  children,
+}: DropdownMenuContentProps) {
+  const { open, setOpen } = useDropdownContext();
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open, setOpen]);
+
+  if (!open) return null;
+
+  const alignClasses = {
+    start: 'left-0',
+    center: 'left-1/2 -translate-x-1/2',
+    end: 'right-0',
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        'absolute z-50 mt-1 min-w-[8rem] overflow-hidden rounded-md border border-slate-700 bg-slate-900 p-1 shadow-lg',
+        'animate-in fade-in-0 zoom-in-95',
+        alignClasses[align],
+        className
+      )}
+      role="menu"
+      aria-orientation="vertical"
+    >
+      {children}
+    </div>
+  );
+}
+
+// DropdownMenuItem
+interface DropdownMenuItemProps {
+  className?: string;
+  disabled?: boolean;
+  onSelect?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+}
+
+function DropdownMenuItem({
+  className,
+  disabled,
+  onSelect,
+  onClick,
+  children,
+}: DropdownMenuItemProps) {
+  const { setOpen } = useDropdownContext();
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (disabled) return;
+    onClick?.(e);
+    onSelect?.();
+    setOpen(false);
+  };
+
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={handleClick}
+      className={cn(
+        'relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none',
+        'text-slate-300 transition-colors',
+        'hover:bg-slate-800 focus:bg-slate-800',
+        disabled && 'pointer-events-none opacity-50',
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// DropdownMenuSeparator
+interface DropdownMenuSeparatorProps {
+  className?: string;
+}
+
+function DropdownMenuSeparator({ className }: DropdownMenuSeparatorProps) {
+  return (
+    <div
+      role="separator"
+      className={cn('-mx-1 my-1 h-px bg-slate-700', className)}
+    />
+  );
+}
+
+// DropdownMenuLabel
+interface DropdownMenuLabelProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+function DropdownMenuLabel({ className, children }: DropdownMenuLabelProps) {
+  return (
+    <div
+      className={cn(
+        'px-2 py-1.5 text-xs font-medium text-slate-500',
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+};
+

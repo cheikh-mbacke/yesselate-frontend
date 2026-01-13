@@ -166,10 +166,9 @@ export function getAge(birthDate: Date): number {
 }
 
 /**
- * Formate une date relative (il y a X jours, dans X jours) - version avancée
- * Note: formatRelativeDate existe déjà dans formatUtils.ts
+ * Formate une date relative (il y a X jours, dans X jours)
  */
-export function formatRelativeDateAdvanced(date: Date): string {
+export function formatRelativeDate(date: Date): string {
   const now = new Date();
   const diffInDays = differenceInDays(now, date);
 
@@ -183,10 +182,9 @@ export function formatRelativeDateAdvanced(date: Date): string {
 }
 
 /**
- * Formate une durée entre deux dates - version avancée
- * Note: formatDuration existe déjà dans formatUtils.ts
+ * Formate une durée entre deux dates
  */
-export function formatDurationAdvanced(startDate: Date, endDate: Date): string {
+export function formatDuration(startDate: Date, endDate: Date): string {
   const days = differenceInDays(endDate, startDate);
   const hours = differenceInHours(endDate, startDate);
   const minutes = differenceInMinutes(endDate, startDate);
@@ -286,4 +284,3 @@ export function countBusinessDays(startDate: Date, endDate: Date): number {
 
   return count;
 }
-

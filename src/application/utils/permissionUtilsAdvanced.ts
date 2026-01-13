@@ -3,231 +3,238 @@
  * Helpers pour les permissions avancées
  */
 
-// Note: Permission et Role existent déjà dans permissionUtils.ts
-export type PermissionAdvanced = string;
-export type RoleAdvanced = string;
+export type Permission = string;
+export type Role = string;
+export type Resource = string;
+export type Action = 'create' | 'read' | 'update' | 'delete' | 'execute';
 
-export interface PermissionSet {
-  permissions: PermissionAdvanced[];
-  roles: RoleAdvanced[];
+export interface PermissionConfig {
+  roles: Role[];
+  permissions: Permission[];
+  resources?: Record<Resource, Action[]>;
+}
+
+export interface UserPermissions {
+  roles: Role[];
+  permissions: Permission[];
+  resources?: Record<Resource, Action[]>;
 }
 
 /**
- * Vérifie si un utilisateur a une permission (version avancée)
- * Note: hasPermission existe déjà dans permissionUtils.ts
- */
-export function hasPermissionAdvanced(
-  userPermissions: PermissionAdvanced[],
-  requiredPermission: PermissionAdvanced
-): boolean {
-  return userPermissions.includes(requiredPermission);
-}
-
-// Note: hasAllPermissions existe déjà dans permissionUtils.ts
-export function hasAllPermissionsAdvanced(
-  userPermissions: PermissionAdvanced[],
-  requiredPermissions: PermissionAdvanced[]
-): boolean {
-  return requiredPermissions.every(permission =>
-    userPermissions.includes(permission)
-  );
-}
-
-// Note: hasAnyPermission existe déjà dans permissionUtils.ts
-export function hasAnyPermissionAdvanced(
-  userPermissions: PermissionAdvanced[],
-  requiredPermissions: PermissionAdvanced[]
-): boolean {
-  return requiredPermissions.some(permission =>
-    userPermissions.includes(permission)
-  );
-}
-
-// Note: hasRole existe déjà dans permissionUtils.ts
-export function hasRoleAdvanced(userRoles: RoleAdvanced[], requiredRole: RoleAdvanced): boolean {
-  return userRoles.includes(requiredRole);
-}
-
-// Note: hasAllRoles existe déjà dans permissionUtils.ts
-export function hasAllRolesAdvanced(userRoles: RoleAdvanced[], requiredRoles: RoleAdvanced[]): boolean {
-  return requiredRoles.every(role => userRoles.includes(role));
-}
-
-// Note: hasAnyRole existe déjà dans permissionUtils.ts
-export function hasAnyRoleAdvanced(userRoles: RoleAdvanced[], requiredRoles: RoleAdvanced[]): boolean {
-  return requiredRoles.some(role => userRoles.includes(role));
-}
-
-/**
- * Crée un gestionnaire de permissions
+ * Gestionnaire de permissions avancé
  */
 export class PermissionManager {
-  private permissions: PermissionAdvanced[] = [];
-  private roles: RoleAdvanced[] = [];
+  private rolePermissions: Map<Role, Set<Permission>> = new Map();
+  private roleResources: Map<Role, Map<Resource, Set<Action>>> = new Map();
+  private permissionHierarchy: Map<Permission, Set<Permission>> = new Map();
 
-  constructor(permissionSet?: PermissionSet) {
-    if (permissionSet) {
-      this.permissions = permissionSet.permissions;
-      this.roles = permissionSet.roles;
+  /**
+   * Définit les permissions d'un rôle
+   */
+  setRolePermissions(role: Role, permissions: Permission[]): void {
+    this.rolePermissions.set(role, new Set(permissions));
+  }
+
+  /**
+   * Définit les ressources d'un rôle
+   */
+  setRoleResources(role: Role, resources: Record<Resource, Action[]>): void {
+    const resourceMap = new Map<Resource, Set<Action>>();
+    for (const [resource, actions] of Object.entries(resources)) {
+      resourceMap.set(resource, new Set(actions));
     }
+    this.roleResources.set(role, resourceMap);
   }
 
   /**
-   * Définit les permissions
+   * Définit une hiérarchie de permissions
    */
-  setPermissions(permissions: PermissionAdvanced[]): void {
-    this.permissions = permissions;
+  setPermissionHierarchy(parent: Permission, children: Permission[]): void {
+    this.permissionHierarchy.set(parent, new Set(children));
   }
 
   /**
-   * Définit les rôles
+   * Vérifie si un rôle a une permission
    */
-  setRoles(roles: RoleAdvanced[]): void {
-    this.roles = roles;
-  }
+  hasPermission(role: Role, permission: Permission): boolean {
+    const rolePerms = this.rolePermissions.get(role);
+    if (!rolePerms) return false;
 
-  /**
-   * Ajoute une permission
-   */
-  addPermission(permission: PermissionAdvanced): void {
-    if (!this.permissions.includes(permission)) {
-      this.permissions.push(permission);
-    }
-  }
+    // Vérification directe
+    if (rolePerms.has(permission)) return true;
 
-  /**
-   * Supprime une permission
-   */
-  removePermission(permission: PermissionAdvanced): void {
-    this.permissions = this.permissions.filter(p => p !== permission);
-  }
-
-  /**
-   * Ajoute un rôle
-   */
-  addRole(role: RoleAdvanced): void {
-    if (!this.roles.includes(role)) {
-      this.roles.push(role);
-    }
-  }
-
-  /**
-   * Supprime un rôle
-   */
-  removeRole(role: RoleAdvanced): void {
-    this.roles = this.roles.filter(r => r !== role);
-  }
-
-  /**
-   * Vérifie une permission
-   */
-  can(permission: PermissionAdvanced): boolean {
-    return hasPermissionAdvanced(this.permissions, permission);
-  }
-
-  /**
-   * Vérifie toutes les permissions
-   */
-  canAll(permissions: PermissionAdvanced[]): boolean {
-    return hasAllPermissionsAdvanced(this.permissions, permissions);
-  }
-
-  /**
-   * Vérifie au moins une permission
-   */
-  canAny(permissions: PermissionAdvanced[]): boolean {
-    return hasAnyPermissionAdvanced(this.permissions, permissions);
-  }
-
-  /**
-   * Vérifie un rôle
-   */
-  is(role: RoleAdvanced): boolean {
-    return hasRoleAdvanced(this.roles, role);
-  }
-
-  /**
-   * Vérifie tous les rôles
-   */
-  isAll(roles: RoleAdvanced[]): boolean {
-    return hasAllRolesAdvanced(this.roles, roles);
-  }
-
-  /**
-   * Vérifie au moins un rôle
-   */
-  isAny(roles: RoleAdvanced[]): boolean {
-    return hasAnyRoleAdvanced(this.roles, roles);
-  }
-
-  /**
-   * Obtient toutes les permissions
-   */
-  getPermissions(): PermissionAdvanced[] {
-    return [...this.permissions];
-  }
-
-  /**
-   * Obtient tous les rôles
-   */
-  getRoles(): RoleAdvanced[] {
-    return [...this.roles];
-  }
-
-  /**
-   * Réinitialise
-   */
-  reset(): void {
-    this.permissions = [];
-    this.roles = [];
-  }
-}
-
-/**
- * Crée un gestionnaire de permissions
- */
-export function createPermissionManager(
-  permissionSet?: PermissionSet
-): PermissionManager {
-  return new PermissionManager(permissionSet);
-}
-
-/**
- * Mappe les rôles vers les permissions
- */
-export function mapRolesToPermissions(
-  roles: RoleAdvanced[],
-  rolePermissionMap: Record<RoleAdvanced, PermissionAdvanced[]>
-): PermissionAdvanced[] {
-  const permissions: Permission[] = [];
-
-  roles.forEach(role => {
-    const rolePermissions = rolePermissionMap[role] || [];
-    rolePermissions.forEach(permission => {
-      if (!permissions.includes(permission)) {
-        permissions.push(permission);
+    // Vérification de la hiérarchie
+    for (const [parent, children] of this.permissionHierarchy.entries()) {
+      if (rolePerms.has(parent) && children.has(permission)) {
+        return true;
       }
-    });
-  });
+    }
 
-  return permissions;
+    return false;
+  }
+
+  /**
+   * Vérifie si un rôle peut effectuer une action sur une ressource
+   */
+  canAccessResource(role: Role, resource: Resource, action: Action): boolean {
+    const roleRes = this.roleResources.get(role);
+    if (!roleRes) return false;
+
+    const resourceActions = roleRes.get(resource);
+    return resourceActions?.has(action) ?? false;
+  }
+
+  /**
+   * Obtient toutes les permissions d'un rôle
+   */
+  getRolePermissions(role: Role): Permission[] {
+    const perms = this.rolePermissions.get(role);
+    return perms ? Array.from(perms) : [];
+  }
+
+  /**
+   * Obtient toutes les ressources d'un rôle
+   */
+  getRoleResources(role: Role): Record<Resource, Action[]> {
+    const roleRes = this.roleResources.get(role);
+    if (!roleRes) return {};
+
+    const result: Record<Resource, Action[]> = {};
+    for (const [resource, actions] of roleRes.entries()) {
+      result[resource] = Array.from(actions);
+    }
+    return result;
+  }
 }
 
 /**
- * Vérifie les permissions avec un système de hiérarchie
+ * Instance globale du gestionnaire de permissions
  */
-export function checkPermissionWithHierarchy(
-  userPermissions: PermissionAdvanced[],
-  requiredPermission: PermissionAdvanced,
-  hierarchy: Record<PermissionAdvanced, PermissionAdvanced[]>
+export const permissionManager = new PermissionManager();
+
+/**
+ * Vérifie si un utilisateur a une permission
+ */
+export function hasUserPermission(
+  userPermissions: UserPermissions,
+  permission: Permission
 ): boolean {
-  // Vérifie la permission directe
-  if (hasPermissionAdvanced(userPermissions, requiredPermission)) {
+  // Vérification directe
+  if (userPermissions.permissions.includes(permission)) {
     return true;
   }
 
-  // Vérifie les permissions parentes
-  const parentPermissions = hierarchy[requiredPermission] || [];
-  return hasAnyPermissionAdvanced(userPermissions, parentPermissions);
+  // Vérification via les rôles
+  for (const role of userPermissions.roles) {
+    if (permissionManager.hasPermission(role, permission)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
+/**
+ * Vérifie si un utilisateur peut accéder à une ressource
+ */
+export function canUserAccessResource(
+  userPermissions: UserPermissions,
+  resource: Resource,
+  action: Action
+): boolean {
+  // Vérification via les ressources de l'utilisateur
+  if (userPermissions.resources?.[resource]?.includes(action)) {
+    return true;
+  }
+
+  // Vérification via les rôles
+  for (const role of userPermissions.roles) {
+    if (permissionManager.canAccessResource(role, resource, action)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Filtre un tableau d'éléments selon les permissions
+ */
+export function filterByPermission<T>(
+  items: T[],
+  userPermissions: UserPermissions,
+  getPermission: (item: T) => Permission
+): T[] {
+  return items.filter((item) =>
+    hasUserPermission(userPermissions, getPermission(item))
+  );
+}
+
+/**
+ * Filtre un tableau d'éléments selon l'accès à une ressource
+ */
+export function filterByResourceAccess<T>(
+  items: T[],
+  userPermissions: UserPermissions,
+  resource: Resource,
+  action: Action,
+  getResourceId: (item: T) => Resource
+): T[] {
+  return items.filter((item) => {
+    const itemResource = getResourceId(item);
+    return canUserAccessResource(
+      userPermissions,
+      `${resource}:${itemResource}`,
+      action
+    );
+  });
+}
+
+/**
+ * Combine plusieurs configurations de permissions
+ */
+export function combinePermissions(
+  ...configs: PermissionConfig[]
+): UserPermissions {
+  const roles = new Set<Role>();
+  const permissions = new Set<Permission>();
+  const resources: Record<Resource, Action[]> = {};
+
+  for (const config of configs) {
+    config.roles.forEach((role) => roles.add(role));
+    config.permissions.forEach((perm) => permissions.add(perm));
+
+    if (config.resources) {
+      for (const [resource, actions] of Object.entries(config.resources)) {
+        if (!resources[resource]) {
+          resources[resource] = [];
+        }
+        actions.forEach((action) => {
+          if (!resources[resource].includes(action)) {
+            resources[resource].push(action);
+          }
+        });
+      }
+    }
+  }
+
+  return {
+    roles: Array.from(roles),
+    permissions: Array.from(permissions),
+    resources: Object.keys(resources).length > 0 ? resources : undefined,
+  };
+}
+
+/**
+ * Crée une fonction de vérification de permission réutilisable
+ */
+export function createPermissionChecker(userPermissions: UserPermissions) {
+  return {
+    has: (permission: Permission) =>
+      hasUserPermission(userPermissions, permission),
+    canAccess: (resource: Resource, action: Action) =>
+      canUserAccessResource(userPermissions, resource, action),
+    filter: <T>(items: T[], getPermission: (item: T) => Permission) =>
+      filterByPermission(items, userPermissions, getPermission),
+  };
+}

@@ -86,12 +86,25 @@ class AnalyticsRealtimeService {
           'CLOSED';
         
         if (process.env.NODE_ENV === 'development') {
-          console.error('SSE connection error:', {
+          const errorInfo = {
             type: event.type,
             readyState: stateMessage,
-            url: eventSource?.url || 'unknown',
+            readyStateCode: readyState,
+            url: eventSource?.url || url || 'unknown',
+            withCredentials: (this.eventSource as any)?.withCredentials,
             timestamp: new Date().toISOString(),
-          });
+          };
+          console.error('SSE connection error:', errorInfo);
+          
+          // Log additional context based on readyState
+          if (readyState === EventSource.CLOSED) {
+            console.warn('SSE connection closed. Possible causes:', [
+              'Server endpoint not responding',
+              'Network error',
+              'CORS issue',
+              'Server returned non-SSE response',
+            ]);
+          }
         }
         
         this.isConnected = false;

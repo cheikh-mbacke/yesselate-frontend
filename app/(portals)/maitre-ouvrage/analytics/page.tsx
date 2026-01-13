@@ -75,6 +75,8 @@ import { useKpis, useAlerts, useReports } from '@/lib/api/hooks/useAnalytics';
 // Lazy load des vues pour améliorer les performances
 import { lazy, Suspense } from 'react';
 import { LoadingSkeleton } from '@/presentation/components/LazyLoad';
+// Navigation BTP
+import { BTPSidebar, BTPContentRouter } from '@/components/features/bmo/analytics/btp-navigation';
 
 const AnalyticsDashboardView = lazy(() => 
   import('@/components/features/bmo/analytics/workspace/views/AnalyticsDashboardView').then(m => ({ default: m.AnalyticsDashboardView }))
@@ -379,6 +381,8 @@ function AnalyticsPageContent() {
   // NOUVEAU v3.0: Vue mode + drill-down
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [drillDownPath, setDrillDownPath] = useState<BreadcrumbItem[]>([]);
+  // Navigation BTP - Activée par défaut
+  const [useBTPNavigation, setUseBTPNavigation] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -985,19 +989,29 @@ function AnalyticsPageContent() {
         />
       )}
 
-      <AnalyticsCommandSidebar
-        activeCategory={activeCategory}
-        collapsed={sidebarCollapsed}
-        onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => {
-          audit.log('SIDEBAR_TOGGLE');
-          toggleSidebar();
-        }}
-        onOpenCommandPalette={() => {
-          audit.log('COMMAND_PALETTE_TOGGLE');
-          toggleCommandPalette();
-        }}
-      />
+      {useBTPNavigation ? (
+        <BTPSidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => {
+            audit.log('SIDEBAR_TOGGLE');
+            toggleSidebar();
+          }}
+        />
+      ) : (
+        <AnalyticsCommandSidebar
+          activeCategory={activeCategory}
+          collapsed={sidebarCollapsed}
+          onCategoryChange={handleCategoryChange}
+          onToggleCollapse={() => {
+            audit.log('SIDEBAR_TOGGLE');
+            toggleSidebar();
+          }}
+          onOpenCommandPalette={() => {
+            audit.log('COMMAND_PALETTE_TOGGLE');
+            toggleCommandPalette();
+          }}
+        />
+      )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
@@ -1031,6 +1045,23 @@ function AnalyticsPageContent() {
               >
                 v3.0
               </Badge>
+              <Button
+                variant={useBTPNavigation ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  audit.log('BTP_NAV_TOGGLE', { from: useBTPNavigation, to: !useBTPNavigation });
+                  setUseBTPNavigation(!useBTPNavigation);
+                }}
+                className={cn(
+                  'h-7 px-3 text-xs font-medium transition-colors',
+                  useBTPNavigation
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'text-slate-400 hover:text-slate-200 border-slate-700'
+                )}
+                title={useBTPNavigation ? 'Basculer vers navigation classique' : 'Basculer vers navigation BTP'}
+              >
+                {useBTPNavigation ? 'BTP' : 'Classique'}
+              </Button>
             </div>
           </div>
 
@@ -1088,13 +1119,15 @@ function AnalyticsPageContent() {
           </div>
         </header>
 
-        <AnalyticsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
-          subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
-          onSubCategoryChange={handleSubCategoryChange}
-        />
+        {!useBTPNavigation && (
+          <AnalyticsSubNavigation
+            mainCategory={activeCategory}
+            mainCategoryLabel={currentCategoryLabel}
+            subCategory={activeSubCategory}
+            subCategories={currentSubCategories}
+            onSubCategoryChange={handleSubCategoryChange}
+          />
+        )}
 
         {/* NOUVEAU v3.0: Drill-down breadcrumb */}
         {drillDownPath.length > 0 && (
@@ -1185,43 +1218,47 @@ function AnalyticsPageContent() {
                 }
               }}
             >
-              {/* NOUVEAU v3.0: Router selon viewMode */}
-              {(() => {
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('🔍 [DEBUG] Rendering viewMode:', viewMode, 'category:', activeCategory, 'subCategory:', activeSubCategory);
-                }
-                if (viewMode === 'grid') {
-                  return (
-                    <AnalyticsContentRouter
-                      category={activeCategory}
-                      subCategory={activeSubCategory}
-                    />
-                  );
-                }
-                if (viewMode === 'dashboard') {
-                  // Si on est sur la catégorie alerts, utiliser AlertsDashboardView avec subCategory
-                  if (activeCategory === 'alerts') {
+              {/* Router selon le mode de navigation */}
+              {useBTPNavigation ? (
+                <BTPContentRouter />
+              ) : (
+                (() => {
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log('🔍 [DEBUG] Rendering viewMode:', viewMode, 'category:', activeCategory, 'subCategory:', activeSubCategory);
+                  }
+                  if (viewMode === 'grid') {
+                    return (
+                      <AnalyticsContentRouter
+                        category={activeCategory}
+                        subCategory={activeSubCategory}
+                      />
+                    );
+                  }
+                  if (viewMode === 'dashboard') {
+                    // Si on est sur la catégorie alerts, utiliser AlertsDashboardView avec subCategory
+                    if (activeCategory === 'alerts') {
+                      return (
+                        <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
+                          <AlertsDashboardView subCategory={activeSubCategory} />
+                        </Suspense>
+                      );
+                    }
                     return (
                       <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
-                        <AlertsDashboardView subCategory={activeSubCategory} />
+                        <AnalyticsDashboardView />
                       </Suspense>
                     );
                   }
-                  return (
-                    <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
-                      <AnalyticsDashboardView />
-                    </Suspense>
-                  );
-                }
-                if (viewMode === 'comparative') {
-                  return (
-                    <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
-                      <AnalyticsComparisonView category={activeCategory} subCategory={activeSubCategory} />
-                    </Suspense>
-                  );
-                }
-                return null;
-              })()}
+                  if (viewMode === 'comparative') {
+                    return (
+                      <Suspense fallback={<LoadingSkeleton className="p-6" lines={8} />}>
+                        <AnalyticsComparisonView category={activeCategory} subCategory={activeSubCategory} />
+                      </Suspense>
+                    );
+                  }
+                  return null;
+                })()
+              )}
             </AnalyticsErrorBoundary>
           </div>
         </main>

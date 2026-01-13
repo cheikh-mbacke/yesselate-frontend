@@ -20,4 +20,10 @@ export { usePermission } from './usePermission';
 export { useMemoizedCallback } from './useMemoizedCallback';
 export { useDeepCompareMemo } from './useDeepCompareMemo';
 export { useCleanup, useCleanupManager } from './useCleanup';
+export { useDragAndDrop } from './useDragAndDrop';
+export type { DragItem, UseDragAndDropOptions } from './useDragAndDrop';
+export { useIntersectionObserver } from './useIntersectionObserver';
+export type { UseIntersectionObserverOptions } from './useIntersectionObserver';
+export { useResizeObserver } from './useResizeObserver';
+export type { ResizeObserverSize } from './useResizeObserver';
 

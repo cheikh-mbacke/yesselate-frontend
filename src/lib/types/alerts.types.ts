@@ -1,18 +1,21 @@
-export type Severity = 'critical' | 'warning' | 'info' | 'success';
+/**
+ * Legacy Alert Types
+ * ==================
+ * Re-exported from the new standard types for backward compatibility
+ * 
+ * @deprecated Use types from '@/lib/types/alert.types' instead
+ */
 
-export type Alert = {
-  id: string;
-  severity: Severity;
-  type: string;          // payment | contract | validation | system | budget ...
-  bureau?: string;       // BF | BJ | BM | BMO ...
-  title: string;
-  description?: string;
-  createdAt: string;     // ISO
-  entity?: { kind: string; id: string; projectId?: string; supplierId?: string };
-  impact?: { money?: number; scheduleDays?: number; legal?: boolean };
-  slaDueAt?: string;     // ISO
-  status?: 'open' | 'ack' | 'snoozed' | 'resolved';
-};
+export {
+  type AlertSeverity,
+  type AlertStatus,
+  type AlertCategory,
+  type AlertItem,
+} from './alert.types';
+
+// Legacy type aliases for backward compatibility
+export type Severity = AlertSeverity;
+export type Alert = AlertItem;
 
 export type Incident = {
   id: string;

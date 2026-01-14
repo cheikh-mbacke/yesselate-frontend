@@ -6,7 +6,5 @@ export { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "./dropdown-menu";
 export { Input } from "./input";
 export { Progress } from "./progress";
-export { Toast, ToastTitle, ToastDescription } from "./toast";
-export { Toaster } from "./toaster";
-export { useToast, toast } from "./use-toast";
+export { useToast, ToastProvider, useAlertToast } from "./toast";
 

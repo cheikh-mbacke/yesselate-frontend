@@ -90,12 +90,23 @@ const mockKPIs: KPIItem[] = [
   },
 ];
 
+interface DelegationStats {
+  active?: number;
+  expired?: number;
+  revoked?: number;
+  suspended?: number;
+  expiring?: number;
+  performanceScore?: number;
+  alerts?: number;
+}
+
 interface DelegationsKPIBarProps {
   visible?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   onRefresh?: () => void;
   kpis?: KPIItem[];
+  stats?: DelegationStats | null;
 }
 
 export const DelegationsKPIBar = React.memo(function DelegationsKPIBar({

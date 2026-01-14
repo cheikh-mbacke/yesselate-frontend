@@ -8,10 +8,10 @@ import { getKPIsForContext } from '@/lib/config/analyticsDisplayLogic';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { domainId: string; moduleId: string; subModuleId: string } }
+  { params }: { params: Promise<{ domainId: string; moduleId: string; subModuleId: string }> }
 ) {
   try {
-    const { domainId, moduleId, subModuleId } = params;
+    const { domainId, moduleId, subModuleId } = await params;
 
     if (!domainId || !moduleId || !subModuleId) {
       return NextResponse.json(

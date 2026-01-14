@@ -8,10 +8,10 @@ import { findModule } from '@/lib/config/analyticsBTPArchitecture';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { moduleId: string } }
+  { params }: { params: Promise<{ moduleId: string }> }
 ) {
   try {
-    const { moduleId } = params;
+    const { moduleId } = await params;
     const { searchParams } = new URL(request.url);
     const domainId = searchParams.get('domainId');
 

@@ -44,7 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 // Pattern Modal Overlay
-import { GenericDetailModal } from '@/components/ui/GenericDetailModal';
+import { GenericDetailModal, type ActionButton, type TabConfig } from '@/components/ui/GenericDetailModal';
 import {
   Building2,
   Mail,
@@ -53,6 +53,8 @@ import {
   Briefcase,
   Calendar,
   DollarSign,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 
 // ================================
@@ -173,6 +175,153 @@ export default function ClientsPage() {
       setSelectedClientId(null);
     }
   }, []);
+
+  // Actions pour GenericDetailModal
+  const clientActions = useMemo<ActionButton[]>(() => {
+    if (!selectedClient) return [];
+
+    const acts: ActionButton[] = [];
+
+    acts.push({
+      id: 'edit',
+      label: 'Modifier',
+      variant: 'default',
+      icon: <Edit className="w-4 h-4" />,
+      onClick: () => handleEditClient(selectedClient),
+    });
+
+    acts.push({
+      id: 'delete',
+      label: 'Supprimer',
+      variant: 'destructive',
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => {
+        if (confirm('Êtes-vous sûr de vouloir supprimer ce client ?')) {
+          handleDeleteClient(selectedClient.id);
+        }
+      },
+    });
+
+    acts.push({
+      id: 'view-projects',
+      label: 'Voir les projets',
+      variant: 'outline',
+      icon: <Briefcase className="w-4 h-4" />,
+      onClick: () => console.log('View projects'),
+    });
+
+    return acts;
+  }, [selectedClient, handleEditClient, handleDeleteClient]);
+
+  // Tabs pour GenericDetailModal
+  const clientTabs = useMemo<TabConfig[]>(() => {
+    if (!selectedClient) return [];
+
+    return [
+      {
+        id: 'coordonnees',
+        label: 'Coordonnées',
+        icon: <Mail className="w-4 h-4" />,
+        content: (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Email</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.email || 'N/A'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Téléphone</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.phone || 'N/A'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Adresse</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.address || 'N/A'}</p>
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'commercial',
+        label: 'Informations commerciales',
+        icon: <Briefcase className="w-4 h-4" />,
+        content: (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Type</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.type || 'Entreprise'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Secteur</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.sector || 'BTP'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Client depuis</h4>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {selectedClient.since ? new Date(selectedClient.since).toLocaleDateString('fr-FR') : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Chiffre d'affaires</h4>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {selectedClient.revenue ? `${(selectedClient.revenue / 1000000).toFixed(1)}M XOF` : 'N/A'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'projets',
+        label: 'Projets',
+        icon: <Briefcase className="w-4 h-4" />,
+        content: (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Projets actifs</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.activeProjects || '0'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Projets terminés</h4>
+                <p className="text-sm text-gray-900 dark:text-white">{selectedClient.completedProjects || '0'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Budget total</h4>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {selectedClient.totalBudget ? `${(selectedClient.totalBudget / 1000000).toFixed(1)}M XOF` : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Satisfaction</h4>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {selectedClient.satisfaction ? `${selectedClient.satisfaction}%` : 'N/A'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ),
+      },
+    ];
+  }, [selectedClient]);
+
+  // StatusBadge pour GenericDetailModal
+  const statusBadge = useMemo(() => {
+    if (!selectedClient?.status) return undefined;
+    
+    const getVariant = (status: string) => {
+      if (status === 'Actif') return 'success' as const;
+      if (status === 'Inactif') return 'default' as const;
+      if (status === 'VIP') return 'info' as const;
+      return 'default' as const;
+    };
+
+    return {
+      label: selectedClient.status,
+      variant: getVariant(selectedClient.status),
+    };
+  }, [selectedClient?.status]);
 
   // ================================
   // Keyboard shortcuts
@@ -457,59 +606,10 @@ export default function ClientsPage() {
           }}
           title={selectedClient.name || 'Détails du client'}
           subtitle={selectedClient.id}
-          icon={Users}
-          iconClassName="bg-cyan-500/10 text-cyan-400"
-          badge={selectedClient.status ? {
-            label: selectedClient.status,
-            className: cn(
-              'text-xs',
-              selectedClient.status === 'Actif' && 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-              selectedClient.status === 'Inactif' && 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-              selectedClient.status === 'VIP' && 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-            )
-          } : undefined}
-          sections={[
-            {
-              title: 'Coordonnées',
-              icon: Mail,
-              fields: [
-                { label: 'Email', value: selectedClient.email || 'N/A', icon: Mail },
-                { label: 'Téléphone', value: selectedClient.phone || 'N/A', icon: Phone },
-                { label: 'Adresse', value: selectedClient.address || 'N/A', icon: MapPin, fullWidth: true },
-              ]
-            },
-            {
-              title: 'Informations commerciales',
-              icon: Briefcase,
-              fields: [
-                { label: 'Type', value: selectedClient.type || 'Entreprise', icon: Building2 },
-                { label: 'Secteur', value: selectedClient.sector || 'BTP', icon: Briefcase },
-                { label: 'Client depuis', value: selectedClient.since ? new Date(selectedClient.since).toLocaleDateString('fr-FR') : 'N/A', icon: Calendar },
-                { label: 'Chiffre d\'affaires', value: selectedClient.revenue ? `${(selectedClient.revenue / 1000000).toFixed(1)}M XOF` : 'N/A', icon: DollarSign },
-              ]
-            },
-            {
-              title: 'Projets',
-              icon: Briefcase,
-              fields: [
-                { label: 'Projets actifs', value: selectedClient.activeProjects || '0' },
-                { label: 'Projets terminés', value: selectedClient.completedProjects || '0' },
-                { label: 'Budget total', value: selectedClient.totalBudget ? `${(selectedClient.totalBudget / 1000000).toFixed(1)}M XOF` : 'N/A' },
-                { label: 'Satisf action', value: selectedClient.satisfaction ? `${selectedClient.satisfaction}%` : 'N/A' },
-              ]
-            },
-          ]}
-          actions={{
-            onEdit: () => handleEditClient(selectedClient),
-            onDelete: () => handleDeleteClient(selectedClient.id),
-            customActions: [
-              {
-                label: 'Voir les projets',
-                icon: Briefcase,
-                onClick: () => console.log('View projects'),
-              },
-            ]
-          }}
+          statusBadge={statusBadge}
+          tabs={clientTabs}
+          defaultActiveTab="coordonnees"
+          actions={clientActions}
         />
       )}
     </div>

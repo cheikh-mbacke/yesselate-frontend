@@ -10,49 +10,59 @@ import { create } from 'zustand';
 // TYPES & INTERFACES
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Thématiques principales (onglets niveau 1)
+// Domaines principaux (niveau 1) - 5 domaines
 export type MainCategory = 
-  | 'overview'        // Vue d'ensemble - Dashboard opérationnel
-  | 'projects'        // Pilotage Projets
-  | 'resources'       // Ressources & Équipes
-  | 'financial'       // Engagements & Budget
-  | 'risks'           // Risques & Alertes
-  | 'compliance'      // Conformité & Audit
-  | 'processes';      // Processus & Workflows
+  | 'strategic-view'         // Vue stratégique
+  | 'decisions-arbitrages'   // Décisions & Arbitrages
+  | 'escalations-risks'      // Escalades & Risques
+  | 'instances-coordination' // Instances & Coordination
+  | 'compliance-performance'; // Conformité & Performance
 
-// Sous-catégories par thématique (onglets niveau 2)
+// Sous-domaines par domaine (niveau 2)
 export type SubCategoryMap = {
-  overview: 'kpis' | 'timeline' | 'decisions' | 'escalations';
-  projects: 'portfolio' | 'milestones' | 'deliverables' | 'dependencies' | 'blockers';
-  resources: 'allocation' | 'capacity' | 'skills' | 'subcontractors' | 'mobilization';
-  financial: 'commitments' | 'invoicing' | 'forecasts' | 'variances' | 'cashflow';
-  risks: 'register' | 'alerts' | 'incidents' | 'mitigation' | 'monitoring';
-  compliance: 'regulations' | 'contracts' | 'audits' | 'certifications' | 'hse';
-  processes: 'workflows' | 'validations' | 'delegations' | 'raci' | 'procedures';
+  'strategic-view': 
+    | 'executive-dashboard'  // Tableau de bord exécutif
+    | 'director-kpis'        // KPI directeurs
+    | 'monthly-summary';     // Synthèse mensuelle
+  'decisions-arbitrages':
+    | 'pending-decisions'    // Décisions en attente
+    | 'decision-history'     // Historique décisions
+    | 'blocking-points';     // Points de blocage à trancher
+  'escalations-risks':
+    | 'active-escalations'   // Escalades en cours
+    | 'major-risks'           // Risques majeurs & exposition
+    | 'critical-blockages';  // Blocages critiques
+  'instances-coordination':
+    | 'scheduled-instances'  // Instances programmées
+    | 'minutes-followup'      // Comptes-rendus & suivi décisions
+    | 'sensitive-projects';   // Projets sensibles & priorités
+  'compliance-performance':
+    | 'contract-sla'          // Conformité contrats & SLA
+    | 'commitments'           // Engagements (budgets, délais)
+    | 'resource-utilization'; // Taux utilisation ressources
 };
 
-// Sous-sous-catégories (onglets niveau 3)
+// Vues spécifiques (niveau 3) - optionnel, peut être null
 export type SubSubCategoryMap = {
-  // Projects > Portfolio
-  portfolio: 'active' | 'pipeline' | 'archived' | 'critical';
-  // Projects > Milestones
-  milestones: 'upcoming' | 'late' | 'achieved' | 'by-project';
-  // Resources > Allocation
-  allocation: 'by-project' | 'by-team' | 'conflicts' | 'optimization';
-  // Financial > Commitments
-  commitments: 'pending' | 'approved' | 'rejected' | 'by-category';
-  // Risks > Register
-  register: 'high' | 'medium' | 'low' | 'closed';
-  // Risks > Alerts
-  alerts: 'critical' | 'warning' | 'info' | 'resolved';
-  // Compliance > Audits
-  audits: 'planned' | 'ongoing' | 'completed' | 'findings';
-  // Processes > Validations
-  validations: 'pending' | 'in-review' | 'escalated' | 'completed';
+  'executive-dashboard': null;
+  'director-kpis': null;
+  'monthly-summary': null;
+  'pending-decisions': null;
+  'decision-history': null;
+  'blocking-points': null;
+  'active-escalations': null;
+  'major-risks': null;
+  'critical-blockages': null;
+  'scheduled-instances': null;
+  'minutes-followup': null;
+  'sensitive-projects': null;
+  'contract-sla': null;
+  'commitments': null;
+  'resource-utilization': null;
 };
 
 export type SubCategory = SubCategoryMap[MainCategory];
-export type SubSubCategory = SubSubCategoryMap[keyof SubSubCategoryMap];
+export type SubSubCategory = SubSubCategoryMap[SubCategory] | null;
 
 // Navigation state
 export interface NavigationState {
@@ -247,8 +257,8 @@ const defaultTableConfig: TableConfig = {
 export const useGovernanceCommandCenterStore = create<GovernanceCommandCenterState>((set, get) => ({
   // Initial state
   navigation: {
-    mainCategory: 'overview',
-    subCategory: 'kpis',
+    mainCategory: 'strategic-view',
+    subCategory: 'executive-dashboard',
     subSubCategory: null,
   },
   navigationHistory: [],

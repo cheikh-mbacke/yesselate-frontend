@@ -47,22 +47,32 @@ export function ModalManager() {
     };
   }, [modals.size]);
 
-  if (!mounted) return null;
+  // Toujours rendre quelque chose pour éviter les problèmes de hooks
+  // Utiliser un fragment vide si pas encore monté ou pas de container
+  if (!mounted || typeof window === 'undefined') {
+    return null;
+  }
 
-  const container = typeof window !== 'undefined' ? document.body : null;
-  if (!container) return null;
+  const container = document.body;
+  if (!container) {
+    return null;
+  }
 
   // Rendre toutes les modals ouvertes
+  const openModals = Array.from(modals.values()).filter((modal) => modal.isOpen);
+  
+  if (openModals.length === 0) {
+    return null;
+  }
+
   return createPortal(
     <>
-      {Array.from(modals.values())
-        .filter((modal) => modal.isOpen)
-        .map((modal) => (
-          <ModalBackdrop
-            key={modal.id}
-            onClose={() => closeModal(modal.id)}
-          />
-        ))}
+      {openModals.map((modal) => (
+        <ModalBackdrop
+          key={modal.id}
+          onClose={() => closeModal(modal.id)}
+        />
+      ))}
     </>,
     container
   );

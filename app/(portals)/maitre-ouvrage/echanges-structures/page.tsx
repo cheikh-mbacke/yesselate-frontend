@@ -159,7 +159,7 @@ function EchangesStructuresPageContent() {
         userId: currentUser.id,
         userName: currentUser.name,
         userRole: currentUser.role,
-        action: 'refresh',
+        action: 'audit',
         module: 'echanges-structures',
         targetId: 'REFRESH',
         targetType: 'system',

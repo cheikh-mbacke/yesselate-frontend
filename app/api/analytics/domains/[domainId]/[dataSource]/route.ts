@@ -7,10 +7,10 @@ import { getMockDataForDomain } from '@/lib/mocks/analyticsMockData';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { domainId: string; dataSource: string } }
+  { params }: { params: Promise<{ domainId: string; dataSource: string }> }
 ) {
   try {
-    const { domainId, dataSource } = params;
+    const { domainId, dataSource } = await params;
 
     if (!domainId || !dataSource) {
       return NextResponse.json(

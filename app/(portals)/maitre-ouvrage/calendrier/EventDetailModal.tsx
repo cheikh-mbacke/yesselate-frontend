@@ -130,7 +130,7 @@ export function EventDetailModal({
                 <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
                   Type
                 </h4>
-                <Badge variant="secondary" className="capitalize">
+                <Badge variant="default" className="capitalize">
                   {event.kind}
                 </Badge>
               </div>
@@ -177,7 +177,7 @@ export function EventDetailModal({
                   <Building2 className="w-4 h-4" />
                   Bureau
                 </h3>
-                <Badge variant="outline">{event.bureau}</Badge>
+                <Badge variant="default">{event.bureau}</Badge>
               </div>
             )}
 
@@ -199,7 +199,7 @@ export function EventDetailModal({
                   <Repeat className="w-4 h-4" />
                   Récurrence
                 </h3>
-                <Badge variant="secondary" className="capitalize">
+                <Badge variant="default" className="capitalize">
                   {event.recurrence}
                 </Badge>
               </div>
@@ -248,7 +248,7 @@ export function EventDetailModal({
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {event.tags.map((tag, idx) => (
-                    <Badge key={idx} variant="outline">
+                    <Badge key={idx} variant="default">
                       {tag}
                     </Badge>
                   ))}

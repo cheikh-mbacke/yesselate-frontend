@@ -31,6 +31,7 @@ export const routeMapping: Record<string, string> = {
   calendrier: '/maitre-ouvrage/calendrier',
   analytics: '/maitre-ouvrage/analytics',
   alerts: '/maitre-ouvrage/alerts',
+  'centre-alertes': '/maitre-ouvrage/centre-alertes',
   
   // EXÉCUTION (7 pages) - inclut arbitrages-vivants déplacé
   demandes: '/maitre-ouvrage/demandes',

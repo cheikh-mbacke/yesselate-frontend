@@ -1,224 +1,205 @@
 /**
- * Configuration des catégories du Centre de Commandement
- * Organisation métier pour pilotage BTP/Industrie
+ * Configuration des catégories du Centre de Commandement Gouvernance
+ * Module Maître d'Ouvrage - Structure hiérarchique 3 niveaux
+ * Route: maitre-ouvrage/governance
  */
 
 import {
   LayoutDashboard,
-  FolderKanban,
-  Users,
-  Wallet,
-  AlertTriangle,
-  Shield,
-  Workflow,
-  TrendingUp,
-  Clock,
-  FileCheck,
-  AlertOctagon,
-  Target,
-  Milestone,
-  Package,
-  GitBranch,
-  Lock,
-  UserCog,
-  BarChart3,
-  Brain,
-  Truck,
-  Building2,
-  Receipt,
-  CreditCard,
-  PiggyBank,
-  LineChart,
-  FileWarning,
-  Bell,
-  Siren,
-  ShieldCheck,
-  ScrollText,
   Scale,
-  ClipboardCheck,
-  Award,
-  HardHat,
-  GitPullRequest,
-  CheckSquare,
-  Handshake,
-  Network,
-  BookOpen,
+  AlertTriangle,
+  Users,
+  ShieldCheck,
+  BarChart3,
+  Target,
+  Clock,
+  FileText,
+  AlertCircle,
+  TrendingUp,
+  CheckCircle2,
+  Calendar,
+  FileCheck,
+  Activity,
 } from 'lucide-react';
 import type { MainCategoryConfig, SubCategoryConfig, SubSubCategoryConfig } from './types';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CATÉGORIES PRINCIPALES
+// DOMAINES PRINCIPAUX (Niveau 1 - 5 domaines)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const mainCategories: MainCategoryConfig[] = [
   {
-    id: 'overview',
-    label: 'Vue d\'ensemble',
+    id: 'strategic-view',
+    label: 'Vue stratégique',
     icon: LayoutDashboard,
-    description: 'Dashboard opérationnel et KPIs',
+    description: 'Tableau de bord consolidé avec KPIs stratégiques',
   },
   {
-    id: 'projects',
-    label: 'Pilotage Projets',
-    icon: FolderKanban,
-    description: 'Portefeuille et avancement',
-    badge: 3,
-    badgeType: 'warning',
-  },
-  {
-    id: 'resources',
-    label: 'Ressources & Équipes',
-    icon: Users,
-    description: 'Allocation et capacité',
-  },
-  {
-    id: 'financial',
-    label: 'Engagements & Budget',
-    icon: Wallet,
-    description: 'Finances et trésorerie',
-    badge: 2,
-    badgeType: 'critical',
-  },
-  {
-    id: 'risks',
-    label: 'Risques & Alertes',
-    icon: AlertTriangle,
-    description: 'Gestion des risques',
+    id: 'decisions-arbitrages',
+    label: 'Décisions & Arbitrages',
+    icon: Scale,
+    description: 'Décisions stratégiques et arbitrages à fort impact',
     badge: 5,
+    badgeType: 'warning',
+  },
+  {
+    id: 'escalations-risks',
+    label: 'Escalades & Risques',
+    icon: AlertTriangle,
+    description: 'Agrégation des escalades critiques et risques majeurs',
+    badge: 12,
     badgeType: 'critical',
   },
   {
-    id: 'compliance',
-    label: 'Conformité & Audit',
-    icon: Shield,
-    description: 'Réglementaire et qualité',
+    id: 'instances-coordination',
+    label: 'Instances & Coordination',
+    icon: Users,
+    description: 'Coordination instances décisionnelles critiques',
   },
   {
-    id: 'processes',
-    label: 'Processus & Workflows',
-    icon: Workflow,
-    description: 'Validations et RACI',
-    badge: 8,
-    badgeType: 'warning',
+    id: 'compliance-performance',
+    label: 'Conformité & Performance',
+    icon: ShieldCheck,
+    description: 'Conformité SLA, engagements et performance',
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SOUS-CATÉGORIES PAR THÉMATIQUE
+// SOUS-DOMAINES PAR DOMAINE (Niveau 2)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const subCategories: Record<string, SubCategoryConfig[]> = {
-  overview: [
-    { id: 'kpis', label: 'KPIs Stratégiques', icon: TrendingUp },
-    { id: 'timeline', label: 'Timeline Globale', icon: Clock },
-    { id: 'decisions', label: 'Décisions à prendre', icon: FileCheck, badge: 4, badgeType: 'warning' },
-    { id: 'escalations', label: 'Escalades', icon: AlertOctagon, badge: 2, badgeType: 'critical' },
+  'strategic-view': [
+    {
+      id: 'executive-dashboard',
+      label: 'Tableau de bord exécutif',
+      icon: LayoutDashboard,
+      description: 'KPI synthétiques, alertes critiques, tendances trimestre',
+    },
+    {
+      id: 'director-kpis',
+      label: 'KPI directeurs',
+      icon: BarChart3,
+      description: 'Projets actifs, budget, jalons, risques',
+    },
+    {
+      id: 'monthly-summary',
+      label: 'Synthèse mensuelle',
+      icon: FileText,
+      description: 'Rapport mensuel synthétique, comparaison période précédente',
+    },
   ],
-  projects: [
-    { id: 'portfolio', label: 'Portefeuille', icon: Target },
-    { id: 'milestones', label: 'Jalons & Livrables', icon: Milestone, badge: 5, badgeType: 'warning' },
-    { id: 'deliverables', label: 'Livrables', icon: Package },
-    { id: 'dependencies', label: 'Dépendances', icon: GitBranch },
-    { id: 'blockers', label: 'Points bloquants', icon: Lock, badge: 3, badgeType: 'critical' },
+  'decisions-arbitrages': [
+    {
+      id: 'pending-decisions',
+      label: 'Décisions en attente',
+      icon: Clock,
+      badge: 5,
+      badgeType: 'warning',
+      description: 'Liste décisions à prendre, contexte/enjeux, urgence',
+    },
+    {
+      id: 'decision-history',
+      label: 'Historique décisions',
+      icon: FileText,
+      description: 'Toutes décisions prises (derniers 3 mois), implémentation',
+    },
+    {
+      id: 'blocking-points',
+      label: 'Points de blocage à trancher',
+      icon: AlertCircle,
+      badge: 3,
+      badgeType: 'critical',
+      description: 'Blocages sur projets critiques, propositions d\'arbitrage',
+    },
   ],
-  resources: [
-    { id: 'allocation', label: 'Affectations', icon: UserCog },
-    { id: 'capacity', label: 'Plan de charge', icon: BarChart3 },
-    { id: 'skills', label: 'Compétences', icon: Brain },
-    { id: 'subcontractors', label: 'Sous-traitants', icon: Truck },
-    { id: 'mobilization', label: 'Mobilisation', icon: Building2 },
+  'escalations-risks': [
+    {
+      id: 'active-escalations',
+      label: 'Escalades en cours',
+      icon: AlertTriangle,
+      badge: 8,
+      badgeType: 'critical',
+      description: 'Escalades actives par niveau, délai depuis escalade',
+    },
+    {
+      id: 'major-risks',
+      label: 'Risques majeurs & exposition',
+      icon: TrendingUp,
+      description: 'Matrice risques, exposition financière, plan d\'atténuation',
+    },
+    {
+      id: 'critical-blockages',
+      label: 'Blocages critiques',
+      icon: AlertCircle,
+      badge: 4,
+      badgeType: 'critical',
+      description: 'Blocages impactant jalons contrats, actions correctives',
+    },
   ],
-  financial: [
-    { id: 'commitments', label: 'Engagements', icon: Receipt, badge: 2, badgeType: 'warning' },
-    { id: 'invoicing', label: 'Facturation', icon: CreditCard },
-    { id: 'forecasts', label: 'Prévisions', icon: LineChart },
-    { id: 'variances', label: 'Écarts', icon: TrendingUp, badge: 1, badgeType: 'critical' },
-    { id: 'cashflow', label: 'Trésorerie', icon: PiggyBank },
+  'instances-coordination': [
+    {
+      id: 'scheduled-instances',
+      label: 'Instances programmées',
+      icon: Calendar,
+      description: 'Calendrier instances (CSPS, comités), participants attendus',
+    },
+    {
+      id: 'minutes-followup',
+      label: 'Comptes-rendus & suivi décisions',
+      icon: FileCheck,
+      description: 'CR dernières instances, suivi décisions antérieures',
+    },
+    {
+      id: 'sensitive-projects',
+      label: 'Projets sensibles & priorités',
+      icon: Target,
+      description: 'Liste projets sensibles, critères, priorités stratégiques',
+    },
   ],
-  risks: [
-    { id: 'register', label: 'Registre des risques', icon: FileWarning },
-    { id: 'alerts', label: 'Alertes actives', icon: Bell, badge: 5, badgeType: 'critical' },
-    { id: 'incidents', label: 'Incidents', icon: Siren },
-    { id: 'mitigation', label: 'Plans de mitigation', icon: ShieldCheck },
-    { id: 'monitoring', label: 'Surveillance', icon: Target },
-  ],
-  compliance: [
-    { id: 'regulations', label: 'Réglementations', icon: ScrollText },
-    { id: 'contracts', label: 'Contrats', icon: Scale },
-    { id: 'audits', label: 'Audits', icon: ClipboardCheck },
-    { id: 'certifications', label: 'Certifications', icon: Award },
-    { id: 'hse', label: 'HSE', icon: HardHat },
-  ],
-  processes: [
-    { id: 'workflows', label: 'Workflows', icon: GitPullRequest },
-    { id: 'validations', label: 'Validations', icon: CheckSquare, badge: 8, badgeType: 'warning' },
-    { id: 'delegations', label: 'Délégations', icon: Handshake },
-    { id: 'raci', label: 'Matrice RACI', icon: Network },
-    { id: 'procedures', label: 'Procédures', icon: BookOpen },
+  'compliance-performance': [
+    {
+      id: 'contract-sla',
+      label: 'Conformité contrats & SLA',
+      icon: ShieldCheck,
+      description: 'Respect SLA fournisseurs, conformité clauses, pénalités',
+    },
+    {
+      id: 'commitments',
+      label: 'Engagements (budgets, délais)',
+      icon: CheckCircle2,
+      description: 'Respect budgets/jalons, écarts vs engagement initial',
+    },
+    {
+      id: 'resource-utilization',
+      label: 'Taux utilisation ressources',
+      icon: Activity,
+      description: '% allocation équipes, taux productivité, recommandations',
+    },
   ],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SOUS-SOUS-CATÉGORIES
+// VUES SPÉCIFIQUES (Niveau 3 - optionnel, peut être vide)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const subSubCategories: Record<string, SubSubCategoryConfig[]> = {
-  // Projects > Portfolio
-  portfolio: [
-    { id: 'active', label: 'En cours', count: 12 },
-    { id: 'pipeline', label: 'En préparation', count: 5 },
-    { id: 'archived', label: 'Terminés', count: 28 },
-    { id: 'critical', label: 'Critiques', count: 3 },
-  ],
-  // Projects > Milestones
-  milestones: [
-    { id: 'upcoming', label: 'À venir', count: 15 },
-    { id: 'late', label: 'En retard', count: 5 },
-    { id: 'achieved', label: 'Atteints', count: 42 },
-    { id: 'by-project', label: 'Par projet' },
-  ],
-  // Resources > Allocation
-  allocation: [
-    { id: 'by-project', label: 'Par projet' },
-    { id: 'by-team', label: 'Par équipe' },
-    { id: 'conflicts', label: 'Conflits', count: 2 },
-    { id: 'optimization', label: 'Optimisation' },
-  ],
-  // Financial > Commitments
-  commitments: [
-    { id: 'pending', label: 'En attente', count: 8 },
-    { id: 'approved', label: 'Approuvés', count: 45 },
-    { id: 'rejected', label: 'Rejetés', count: 3 },
-    { id: 'by-category', label: 'Par catégorie' },
-  ],
-  // Risks > Register
-  register: [
-    { id: 'high', label: 'Élevés', count: 4 },
-    { id: 'medium', label: 'Moyens', count: 12 },
-    { id: 'low', label: 'Faibles', count: 8 },
-    { id: 'closed', label: 'Clôturés', count: 15 },
-  ],
-  // Risks > Alerts
-  alerts: [
-    { id: 'critical', label: 'Critiques', count: 2 },
-    { id: 'warning', label: 'Avertissements', count: 5 },
-    { id: 'info', label: 'Informations', count: 8 },
-    { id: 'resolved', label: 'Résolues', count: 24 },
-  ],
-  // Compliance > Audits
-  audits: [
-    { id: 'planned', label: 'Planifiés', count: 6 },
-    { id: 'ongoing', label: 'En cours', count: 2 },
-    { id: 'completed', label: 'Terminés', count: 18 },
-    { id: 'findings', label: 'Constats', count: 12 },
-  ],
-  // Processes > Validations
-  validations: [
-    { id: 'pending', label: 'En attente', count: 8 },
-    { id: 'in-review', label: 'En revue', count: 3 },
-    { id: 'escalated', label: 'Escaladées', count: 2 },
-    { id: 'completed', label: 'Traitées', count: 156 },
-  ],
+  // Pour l'instant, pas de niveau 3, mais la structure est prête
+  'executive-dashboard': [],
+  'director-kpis': [],
+  'monthly-summary': [],
+  'pending-decisions': [],
+  'decision-history': [],
+  'blocking-points': [],
+  'active-escalations': [],
+  'major-risks': [],
+  'critical-blockages': [],
+  'scheduled-instances': [],
+  'minutes-followup': [],
+  'sensitive-projects': [],
+  'contract-sla': [],
+  'commitments': [],
+  'resource-utilization': [],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -230,4 +211,10 @@ export const getSubCategories = (mainId: string) => subCategories[mainId] || [];
 export const getSubCategory = (mainId: string, subId: string) => 
   subCategories[mainId]?.find(s => s.id === subId);
 export const getSubSubCategories = (subId: string) => subSubCategories[subId] || [];
+
+// Helper pour obtenir le label d'une sous-catégorie
+export const getSubCategoryLabel = (mainId: string, subId: string) => {
+  const sub = getSubCategory(mainId, subId);
+  return sub?.label || subId;
+};
 

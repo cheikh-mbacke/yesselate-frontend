@@ -119,7 +119,8 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error(`[paiements/${params.id}/schedule] Error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}/schedule] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to schedule paiement', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -130,10 +131,10 @@ export async function POST(
 // DELETE pour annuler une planification
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // TODO: Récupérer paiement
     const existingPaiement = {
@@ -175,7 +176,8 @@ export async function DELETE(
       },
     });
   } catch (error) {
-    console.error(`[paiements/${params.id}/schedule] Cancel error:`, error);
+    const { id } = await params;
+    console.error(`[paiements/${id}/schedule] Cancel error:`, error);
     return NextResponse.json(
       { error: 'Failed to cancel schedule' },
       { status: 500 }

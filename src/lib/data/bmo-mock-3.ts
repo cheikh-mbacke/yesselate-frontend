@@ -146,6 +146,7 @@ export const navSections: NavSection[] = [
       { id: 'calendrier', icon: '📅', label: 'Calendrier' },
       { id: 'analytics', icon: '📈', label: 'Analytics & Rapports' },
       { id: 'alerts', icon: '🔔', label: 'Centre d\'alertes', badge: 5, badgeType: 'urgent' },
+      { id: 'centre-alertes', icon: '🚨', label: 'Centre d\'Alertes MOA', badge: 0, badgeType: 'warning' },
     ],
   },
   {

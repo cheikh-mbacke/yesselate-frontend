@@ -38,7 +38,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import { useBlockedCommandCenterStore } from '@/lib/stores/blockedCommandCenterStore';
+import { useBlockedCommandCenterStore, type BlockedSubCategory } from '@/lib/stores/blockedCommandCenterStore';
 import {
   BlockedCommandSidebar,
   BlockedKPIBar,
@@ -310,9 +310,9 @@ function BlockedPageContent() {
   }, [navigate]);
 
   // Handle sub-category change
-  const handleSubCategoryChange = useCallback((subCategory: string) => {
+  const handleSubCategoryChange = useCallback((subCategory: BlockedSubCategory | null) => {
     setActiveSubCategory(subCategory);
-    navigate(activeCategory, subCategory as any);
+    navigate(activeCategory, subCategory);
   }, [activeCategory, navigate]);
 
   // Handle refresh

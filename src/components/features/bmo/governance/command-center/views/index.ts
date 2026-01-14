@@ -1,12 +1,15 @@
 /**
- * Export de toutes les vues du Command Center
+ * Export de toutes les vues du Command Center Gouvernance
+ * Module Maître d'Ouvrage - 8 onglets obligatoires
  */
 
-export { OverviewView } from './OverviewView';
-export { ProjectsView } from './ProjectsView';
-export { RisksView } from './RisksView';
-export { ResourcesView } from './ResourcesView';
-export { FinancialView } from './FinancialView';
-export { ComplianceView } from './ComplianceView';
-export { ProcessesView } from './ProcessesView';
+// Nouvelles vues selon la spécification
+export { StrategicViewView } from './StrategicViewView';
+export { DecisionsArbitragesView } from './DecisionsArbitragesView';
+export { EscaladesBlocagesView } from './EscaladesBlocagesView';
+export { ProjetsSensiblesView } from './ProjetsSensiblesView';
+export { RisquesExpositionView } from './RisquesExpositionView';
+export { ConformiteEngagementView } from './ConformiteEngagementView';
+export { InstancesCoordinationView } from './InstancesCoordinationView';
+export { SyntheseDgBmoView } from './SyntheseDgBmoView';
 

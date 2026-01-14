@@ -32,9 +32,10 @@ import { useGovernanceCommandCenterStore } from '@/lib/stores/governanceCommandC
 interface ActionsMenuProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onOpenFilters?: () => void;
 }
 
-export function ActionsMenu({ onRefresh, isRefreshing }: ActionsMenuProps) {
+export function ActionsMenu({ onRefresh, isRefreshing, onOpenFilters }: ActionsMenuProps) {
   const {
     fullscreen,
     toggleFullscreen,
@@ -63,6 +64,7 @@ export function ActionsMenu({ onRefresh, isRefreshing }: ActionsMenuProps) {
 
   const shortcuts = [
     { key: '⌘K', label: 'Recherche rapide' },
+    { key: '⌘F', label: 'Filtres avancés' },
     { key: '⌘E', label: 'Exporter' },
     { key: 'F11', label: 'Plein écran' },
     { key: 'Alt+←', label: 'Retour' },
@@ -84,8 +86,13 @@ export function ActionsMenu({ onRefresh, isRefreshing }: ActionsMenuProps) {
       id: 'filter',
       icon: Filter,
       label: 'Filtres avancés',
+      shortcut: '⌘F',
       onClick: () => {
-        openModal('filters-advanced', {});
+        if (onOpenFilters) {
+          onOpenFilters();
+        } else {
+          openModal('filters-advanced', {});
+        }
         setIsOpen(false);
       },
     },

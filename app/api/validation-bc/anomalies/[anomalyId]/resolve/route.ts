@@ -7,10 +7,10 @@ import type { DocumentAnomaly } from '@/lib/types/document-validation.types';
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { anomalyId: string } }
+  { params }: { params: Promise<{ anomalyId: string }> }
 ) {
   try {
-    const { anomalyId } = params;
+    const { anomalyId } = await params;
     const body = await req.json();
     const { comment } = body || {};
 

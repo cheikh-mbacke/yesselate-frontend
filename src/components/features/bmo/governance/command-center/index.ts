@@ -16,11 +16,12 @@ export * from './CommandPalette';
 export * from './ActionsMenu';
 export * from './BatchActionsBar';
 export * from './EmptyState';
+export * from './GovernanceFiltersPanel';
 
 // Modals
 export * from './modals';
 
-// Views
+// Views - Anciennes (conservées pour compatibilité)
 export * from './views/OverviewView';
 export * from './views/ProjectsView';
 export * from './views/RisksView';
@@ -28,4 +29,11 @@ export * from './views/ResourcesView';
 export * from './views/FinancialView';
 export * from './views/ComplianceView';
 export * from './views/ProcessesView';
+
+// Views - Nouvelles (structure hiérarchique v4.0)
+export * from './views/strategic-view';
+export * from './views/decisions-arbitrages';
+export * from './views/escalations-risks';
+export * from './views/instances-coordination';
+export * from './views/compliance-performance';
 

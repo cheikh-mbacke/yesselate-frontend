@@ -3,6 +3,30 @@
 /**
  * Centre de Commandement Analytics - Version 3.0 (ERP Enterprise Grade)
  * 
+ * ARCHITECTURE EN 3 SECTIONS:
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │ [ Sidebar BMO ] │ [ Panneau métier 3 niveaux ] │ [ Contenu ] │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * SECTION 1: SIDEBAR BMO
+ * - Navigation principale latérale (catégories principales)
+ * - BTPSidebar ou AnalyticsCommandSidebar
+ * - Collapsible, responsive
+ * 
+ * SECTION 2: PANNEAU MÉTIER 3 NIVEAUX
+ * - Niveau 1: Catégories principales (dans la sidebar)
+ * - Niveau 2: Sous-catégories (AnalyticsSubNavigation)
+ * - Niveau 3: Vues + Filtres (Grid/Dashboard/Comparative)
+ * - Header avec actions (recherche, notifications, export)
+ * - KPIBar (optionnel)
+ * - Breadcrumb drill-down
+ * 
+ * SECTION 3: CONTENU PAGE
+ * - Zone principale d'affichage
+ * - Router selon navigation (BTP ou classique)
+ * - Vues multiples (Grid/Dashboard/Comparative)
+ * - Error boundary
+ * 
  * NOUVEAUTÉS v3.0:
  * ✅ Vues multiples (Grid / Dashboard / Comparative) avec state + URL sync
  * ✅ Stats footer dynamiques (calculées selon filtres actifs)
@@ -981,6 +1005,10 @@ function AnalyticsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
+      {/* ============================================
+          SECTION 1: SIDEBAR BMO
+          Navigation principale latérale
+          ============================================ */}
       {/* Mobile overlay for sidebar */}
       {!sidebarCollapsed && (
         <div
@@ -1013,6 +1041,10 @@ function AnalyticsPageContent() {
         />
       )}
 
+      {/* ============================================
+          SECTION 2: PANNEAU MÉTIER 3 NIVEAUX
+          Navigation hiérarchique + Header + Filtres
+          ============================================ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
@@ -1119,6 +1151,8 @@ function AnalyticsPageContent() {
           </div>
         </header>
 
+        {/* Niveau 1: Catégories principales (dans la sidebar) */}
+        {/* Niveau 2: Sous-catégories (panneau métier) */}
         {!useBTPNavigation && (
           <AnalyticsSubNavigation
             mainCategory={activeCategory}
@@ -1137,7 +1171,7 @@ function AnalyticsPageContent() {
           />
         )}
 
-        {/* NOUVEAU v3.0: Barre sélecteur de vue + indicateur filtres */}
+        {/* Niveau 3: Vues + Filtres (panneau métier) */}
         <div className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-slate-800/60 bg-slate-900/80">
           <div className="flex gap-1">
             {[
@@ -1208,6 +1242,10 @@ function AnalyticsPageContent() {
           />
         )}
 
+        {/* ============================================
+            SECTION 3: CONTENU PAGE
+            Zone principale d'affichage du contenu
+            ============================================ */}
         <main className="flex-1 overflow-hidden">
           <div ref={scrollRef} className="h-full overflow-y-auto">
             <AnalyticsErrorBoundary

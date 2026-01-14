@@ -178,9 +178,10 @@ export async function DELETE(
 // GET pour récupérer les documents supprimés (ADMIN)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const { searchParams } = new URL(request.url);
     const includeDeleted = searchParams.get('includeDeleted') === 'true';
 
@@ -194,12 +195,12 @@ export async function GET(
     // TODO: Vérifier permission admin
     // TODO: Récupérer document supprimé
     // const document = await prisma.validationDocument.findUnique({
-    //   where: { id: params.id },
+    //   where: { id },
     //   include: { timeline: true }
     // });
 
     const deletedDocument = {
-      id: params.id,
+      id,
       status: 'deleted',
       deletedAt: '2024-01-18T10:00:00.000Z',
       deleteReason: 'error',
@@ -209,7 +210,8 @@ export async function GET(
 
     return NextResponse.json(deletedDocument);
   } catch (error) {
-    console.error(`[validation-bc/documents/${params.id}] Get deleted error:`, error);
+    const { id } = await params;
+    console.error(`[validation-bc/documents/${id}] Get deleted error:`, error);
     return NextResponse.json(
       { error: 'Failed to retrieve deleted document' },
       { status: 500 }
@@ -220,10 +222,10 @@ export async function GET(
 // PUT pour restaurer un document supprimé (ADMIN)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     if (!body.restore) {
@@ -258,7 +260,8 @@ export async function PUT(
       },
     });
   } catch (error) {
-    console.error(`[validation-bc/documents/${params.id}] Restore error:`, error);
+    const { id } = await params;
+    console.error(`[validation-bc/documents/${id}] Restore error:`, error);
     return NextResponse.json(
       { error: 'Failed to restore document' },
       { status: 500 }

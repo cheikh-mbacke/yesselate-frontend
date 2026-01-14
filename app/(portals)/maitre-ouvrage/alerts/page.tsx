@@ -12,14 +12,18 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
+// Nouvelle navigation hiérarchique
+import { AlertesSidebar } from '@/modules/centre-alertes/navigation/AlertesSidebar';
+import { AlertesSubNavigation, AlertesContentRouter } from '@/modules/centre-alertes/components';
+import { findNavNodeById } from '@/modules/centre-alertes/navigation/alertesNavigationConfig';
 import {
-  AlertsCommandSidebar,
-  AlertsSubNavigation,
-  AlertsKPIBar,
-  alertsCategories,
-  alertsSubCategoriesMap,
-  alertsFiltersMap,
-} from '@/components/features/bmo/alerts/command-center';
+  useAlertesCommandCenterStore,
+  type AlertesMainCategory,
+} from '@/lib/stores/alertesCommandCenterStore';
+import { useAlertesStats } from '@/modules/centre-alertes/hooks';
+
+// Anciens composants conservés pour compatibilité
+import { AlertsKPIBar } from '@/components/features/bmo/alerts/command-center';
 
 import { AlertWorkspaceTabs } from '@/components/features/alerts/workspace/AlertWorkspaceTabs';
 import { AlertWorkspaceContent } from '@/components/features/alerts/workspace/AlertWorkspaceContent';
@@ -110,8 +114,6 @@ interface AlertStats {
   avgResolutionTime: number;
 }
 
-type LoadReason = 'init' | 'manual' | 'auto';
-
 // ================================
 // Helpers
 // ================================
@@ -129,17 +131,60 @@ function useInterval(fn: () => void, delay: number | null): void {
 // Main Component
 // ================================
 function AlertsPageContent() {
-  const { tabs, openTab, selectedAlertIds, clearSelection } = useAlertWorkspaceStore();
+  const { tabs, openTab, selectedIds, clearSelection } = useAlertWorkspaceStore();
   const toast = useAlertToast();
   
   // Obtenir l'utilisateur courant
   const { user, can } = useCurrentUser();
 
-  // Navigation state
-  const [activeCategory, setActiveCategory] = useState('overview');
-  const [activeSubCategory, setActiveSubCategory] = useState('all');
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Nouvelle navigation avec store Zustand
+  const {
+    navigation,
+    sidebarCollapsed,
+    toggleSidebar,
+    navigate,
+    goBack,
+  } = useAlertesCommandCenterStore();
+
+  // Mapping pour compatibilité avec anciennes catégories
+  const mapOldCategoryToNew = (oldCategory: string): AlertesMainCategory => {
+    const mapping: Record<string, AlertesMainCategory> = {
+      'overview': 'overview',
+      'critical': 'en-cours',
+      'warning': 'en-cours',
+      'sla': 'en-cours',
+      'blocked': 'en-cours',
+      'acknowledged': 'traitements',
+      'resolved': 'traitements',
+      'rules': 'governance',
+      'history': 'governance',
+      'favorites': 'governance',
+    };
+    return mapping[oldCategory] || 'overview';
+  };
+
+  const mapOldCategoryToSub = (oldCategory: string): string | null => {
+    const mapping: Record<string, string> = {
+      'critical': 'critiques',
+      'warning': 'avertissements',
+      'sla': 'sla-depasses',
+      'blocked': 'blocages',
+      'acknowledged': 'acquittees',
+      'resolved': 'resolues',
+    };
+    return mapping[oldCategory] || null;
+  };
+
+  // Initialiser la navigation si nécessaire
+  useEffect(() => {
+    if (navigation.mainCategory === 'overview' && !navigation.subCategory) {
+      // Navigation déjà initialisée par le store
+    }
+  }, [navigation]);
+
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory;
+  const activeSubSubCategory = navigation.subSubCategory;
 
   // UI state
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -150,10 +195,6 @@ function AlertsPageContent() {
 
   // Dismissed banners
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
-
-  // Stats
-  const [stats, setStats] = useState<AlertStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
 
   // Modals
   const [showDirectionPanel, setShowDirectionPanel] = useState(false);
@@ -174,12 +215,7 @@ function AlertsPageContent() {
   const [currentAlertIndex, setCurrentAlertIndex] = useState(0);
   const [visibleAlerts, setVisibleAlerts] = useState<any[]>([]);
 
-  // Navigation history
-  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
-
-  const abortStatsRef = useRef<AbortController | null>(null);
-
-  // React Query hooks
+  // React Query hooks - TOUS les hooks doivent être appelés dans le même ordre à chaque render
   const {
     data: timelineData,
     isLoading: timelineLoading,
@@ -192,6 +228,9 @@ function AlertsPageContent() {
     isLoading: statsQueryLoading,
     refetch: refetchStatsQuery,
   } = useAlertStats();
+
+  // Stats depuis le nouveau hook - DOIT être appelé ici, pas plus tard
+  const { data: statsData } = useAlertesStats();
 
   // Mutations
   const acknowledgeAlertMutation = useAcknowledgeAlert();
@@ -214,10 +253,7 @@ function AlertsPageContent() {
       if (type === 'alert.created' || type === 'alert.critical') {
         toast.info(
           'Nouvelle alerte',
-          `${alert.title} (${alert.severity})`,
-          {
-            duration: alert.severity === 'critical' ? 10000 : 5000,
-          }
+          `${alert.title} (${alert.severity})`
         );
       }
       
@@ -229,18 +265,48 @@ function AlertsPageContent() {
   // ================================
   // Computed values
   // ================================
+  // statsData est déjà défini plus haut (tous les hooks doivent être en haut)
+  const stats = useMemo(() => {
+    if (!statsData) {
+      return {
+        total: 0,
+        critical: 0,
+        warning: 0,
+        info: 0,
+        success: 0,
+        acknowledged: 0,
+        resolved: 0,
+        escalated: 0,
+        avgResponseTime: 0,
+        avgResolutionTime: 0,
+      };
+    }
+    // Accès sécurisé aux propriétés avec fallback
+    const parSeverite = statsData.parSeverite || {};
+    const parStatut = statsData.parStatut || {};
+    return {
+      total: statsData.total || 0,
+      critical: parSeverite.critical || 0,
+      warning: parSeverite.warning || 0,
+      info: parSeverite.info || 0,
+      success: parSeverite.success || 0,
+      acknowledged: parStatut.acknowledged || 0,
+      resolved: parStatut.resolved || 0,
+      escalated: parStatut.escalated || 0,
+      avgResponseTime: statsData.tempsMoyenReponse || 0,
+      avgResolutionTime: statsData.tempsMoyenResolution || 0,
+    };
+  }, [statsData]);
+
   const currentCategoryLabel = useMemo(() => {
-    return alertsCategories.find((c) => c.id === activeCategory)?.label || 'Alertes';
+    const node = findNavNodeById(activeCategory);
+    return node?.label || 'Alertes & Risques';
   }, [activeCategory]);
 
   const currentSubCategories = useMemo(() => {
-    return alertsSubCategoriesMap[activeCategory] || [];
+    const mainNode = findNavNodeById(activeCategory);
+    return mainNode?.children || [];
   }, [activeCategory]);
-
-  const currentFilters = useMemo(() => {
-    const key = `${activeCategory}:${activeSubCategory}`;
-    return alertsFiltersMap[key] || [];
-  }, [activeCategory, activeSubCategory]);
 
   const hasUrgentItems = useMemo(() => stats && (stats.critical > 0 || stats.escalated > 0), [stats]);
 
@@ -257,34 +323,38 @@ function AlertsPageContent() {
   // ================================
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await loadStats('manual');
+    // Rafraîchir les stats via React Query
+    refetchStatsQuery();
     setTimeout(() => {
       setIsRefreshing(false);
       setLastUpdate(new Date());
     }, 500);
-  }, []);
+  }, [refetchStatsQuery]);
 
   const handleCategoryChange = useCallback((category: string) => {
-    setNavigationHistory((prev) => [...prev, activeCategory]);
-    setActiveCategory(category);
-    setActiveSubCategory('all');
-    setActiveFilter(null);
-  }, [activeCategory]);
+    // Si c'est déjà une nouvelle catégorie (overview, en-cours, traitements, governance), l'utiliser directement
+    const newCategories: AlertesMainCategory[] = ['overview', 'en-cours', 'traitements', 'governance'];
+    if (newCategories.includes(category as AlertesMainCategory)) {
+      navigate(category as AlertesMainCategory, null, null);
+    } else {
+      // Sinon, mapper depuis l'ancienne catégorie
+      const newCategory = mapOldCategoryToNew(category);
+      const subCategory = mapOldCategoryToSub(category);
+      navigate(newCategory, subCategory, null);
+    }
+  }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
-    setActiveSubCategory(subCategory);
-    setActiveFilter(null);
-  }, []);
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   const handleGoBack = useCallback(() => {
-    if (navigationHistory.length > 0) {
-      const previousCategory = navigationHistory[navigationHistory.length - 1];
-      setNavigationHistory((prev) => prev.slice(0, -1));
-      setActiveCategory(previousCategory);
-      setActiveSubCategory('all');
-      setActiveFilter(null);
-    }
-  }, [navigationHistory]);
+    goBack();
+  }, [goBack]);
 
   const openQueue = useCallback(
     (queue: string) => {
@@ -328,50 +398,8 @@ function AlertsPageContent() {
     setIsFullscreen(!isFullscreen);
   }, [isFullscreen]);
 
-  // Load Stats - maintenant on utilise les stats de React Query
-  const loadStats = useCallback(async (reason: LoadReason = 'manual') => {
-    // Si on a des stats de React Query, on les utilise
-    if (statsQueryData?.stats) {
-      setStats(statsQueryData.stats);
-      setStatsLoading(false);
-      return;
-    }
-
-    // Sinon, fallback sur le calcul local
-    abortStatsRef.current?.abort();
-    const ac = new AbortController();
-    abortStatsRef.current = ac;
-
-    setStatsLoading(true);
-    try {
-      await new Promise((r) => setTimeout(r, 250));
-      const { calculateAlertStats } = await import('@/lib/data/alerts');
-      const calculatedStats = calculateAlertStats();
-      setStats(calculatedStats);
-    } catch (e) {
-      console.error('Erreur chargement stats:', e);
-      toast.error('Erreur de chargement', 'Impossible de charger les statistiques');
-    } finally {
-      setStatsLoading(false);
-    }
-  }, [toast, statsQueryData]);
-
-  // Sync stats from React Query
-  useEffect(() => {
-    if (statsQueryData?.stats) {
-      setStats(statsQueryData.stats);
-    }
-  }, [statsQueryData]);
-
-  useEffect(() => {
-    loadStats('init');
-    return () => { abortStatsRef.current?.abort(); };
-  }, [loadStats]);
-
-  useInterval(
-    () => { loadStats('auto'); },
-    30000
-  );
+  // Les stats sont maintenant gérées par useAlertesStats() via React Query
+  // Plus besoin de loadStats, setStats, etc.
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -580,14 +608,25 @@ function AlertsPageContent() {
     // Si des onglets workspace sont ouverts, afficher le workspace
     if (tabs.length > 0) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-4 p-4">
           <AlertWorkspaceTabs />
           <AlertWorkspaceContent />
         </div>
       );
     }
 
-    // Sinon, afficher le contenu selon la catégorie
+    // Utiliser le nouveau router hiérarchique
+    return (
+      <AlertesContentRouter
+        mainCategory={activeCategory}
+        subCategory={activeSubCategory}
+        subSubCategory={activeSubSubCategory}
+      />
+    );
+  };
+
+  // Ancien switch case conservé pour référence (non utilisé)
+  const _oldRenderContent = () => {
     switch (activeCategory) {
       case 'overview':
         return (
@@ -870,8 +909,14 @@ function AlertsPageContent() {
         isFullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <AlertsCommandSidebar
+      {/* Nouvelle Sidebar Navigation hiérarchique */}
+      {!sidebarCollapsed && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden"
+          onClick={() => toggleSidebar()}
+        />
+      )}
+      <AlertesSidebar
         activeCategory={activeCategory}
         collapsed={sidebarCollapsed}
         stats={{
@@ -883,7 +928,7 @@ function AlertsPageContent() {
           resolved: stats?.resolved,
         }}
         onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onToggleCollapse={() => toggleSidebar()}
         onOpenCommandPalette={openCommandPalette}
       />
 
@@ -893,7 +938,7 @@ function AlertsPageContent() {
         <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             {/* Back Button */}
-            {navigationHistory.length > 0 && (
+            {useAlertesCommandCenterStore.getState().navigationHistory.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -1016,16 +1061,22 @@ function AlertsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
-        <AlertsSubNavigation
+        {/* Nouvelle Sub Navigation hiérarchique */}
+        <AlertesSubNavigation
           mainCategory={activeCategory}
           mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
-          filters={currentFilters}
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            critical: stats?.critical,
+            warning: stats?.warning,
+            sla: stats?.escalated,
+            blocked: 0,
+            acknowledged: stats?.acknowledged,
+            resolved: stats?.resolved,
+          }}
         />
 
         {/* KPI Bar */}
@@ -1053,10 +1104,14 @@ function AlertsPageContent() {
           isRefreshing={isRefreshing}
         />
 
-        {/* Main Content */}
+        {/* Main Content avec nouveau router hiérarchique */}
         <main className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto p-4">
-            {renderContent()}
+          <div className="h-full overflow-y-auto">
+            <AlertesContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={activeSubSubCategory}
+            />
           </div>
         </main>
 
@@ -1231,17 +1286,18 @@ function AlertsPageContent() {
 
       {/* Batch Actions Bar */}
       <BatchActionsBar
-        selectedCount={selectedAlertIds?.length ?? 0}
+        selectedCount={selectedIds.size}
         onAcknowledge={can('alerts.acknowledge') ? async () => {
           try {
             // Bulk acknowledge logic here
-            for (const id of selectedAlertIds || []) {
+            const selectedArray = Array.from(selectedIds);
+            for (const id of selectedArray) {
               await acknowledgeAlertMutation.mutateAsync({
                 id: String(id),
                 userId: user.id,
               });
             }
-            toast.success('Alertes acquittées', `${selectedAlertIds?.length ?? 0} alertes ont été acquittées`);
+            toast.success('Alertes acquittées', `${selectedIds.size} alertes ont été acquittées`);
             clearSelection();
           } catch (e) {
             toast.error('Erreur', 'Impossible d\'acquitter les alertes');
@@ -1249,7 +1305,8 @@ function AlertsPageContent() {
         } : undefined}
         onResolve={can('alerts.resolve') ? async () => {
           try {
-            for (const id of selectedAlertIds || []) {
+            const selectedArray = Array.from(selectedIds);
+            for (const id of selectedArray) {
               await resolveAlertMutation.mutateAsync({
                 id: String(id),
                 resolutionType: 'fixed',
@@ -1257,7 +1314,7 @@ function AlertsPageContent() {
                 userId: user.id,
               });
             }
-            toast.success('Alertes résolues', `${selectedAlertIds?.length ?? 0} alertes ont été résolues`);
+            toast.success('Alertes résolues', `${selectedIds.size} alertes ont été résolues`);
             clearSelection();
           } catch (e) {
             toast.error('Erreur', 'Impossible de résoudre les alertes');
@@ -1265,7 +1322,8 @@ function AlertsPageContent() {
         } : undefined}
         onEscalate={can('alerts.escalate') ? async () => {
           try{
-            for (const id of selectedAlertIds || []) {
+            const selectedArray = Array.from(selectedIds);
+            for (const id of selectedArray) {
               await escalateAlertMutation.mutateAsync({
                 id: String(id),
                 escalateTo: 'direction',
@@ -1273,7 +1331,7 @@ function AlertsPageContent() {
                 userId: user.id,
               });
             }
-            toast.success('Alertes escaladées', `${selectedAlertIds?.length ?? 0} alertes ont été escaladées`);
+            toast.success('Alertes escaladées', `${selectedIds.size} alertes ont été escaladées`);
             clearSelection();
           } catch (e) {
             toast.error('Erreur', 'Impossible d\'escalader les alertes');

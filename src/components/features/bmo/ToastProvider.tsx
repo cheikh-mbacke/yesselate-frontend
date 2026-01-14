@@ -140,10 +140,21 @@ function ToastContainer() {
     setMounted(true);
   }, []);
 
-  if (!mounted) return null;
+  // Toujours rendre quelque chose pour éviter les problèmes de hooks
+  // Utiliser un fragment vide si pas encore monté ou pas de container
+  if (!mounted || typeof window === 'undefined') {
+    return null;
+  }
 
-  const container = typeof window !== 'undefined' ? document.body : null;
-  if (!container) return null;
+  const container = document.body;
+  if (!container) {
+    return null;
+  }
+
+  // Si pas de toasts, ne rien rendre (mais les hooks ont été appelés)
+  if (toasts.length === 0) {
+    return null;
+  }
 
   return createPortal(
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 max-w-md w-full pointer-events-none">

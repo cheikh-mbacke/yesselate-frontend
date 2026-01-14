@@ -1,0 +1,46 @@
+/**
+ * Sélecteur de période pour le module Gouvernance
+ */
+
+'use client';
+
+import React from 'react';
+import { Calendar, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useGouvernanceFilters } from '../hooks/useGouvernanceFilters';
+import type { PeriodeGouvernance } from '../types/gouvernanceTypes';
+
+interface PeriodSelectorProps {
+  className?: string;
+}
+
+const periodOptions: { value: PeriodeGouvernance; label: string }[] = [
+  { value: 'week', label: 'Semaine' },
+  { value: 'month', label: 'Mois' },
+  { value: 'quarter', label: 'Trimestre' },
+];
+
+export function PeriodSelector({ className }: PeriodSelectorProps) {
+  const { periode, setPeriode } = useGouvernanceFilters();
+
+  return (
+    <div className={cn('inline-flex rounded-xl bg-white/5 p-1 ring-1 ring-white/10', className)}>
+      {periodOptions.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => setPeriode(option.value)}
+          className={cn(
+            'rounded-lg px-3 py-1.5 text-xs font-medium transition',
+            periode === option.value
+              ? 'bg-white/10 text-white'
+              : 'text-slate-300 hover:bg-white/5 hover:text-white'
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+

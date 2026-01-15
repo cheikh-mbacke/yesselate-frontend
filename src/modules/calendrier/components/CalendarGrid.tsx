@@ -14,6 +14,7 @@ interface CalendarGridProps {
   evenements?: EvenementCalendrier[];
   absences?: Absence[];
   periode: 'semaine' | 'mois' | 'trimestre';
+  chantierId?: number | null;
   dateDebut?: string;
   dateFin?: string;
   className?: string;
@@ -24,10 +25,30 @@ export function CalendarGrid({
   evenements = [],
   absences = [],
   periode,
+  chantierId,
   dateDebut,
   dateFin,
   className,
 }: CalendarGridProps) {
+  // Filtrer par chantier si spécifié
+  const filteredJalons = useMemo(() => {
+    return chantierId
+      ? jalons.filter((j) => j.chantier_id === chantierId)
+      : jalons;
+  }, [jalons, chantierId]);
+
+  const filteredEvenements = useMemo(() => {
+    return chantierId
+      ? evenements.filter((e) => e.chantier_id === chantierId)
+      : evenements;
+  }, [evenements, chantierId]);
+
+  const filteredAbsences = useMemo(() => {
+    return chantierId
+      ? absences.filter((a) => a.chantier_id === chantierId)
+      : absences;
+  }, [absences, chantierId]);
+
   // Générer les jours de la période
   const days = useMemo(() => {
     const start = dateDebut ? new Date(dateDebut) : new Date();
@@ -71,13 +92,13 @@ export function CalendarGrid({
   const getEventsForDay = (day: Date) => {
     const dayStr = day.toISOString().split('T')[0];
     return {
-      jalons: jalons.filter(
+      jalons: filteredJalons.filter(
         (j) =>
           (j.date_debut && j.date_fin && j.date_debut <= dayStr && j.date_fin >= dayStr) ||
           dayStr === j.date_debut ||
           dayStr === j.date_fin
       ),
-      evenements: evenements.filter(
+      evenements: filteredEvenements.filter(
         (e) => {
           if (!e.date_debut || !e.date_fin) return false;
           const eventStart = e.date_debut.split('T')[0];
@@ -87,7 +108,7 @@ export function CalendarGrid({
             dayStr === eventEnd;
         }
       ),
-      absences: absences.filter(
+      absences: filteredAbsences.filter(
         (a) =>
           (a.date_debut && a.date_fin && a.date_debut <= dayStr && a.date_fin >= dayStr) ||
           dayStr === a.date_debut ||
@@ -119,7 +140,7 @@ export function CalendarGrid({
           <h3 className="text-lg font-semibold text-slate-200">Vue Calendrier</h3>
           <div className="text-sm text-slate-400">
             {periode === 'semaine' && 'Semaine'}
-            {periode === 'mois' && monthNames[new Date().getMonth()]}
+            {periode === 'mois' && days.length > 0 && monthNames[days[0].getMonth()]}
             {periode === 'trimestre' && 'Trimestre'}
           </div>
         </div>

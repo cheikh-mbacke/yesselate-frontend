@@ -35,6 +35,18 @@ export function TimelineView({
       : jalons;
   }, [jalons, chantierId]);
 
+  const filteredEvenements = useMemo(() => {
+    return chantierId
+      ? evenements.filter((e) => e.chantier_id === chantierId)
+      : evenements;
+  }, [evenements, chantierId]);
+
+  const filteredAbsences = useMemo(() => {
+    return chantierId
+      ? absences.filter((a) => a.chantier_id === chantierId)
+      : absences;
+  }, [absences, chantierId]);
+
   // Combiner tous les éléments pour la timeline
   const timelineItems = useMemo(() => {
     const items: Array<{
@@ -59,7 +71,7 @@ export function TimelineView({
       }
     });
 
-    evenements.forEach((event) => {
+    filteredEvenements.forEach((event) => {
       if (event.date_debut && event.date_fin) {
         items.push({
           id: event.id,
@@ -72,7 +84,7 @@ export function TimelineView({
       }
     });
 
-    absences.forEach((absence) => {
+    filteredAbsences.forEach((absence) => {
       if (absence.date_debut && absence.date_fin) {
         items.push({
           id: absence.id,
@@ -90,7 +102,7 @@ export function TimelineView({
       (a, b) =>
         new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime()
     );
-  }, [filteredJalons, evenements, absences]);
+  }, [filteredJalons, filteredEvenements, filteredAbsences]);
 
   const getItemColor = (type: string, item: any) => {
     if (type === 'jalon') {
@@ -130,7 +142,7 @@ export function TimelineView({
 
               return (
                 <div
-                  key={item.id}
+                  key={`${item.type}-${item.id}`}
                   className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50"
                 >
                   {/* Timeline bar */}

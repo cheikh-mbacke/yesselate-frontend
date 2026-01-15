@@ -5,7 +5,7 @@
 'use client';
 
 import React from 'react';
-import { LayoutDashboard, List, Grid3x3, Timeline } from 'lucide-react';
+import { LayoutDashboard, List, Grid3x3, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGouvernanceFilters } from '../hooks/useGouvernanceFilters';
 import type { VueGouvernance } from '../types/gouvernanceTypes';
@@ -18,7 +18,7 @@ const viewOptions: { value: VueGouvernance; label: string; icon: React.ElementTy
   { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { value: 'list', label: 'Liste', icon: List },
   { value: 'matrix', label: 'Matrice', icon: Grid3x3 },
-  { value: 'timeline', label: 'Timeline', icon: Timeline },
+  { value: 'timeline', label: 'Timeline', icon: History },
 ];
 
 export function ViewSelector({ className }: ViewSelectorProps) {

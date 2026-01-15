@@ -4,24 +4,43 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CalendarHeader } from '../../components/CalendarHeader';
-import { useAbsences } from '../../hooks/useCalendrierData';
+import { useAbsences, useCalendrierData } from '../../hooks/useCalendrierData';
+import { useCalendrierFilters } from '../../hooks/useCalendrierFilters';
 import { UserMinus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function AbsencesParEquipePage() {
-  const [selectedEquipeId, setSelectedEquipeId] = useState<string | null>(null);
+  const { periode, vue, chantierId, equipeId, dateDebut, dateFin } = useCalendrierFilters();
+  // Mémoriser les filtres pour éviter les re-renders infinis
+  const filters = React.useMemo(() => ({
+    periode,
+    vue,
+    chantier_id: chantierId || undefined,
+    equipe_id: equipeId || undefined,
+    date_debut: dateDebut || undefined,
+    date_fin: dateFin || undefined,
+  }), [periode, vue, chantierId, equipeId, dateDebut, dateFin]);
+  const { data: calendrierData } = useCalendrierData(filters);
+  const [selectedEquipeId, setSelectedEquipeId] = useState<number | null>(null);
   const { absences, loading, error } = useAbsences(
-    selectedEquipeId ? { equipeId: selectedEquipeId } : undefined
+    selectedEquipeId ? { equipe_id: selectedEquipeId } : undefined
   );
 
-  // TODO: Récupérer la liste des équipes depuis l'API
-  const equipes = [
-    { id: 'equipe-1', nom: 'Équipe A' },
-    { id: 'equipe-2', nom: 'Équipe B' },
-    { id: 'equipe-3', nom: 'Équipe C' },
-  ];
+  // Extraire les équipes uniques depuis les absences
+  const equipes = useMemo(() => {
+    const equipesMap = new Map<number, { id: number; nom: string }>();
+    absences.forEach((absence) => {
+      if (absence.equipe_id && !equipesMap.has(absence.equipe_id)) {
+        equipesMap.set(absence.equipe_id, {
+          id: absence.equipe_id,
+          nom: `Équipe ${absence.equipe_id}`,
+        });
+      }
+    });
+    return Array.from(equipesMap.values());
+  }, [absences]);
 
   if (loading) {
     return (
@@ -52,20 +71,24 @@ export function AbsencesParEquipePage() {
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              {equipes.map((equipe) => (
-                <Button
-                  key={equipe.id}
-                  variant={selectedEquipeId === equipe.id ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() =>
-                    setSelectedEquipeId(
-                      selectedEquipeId === equipe.id ? null : equipe.id
-                    )
-                  }
-                >
-                  {equipe.nom}
-                </Button>
-              ))}
+              {equipes.length > 0 ? (
+                equipes.map((equipe) => (
+                  <Button
+                    key={equipe.id}
+                    variant={selectedEquipeId === equipe.id ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() =>
+                      setSelectedEquipeId(
+                        selectedEquipeId === equipe.id ? null : equipe.id
+                      )
+                    }
+                  >
+                    {equipe.nom}
+                  </Button>
+                ))
+              ) : (
+                <span className="text-sm text-slate-500">Aucune équipe disponible</span>
+              )}
             </div>
           </div>
 

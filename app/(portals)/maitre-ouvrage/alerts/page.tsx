@@ -282,19 +282,20 @@ function AlertsPageContent() {
       };
     }
     // Accès sécurisé aux propriétés avec fallback
-    const parSeverite = statsData.parSeverite || {};
+    // Le type AlerteStats du module centre-alertes a une structure différente
+    const parTypologie = statsData.parTypologie || {};
     const parStatut = statsData.parStatut || {};
     return {
       total: statsData.total || 0,
-      critical: parSeverite.critical || 0,
-      warning: parSeverite.warning || 0,
-      info: parSeverite.info || 0,
-      success: parSeverite.success || 0,
-      acknowledged: parStatut.acknowledged || 0,
-      resolved: parStatut.resolved || 0,
-      escalated: parStatut.escalated || 0,
-      avgResponseTime: statsData.tempsMoyenReponse || 0,
-      avgResolutionTime: statsData.tempsMoyenResolution || 0,
+      critical: statsData.critiques || parTypologie.CRITIQUE || 0,
+      warning: parTypologie.SLA || 0,
+      info: parTypologie.PROJET || 0,
+      success: parTypologie.RH || 0,
+      acknowledged: parStatut.ACQUITTEE || 0,
+      resolved: parStatut.RESOLUE || 0,
+      escalated: 0, // Non disponible dans ce type
+      avgResponseTime: 0, // Non disponible dans ce type
+      avgResolutionTime: 0, // Non disponible dans ce type
     };
   }, [statsData]);
 

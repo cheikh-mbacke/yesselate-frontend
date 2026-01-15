@@ -13,8 +13,17 @@ import { useCalendrierFilters } from '../../hooks/useCalendrierFilters';
 import { useCalendrierData } from '../../hooks/useCalendrierData';
 
 export function CalendrierGlobalView() {
-  const { vue, periode, getFilters } = useCalendrierFilters();
-  const { data, loading, error } = useCalendrierData(getFilters());
+  const { periode, vue, chantierId, equipeId, dateDebut, dateFin } = useCalendrierFilters();
+  // Mémoriser les filtres pour éviter les re-renders infinis
+  const filters = React.useMemo(() => ({
+    periode,
+    vue,
+    chantier_id: chantierId || undefined,
+    equipe_id: equipeId || undefined,
+    date_debut: dateDebut || undefined,
+    date_fin: dateFin || undefined,
+  }), [periode, vue, chantierId, equipeId, dateDebut, dateFin]);
+  const { data, loading, error } = useCalendrierData(filters);
 
   const renderView = () => {
     if (loading) {

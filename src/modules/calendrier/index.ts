@@ -30,6 +30,8 @@ export { AlertsSummaryPanel } from './components/AlertsSummaryPanel';
 export { QuickActionsPanel } from './components/QuickActionsPanel';
 export { ControlStationPanel } from './components/ControlStationPanel';
 export { GanttChart } from './components/GanttChart';
+export { GanttVisualization } from './components/GanttVisualization';
+export { GanttStatsCharts } from './components/GanttStatsCharts';
 export { CalendarGrid } from './components/CalendarGrid';
 export { TimelineView } from './components/TimelineView';
 

@@ -11,8 +11,36 @@ import { useCalendrierData } from '../../hooks/useCalendrierData';
 import { useCalendrierFilters } from '../../hooks/useCalendrierFilters';
 
 export function GanttGlobalView() {
-  const { getFilters } = useCalendrierFilters();
-  const { data, loading, error } = useCalendrierData(getFilters());
+  const { periode, vue, chantierId, equipeId, dateDebut, dateFin } = useCalendrierFilters();
+  // Mémoriser les filtres pour éviter les re-renders infinis
+  const filters = React.useMemo(() => ({
+    periode,
+    vue,
+    chantier_id: chantierId || undefined,
+    equipe_id: equipeId || undefined,
+    date_debut: dateDebut || undefined,
+    date_fin: dateFin || undefined,
+  }), [periode, vue, chantierId, equipeId, dateDebut, dateFin]);
+  const { data, loading, error } = useCalendrierData(filters);
+
+  // Vérifier si les données sont disponibles (doit être avant les hooks)
+  const jalons = data?.jalons || [];
+  const evenements = data?.evenements || [];
+  const chantiers = data?.chantiers || [];
+
+  // Debug: vérifier les données (uniquement en développement)
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('GanttGlobalView - État:', {
+        loading,
+        error: error?.message,
+        hasData: !!data,
+        jalons: jalons.length,
+        evenements: evenements.length,
+        chantiers: chantiers.length,
+      });
+    }
+  }, [data, loading, error, jalons.length, evenements.length, chantiers.length]);
 
   if (loading) {
     return (
@@ -35,9 +63,9 @@ export function GanttGlobalView() {
       <CalendarHeader breadcrumb={['Calendrier', 'Gantt', 'Global']} showViewSwitcher={false} />
       <div className="flex-1 overflow-auto p-6">
         <GanttChart
-          jalons={data?.jalons || []}
-          evenements={data?.evenements || []}
-          chantiers={data?.chantiers || []}
+          jalons={jalons}
+          evenements={evenements}
+          chantiers={chantiers}
         />
       </div>
     </div>

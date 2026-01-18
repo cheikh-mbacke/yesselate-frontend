@@ -160,6 +160,14 @@ export default function CalendrierLayout({
           </div>
         </main>
       </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <CalendrierCommandPalette
+          isOpen={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+        />
+      )}
     </div>
   );
 }

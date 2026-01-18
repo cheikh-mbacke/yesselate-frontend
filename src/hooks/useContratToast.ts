@@ -5,170 +5,102 @@
 
 'use client';
 
-import { useToast } from '@/components/ui/toast';
+import { useToast } from '@/components/features/bmo/ToastProvider';
 
 export function useContratToast() {
-  const { showToast } = useToast();
+  const { success, error, warning, info } = useToast();
 
   return {
     // Succès génériques
     success: (title: string, message?: string) =>
-      showToast({ type: 'success', title, message }),
+      success(message || title, message ? { title } : undefined),
 
     // Erreurs génériques
     error: (title: string, message?: string) =>
-      showToast({ type: 'error', title, message, duration: 7000 }),
+      error(message || title, message ? { title, duration: 7000 } : { duration: 7000 }),
 
     // Avertissements
     warning: (title: string, message?: string) =>
-      showToast({ type: 'warning', title, message }),
+      warning(message || title, message ? { title } : undefined),
 
     // Info
     info: (title: string, message?: string) =>
-      showToast({ type: 'info', title, message }),
+      info(message || title, message ? { title } : undefined),
 
     // Actions de validation
     contratValidated: (reference: string) =>
-      showToast({
-        type: 'success',
-        title: 'Contrat validé',
-        message: `Le contrat ${reference} a été validé avec succès`,
-      }),
+      success(`Le contrat ${reference} a été validé avec succès`, { title: 'Contrat validé' }),
 
     contratsValidated: (count: number) =>
-      showToast({
-        type: 'success',
+      success('Les contrats ont été validés avec succès', {
         title: `${count} contrat${count > 1 ? 's' : ''} validé${count > 1 ? 's' : ''}`,
-        message: 'Les contrats ont été validés avec succès',
       }),
 
     // Actions de rejet
     contratRejected: (reference: string) =>
-      showToast({
-        type: 'warning',
-        title: 'Contrat rejeté',
-        message: `Le contrat ${reference} a été rejeté`,
-      }),
+      warning(`Le contrat ${reference} a été rejeté`, { title: 'Contrat rejeté' }),
 
     contratsRejected: (count: number) =>
-      showToast({
-        type: 'warning',
+      warning('Les contrats ont été rejetés', {
         title: `${count} contrat${count > 1 ? 's' : ''} rejeté${count > 1 ? 's' : ''}`,
-        message: 'Les contrats ont été rejetés',
       }),
 
     // Négociation
     contratNegotiation: (reference: string) =>
-      showToast({
-        type: 'info',
-        title: 'Négociation initiée',
-        message: `Une demande de négociation a été envoyée pour ${reference}`,
-      }),
+      info(`Une demande de négociation a été envoyée pour ${reference}`, { title: 'Négociation initiée' }),
 
     // Escalade
     contratEscalated: (reference: string) =>
-      showToast({
-        type: 'warning',
-        title: 'Contrat escaladé',
-        message: `Le contrat ${reference} a été escaladé à la direction`,
-      }),
+      warning(`Le contrat ${reference} a été escaladé à la direction`, { title: 'Contrat escaladé' }),
 
     contratsEscalated: (count: number) =>
-      showToast({
-        type: 'warning',
+      warning('Les contrats ont été transmis au niveau supérieur', {
         title: `${count} contrat${count > 1 ? 's' : ''} escaladé${count > 1 ? 's' : ''}`,
-        message: 'Les contrats ont été transmis au niveau supérieur',
       }),
 
     // Export
     exportSuccess: (format: string) =>
-      showToast({
-        type: 'success',
-        title: 'Export réussi',
-        message: `Le fichier ${format.toUpperCase()} a été téléchargé`,
-      }),
+      success(`Le fichier ${format.toUpperCase()} a été téléchargé`, { title: 'Export réussi' }),
 
     exportError: () =>
-      showToast({
-        type: 'error',
-        title: 'Erreur d\'export',
-        message: 'Impossible d\'exporter les données actuellement',
-        duration: 7000,
-      }),
+      error('Impossible d\'exporter les données actuellement', { title: 'Erreur d\'export', duration: 7000 }),
 
     // Filtres
     filtersApplied: (count: number) =>
-      showToast({
-        type: 'info',
-        title: 'Filtres appliqués',
-        message: `${count} filtre${count > 1 ? 's' : ''} actif${count > 1 ? 's' : ''}`,
-      }),
+      info(`${count} filtre${count > 1 ? 's' : ''} actif${count > 1 ? 's' : ''}`, { title: 'Filtres appliqués' }),
 
     filtersCleared: () =>
-      showToast({
-        type: 'info',
-        title: 'Filtres réinitialisés',
-        message: 'Tous les filtres ont été supprimés',
-      }),
+      info('Tous les filtres ont été supprimés', { title: 'Filtres réinitialisés' }),
 
     // Synchronisation
     syncSuccess: () =>
-      showToast({
-        type: 'success',
-        title: 'Données synchronisées',
-        message: 'Les contrats ont été mis à jour',
-      }),
+      success('Les contrats ont été mis à jour', { title: 'Données synchronisées' }),
 
     syncError: () =>
-      showToast({
-        type: 'error',
-        title: 'Erreur de synchronisation',
-        message: 'Impossible de mettre à jour les données',
-        duration: 7000,
-      }),
+      error('Impossible de mettre à jour les données', { title: 'Erreur de synchronisation', duration: 7000 }),
 
     // Erreurs d'action
     actionError: (action: string) =>
-      showToast({
-        type: 'error',
-        title: 'Erreur',
-        message: `Impossible d'effectuer l'action: ${action}`,
-        duration: 7000,
-      }),
+      error(`Impossible d'effectuer l'action: ${action}`, { title: 'Erreur', duration: 7000 }),
 
     // Données manquantes
     missingData: (field: string) =>
-      showToast({
-        type: 'warning',
-        title: 'Données incomplètes',
-        message: `Le champ "${field}" est requis`,
-      }),
+      warning(`Le champ "${field}" est requis`, { title: 'Données incomplètes' }),
 
     // Sélection
     selectionRequired: () =>
-      showToast({
-        type: 'warning',
-        title: 'Sélection requise',
-        message: 'Veuillez sélectionner au moins un contrat',
-      }),
+      warning('Veuillez sélectionner au moins un contrat', { title: 'Sélection requise' }),
 
     // Notification d'expiration
     expirationWarning: (reference: string, days: number) =>
-      showToast({
-        type: 'warning',
+      warning(`Le contrat ${reference} expire dans ${days} jour${days > 1 ? 's' : ''}`, {
         title: 'Expiration imminente',
-        message: `Le contrat ${reference} expire dans ${days} jour${days > 1 ? 's' : ''}`,
         duration: 8000,
       }),
 
     // Notification de nouveau contrat
     newContract: (reference: string) =>
-      showToast({
-        type: 'info',
-        title: 'Nouveau contrat',
-        message: `Le contrat ${reference} nécessite votre attention`,
-        duration: 6000,
-      }),
+      info(`Le contrat ${reference} nécessite votre attention`, { title: 'Nouveau contrat', duration: 6000 }),
   };
 }
 

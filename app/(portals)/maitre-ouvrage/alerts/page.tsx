@@ -12,13 +12,20 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-// Nouvelle navigation hiérarchique
-import { AlertesSidebar } from '@/modules/centre-alertes/navigation/AlertesSidebar';
-import { AlertesSubNavigation, AlertesContentRouter } from '@/modules/centre-alertes/components';
-import { findNavNodeById } from '@/modules/centre-alertes/navigation/alertesNavigationConfig';
+// Nouvelle navigation hiérarchique à 3 niveaux
 import {
-  useAlertesCommandCenterStore,
-  type AlertesMainCategory,
+  AlertsSidebar,
+  AlertsSubNavigation,
+  AlertsContentRouter,
+  findNavNodeById,
+  type AlertsMainCategory,
+} from '@/modules/alerts';
+// Store pour le nouveau module alerts
+import { useAlertsCommandCenterStore } from '@/lib/stores/alertsCommandCenterStore';
+// Store existant pour compatibilité (si nécessaire)
+import {
+  useAlertesCommandCenterStore as useCentreAlertesStore,
+  type AlertesMainCategory as StoreAlertesMainCategory,
 } from '@/lib/stores/alertesCommandCenterStore';
 import { useAlertesStats } from '@/modules/centre-alertes/hooks';
 
@@ -131,24 +138,47 @@ function useInterval(fn: () => void, delay: number | null): void {
 // Main Component
 // ================================
 function AlertsPageContent() {
+  const pathname = usePathname();
   const { tabs, openTab, selectedIds, clearSelection } = useAlertWorkspaceStore();
   const toast = useAlertToast();
   
   // Obtenir l'utilisateur courant
   const { user, can } = useCurrentUser();
 
-  // Nouvelle navigation avec store Zustand
+  // Nouvelle navigation avec store Zustand pour le module alerts
   const {
     navigation,
     sidebarCollapsed,
     toggleSidebar,
     navigate,
     goBack,
-  } = useAlertesCommandCenterStore();
+  } = useAlertsCommandCenterStore();
 
-  // Mapping pour compatibilité avec anciennes catégories
-  const mapOldCategoryToNew = (oldCategory: string): AlertesMainCategory => {
-    const mapping: Record<string, AlertesMainCategory> = {
+  // Synchroniser URL ↔ Navigation Store au chargement
+  useEffect(() => {
+    if (pathname) {
+      // Parser l'URL pour déterminer la navigation
+      const pathParts = pathname.split('/').filter(Boolean);
+      const alertsIndex = pathParts.indexOf('alerts');
+      
+      if (alertsIndex >= 0 && pathParts.length > alertsIndex + 1) {
+        const mainCategory = pathParts[alertsIndex + 1] as AlertsMainCategory;
+        const subCategory = pathParts[alertsIndex + 2] || null;
+        const subSubCategory = pathParts[alertsIndex + 3] || null;
+        
+        // Si la navigation est différente de l'URL, mettre à jour le store
+        if (navigation.mainCategory !== mainCategory || 
+            navigation.subCategory !== subCategory ||
+            navigation.subSubCategory !== subSubCategory) {
+          navigate(mainCategory, subCategory, subSubCategory);
+        }
+      }
+    }
+  }, [pathname]); // Ne pas inclure navigation pour éviter les boucles
+
+  // Mapping pour compatibilité avec anciennes catégories vers nouvelles
+  const mapOldCategoryToNew = (oldCategory: string): AlertsMainCategory => {
+    const mapping: Record<string, AlertsMainCategory> = {
       'overview': 'overview',
       'critical': 'en-cours',
       'warning': 'en-cours',
@@ -305,7 +335,7 @@ function AlertsPageContent() {
   }, [activeCategory]);
 
   const currentSubCategories = useMemo(() => {
-    const mainNode = findNavNodeById(activeCategory);
+    const mainNode = findNavNodeById(activeCategory as AlertsMainCategory);
     return mainNode?.children || [];
   }, [activeCategory]);
 
@@ -332,16 +362,16 @@ function AlertsPageContent() {
     }, 500);
   }, [refetchStatsQuery]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    // Si c'est déjà une nouvelle catégorie (overview, en-cours, traitements, governance), l'utiliser directement
-    const newCategories: AlertesMainCategory[] = ['overview', 'en-cours', 'traitements', 'governance'];
-    if (newCategories.includes(category as AlertesMainCategory)) {
-      navigate(category as AlertesMainCategory, null, null);
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    // Si c'est déjà une nouvelle catégorie (overview, critiques, sla, rh, projets), l'utiliser directement
+    const newCategories: AlertsMainCategory[] = ['overview', 'critiques', 'sla', 'rh', 'projets'];
+    if (newCategories.includes(category as AlertsMainCategory)) {
+      navigate(category as AlertsMainCategory, subCategory || null, null);
     } else {
       // Sinon, mapper depuis l'ancienne catégorie
       const newCategory = mapOldCategoryToNew(category);
-      const subCategory = mapOldCategoryToSub(category);
-      navigate(newCategory, subCategory, null);
+      const mappedSubCategory = mapOldCategoryToSub(category);
+      navigate(newCategory, mappedSubCategory || subCategory || null, null);
     }
   }, [navigate]);
 
@@ -449,7 +479,7 @@ function AlertsPageContent() {
       // ⌘B - Toggle sidebar
       if (isMod && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setSidebarCollapsed((p) => !p);
+        toggleSidebar();
         return;
       }
 
@@ -600,7 +630,7 @@ function AlertsPageContent() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openCommandPalette, toggleFullscreen, handleGoBack, handleCategoryChange, selectedAlert, toast, handleRefresh]);
+  }, [openCommandPalette, toggleFullscreen, handleGoBack, handleCategoryChange, selectedAlert, toast, handleRefresh, toggleSidebar]);
 
   // ================================
   // Render Content based on category
@@ -618,286 +648,12 @@ function AlertsPageContent() {
 
     // Utiliser le nouveau router hiérarchique
     return (
-      <AlertesContentRouter
-        mainCategory={activeCategory}
-        subCategory={activeSubCategory}
-        subSubCategory={activeSubSubCategory}
+      <AlertsContentRouter
+        mainCategory={activeCategory as AlertsMainCategory}
+        subCategory={activeSubCategory || undefined}
+        subSubCategory={activeSubSubCategory || undefined}
       />
     );
-  };
-
-  // Ancien switch case conservé pour référence (non utilisé)
-  const _oldRenderContent = () => {
-    switch (activeCategory) {
-      case 'overview':
-        return (
-          <div className="space-y-6">
-            {/* Bannière alertes critiques */}
-            <AlertAlertsBanner
-              dismissedIds={dismissedAlerts}
-              onDismiss={(id) => setDismissedAlerts((prev) => new Set(prev).add(id))}
-            />
-
-            {/* Alertes critiques */}
-            {stats && stats.critical > 0 && (
-              <div className="p-4 rounded-lg border bg-red-500/10 border-red-500/30">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-400" />
-                    <div>
-                      <p className="font-medium text-slate-100">
-                        {stats.critical} alerte{stats.critical > 1 ? 's' : ''} critique{stats.critical > 1 ? 's' : ''}
-                      </p>
-                      <p className="text-sm text-slate-400">
-                        Action immédiate requise pour éviter un impact opérationnel ou financier
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => handleCategoryChange('critical')}
-                    className="text-slate-300 hover:text-white"
-                  >
-                    Traiter
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Categories cards */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
-                Par catégorie
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[
-                  { id: 'critical', name: 'Critiques', icon: AlertCircle, color: 'red', count: stats?.critical ?? 0 },
-                  { id: 'warning', name: 'Avertissements', icon: AlertTriangle, color: 'amber', count: stats?.warning ?? 0 },
-                  { id: 'sla', name: 'SLA dépassés', icon: Clock, color: 'purple', count: stats?.escalated ?? 0 },
-                  { id: 'blocked', name: 'Bloqués', icon: Shield, color: 'orange', count: 0 },
-                ].map((cat) => {
-                  const Icon = cat.icon;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => handleCategoryChange(cat.id)}
-                      className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-all"
-                    >
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className={cn(
-                          'w-10 h-10 rounded-lg flex items-center justify-center',
-                          `bg-${cat.color}-500/20`
-                        )}>
-                          <Icon className={cn('w-5 h-5', `text-${cat.color}-400`)} />
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-200">{cat.name}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className={cn(
-                          'text-2xl font-bold',
-                          cat.count > 0 ? `text-${cat.color}-400` : 'text-slate-500'
-                        )}>
-                          {cat.count}
-                        </span>
-                        <ChevronRight className="w-4 h-4 text-slate-600" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Analytics & Tendances */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
-                Analytics & Tendances
-              </h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Trend Chart */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Évolution des alertes</h3>
-                  <AlertsTrendChart />
-                </div>
-
-                {/* Severity Distribution */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Répartition par sévérité</h3>
-                  <AlertsSeverityChart />
-                </div>
-
-                {/* Response Time */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Temps de réponse</h3>
-                  <AlertsResponseTimeChart />
-                </div>
-
-                {/* Category Distribution */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Répartition par catégorie</h3>
-                  <AlertsCategoryChart />
-                </div>
-
-                {/* Resolution Rate */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Taux de résolution</h3>
-                  <AlertsResolutionRateChart />
-                </div>
-
-                {/* Status Distribution */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Statut des alertes</h3>
-                  <AlertsStatusChart />
-                </div>
-
-                {/* Team Performance */}
-                <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 lg:col-span-2">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">Performance des équipes</h3>
-                  <AlertsTeamPerformanceChart />
-                </div>
-              </div>
-            </section>
-
-            {/* Outils avancés */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
-                Outils avancés
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <button
-                  onClick={() => setShowDirectionPanel(true)}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <Activity className="w-5 h-5 text-indigo-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Pilotage</p>
-                  <p className="text-xs text-slate-500">Vue Direction</p>
-                </button>
-                <button
-                  onClick={() => handleCategoryChange('blocked')}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <Shield className="w-5 h-5 text-orange-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Bloqués</p>
-                  <p className="text-xs text-slate-500">Dossiers en attente</p>
-                </button>
-                <button
-                  onClick={() => handleCategoryChange('rules')}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <Workflow className="w-5 h-5 text-purple-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Règles</p>
-                  <p className="text-xs text-slate-500">Configuration</p>
-                </button>
-                <button
-                  onClick={() => {}}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <Brain className="w-5 h-5 text-pink-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Analytics IA</p>
-                  <p className="text-xs text-slate-500">Prédictions</p>
-                </button>
-                <button
-                  onClick={() => setShowStats(true)}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <BarChart3 className="w-5 h-5 text-blue-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Statistiques</p>
-                  <p className="text-xs text-slate-500">Tableaux de bord</p>
-                </button>
-                <button
-                  onClick={() => setShowExport(true)}
-                  className="p-4 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 text-left transition-colors"
-                >
-                  <Download className="w-5 h-5 text-slate-400 mb-2" />
-                  <p className="font-medium text-sm text-slate-200">Export</p>
-                  <p className="text-xs text-slate-500">Télécharger</p>
-                </button>
-              </div>
-            </section>
-
-            {/* Compteurs détaillés */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
-                Files de traitement
-              </h2>
-              <AlertLiveCounters onQueueClick={openQueue} compact={false} />
-            </section>
-
-            {/* Bloc gouvernance */}
-            <div className="p-4 rounded-lg border bg-blue-500/10 border-blue-500/30">
-              <div className="flex items-center gap-3">
-                <Shield className="w-6 h-6 text-blue-400 flex-none" />
-                <div className="flex-1">
-                  <h3 className="font-bold text-blue-300">
-                    Gouvernance d'exploitation
-                  </h3>
-                  <p className="text-sm text-slate-400">
-                    Objectif : détecter tôt, prioriser juste, tracer tout. Chaque alerte nécessite une action documentée.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'critical':
-      case 'warning':
-      case 'sla':
-      case 'blocked':
-      case 'acknowledged':
-      case 'resolved':
-        // Ouvrir automatiquement un onglet workspace pour ces catégories
-        if (tabs.length === 0) {
-          openQueue(activeCategory);
-        }
-        return <AlertWorkspaceContent />;
-
-      case 'rules':
-        return (
-          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
-            <h3 className="text-lg font-semibold mb-4 text-slate-200">Règles d'alerte</h3>
-            <p className="text-slate-400 mb-6">Configuration des seuils, escalades et notifications automatiques.</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
-                <Settings className="w-6 h-6 text-blue-400 mb-3" />
-                <h4 className="font-medium text-slate-200 mb-1">Seuils</h4>
-                <p className="text-sm text-slate-500">Définir les niveaux d'alerte</p>
-              </div>
-              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
-                <Workflow className="w-6 h-6 text-purple-400 mb-3" />
-                <h4 className="font-medium text-slate-200 mb-1">Escalades</h4>
-                <p className="text-sm text-slate-500">Chaîne de responsabilité</p>
-              </div>
-              <div className="p-4 rounded-lg border border-slate-700/50 bg-slate-900/50">
-                <Bell className="w-6 h-6 text-amber-400 mb-3" />
-                <h4 className="font-medium text-slate-200 mb-1">Notifications</h4>
-                <p className="text-sm text-slate-500">Canaux et fréquence</p>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'history':
-        return (
-          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
-            <h3 className="text-lg font-semibold mb-4 text-slate-200">Historique des alertes</h3>
-            <p className="text-slate-400">Journal des alertes et actions prises.</p>
-          </div>
-        );
-
-      case 'favorites':
-        return (
-          <div className="p-8 rounded-xl border border-slate-700/50 bg-slate-800/30">
-            <h3 className="text-lg font-semibold mb-4 text-slate-200">Alertes suivies</h3>
-            <p className="text-slate-400">Vos alertes épinglées et favoris.</p>
-          </div>
-        );
-
-      default:
-        return null;
-    }
   };
 
   // ================================
@@ -917,16 +673,16 @@ function AlertsPageContent() {
           onClick={() => toggleSidebar()}
         />
       )}
-      <AlertesSidebar
-        activeCategory={activeCategory}
+      <AlertsSidebar
+        activeCategory={activeCategory as AlertsMainCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
         stats={{
-          critical: stats?.critical,
-          warning: stats?.warning,
-          sla: stats?.escalated,
-          blocked: 0,
-          acknowledged: stats?.acknowledged,
-          resolved: stats?.resolved,
+          critiques: stats?.critical || 0,
+          sla: stats?.escalated || 0,
+          rh: 0,
+          projets: 0,
+          overview: stats?.total || 0,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => toggleSidebar()}
@@ -939,7 +695,7 @@ function AlertsPageContent() {
         <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             {/* Back Button */}
-            {useAlertesCommandCenterStore.getState().navigationHistory.length > 0 && (
+            {useAlertsCommandCenterStore.getState().navigationHistory.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -1062,21 +818,18 @@ function AlertsPageContent() {
           </div>
         </header>
 
-        {/* Nouvelle Sub Navigation hiérarchique */}
-        <AlertesSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
-          subCategory={activeSubCategory}
-          subSubCategory={activeSubSubCategory}
+        {/* Nouvelle Sub Navigation hiérarchique - Level 2 & 3 */}
+        <AlertsSubNavigation
+          mainCategory={activeCategory as AlertsMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory || undefined}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
           stats={{
-            critical: stats?.critical,
-            warning: stats?.warning,
-            sla: stats?.escalated,
-            blocked: 0,
-            acknowledged: stats?.acknowledged,
-            resolved: stats?.resolved,
+            critiques: stats?.critical || 0,
+            sla: stats?.escalated || 0,
+            rh: 0,
+            projets: 0,
           }}
         />
 
@@ -1108,11 +861,19 @@ function AlertsPageContent() {
         {/* Main Content avec nouveau router hiérarchique */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
-            <AlertesContentRouter
-              mainCategory={activeCategory}
-              subCategory={activeSubCategory}
-              subSubCategory={activeSubSubCategory}
-            />
+            {/* Si des onglets workspace sont ouverts, afficher le workspace */}
+            {tabs.length > 0 ? (
+              <div className="space-y-4 p-4">
+                <AlertWorkspaceTabs />
+                <AlertWorkspaceContent />
+              </div>
+            ) : (
+              <AlertsContentRouter
+                mainCategory={activeCategory as AlertsMainCategory}
+                subCategory={activeSubCategory || undefined}
+                subSubCategory={activeSubSubCategory || undefined}
+              />
+            )}
           </div>
         </main>
 

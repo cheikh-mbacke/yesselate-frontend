@@ -51,6 +51,7 @@ export type DashboardModalType =
 export interface DashboardNavigationState {
   mainCategory: DashboardMainCategory;
   subCategory: DashboardSubCategory | null;
+  filter?: string | null; // Niveau 3 (sub-sub-category)
 }
 
 // État d'une modale
@@ -143,7 +144,7 @@ interface DashboardCommandCenterState {
   };
 
   // Actions Navigation
-  navigate: (main: DashboardMainCategory, sub?: DashboardSubCategory | null) => void;
+  navigate: (main: DashboardMainCategory, sub?: DashboardSubCategory | null, filter?: string | null) => void;
   goBack: () => void;
   resetNavigation: () => void;
 
@@ -209,6 +210,7 @@ interface DashboardCommandCenterState {
 const defaultNavigation: DashboardNavigationState = {
   mainCategory: 'overview',
   subCategory: 'summary',
+  filter: null,
 };
 
 const defaultFilters: DashboardActiveFilters = {
@@ -273,10 +275,10 @@ export const useDashboardCommandCenterStore = create<DashboardCommandCenterState
       },
 
       // Navigation Actions
-      navigate: (main, sub = null) => {
+      navigate: (main, sub = null, filter = null) => {
         const current = get().navigation;
         set({
-          navigation: { mainCategory: main, subCategory: sub },
+          navigation: { mainCategory: main, subCategory: sub, filter: filter || null },
           navigationHistory: [...get().navigationHistory, current].slice(-20),
         });
       },

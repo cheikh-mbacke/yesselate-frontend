@@ -6,8 +6,13 @@
 'use client';
 
 import { IndicateursPage } from '@/modules/centre-alertes/pages/overview/IndicateursPage';
+import { ToastProvider } from '@/components/ui/toast';
 
 export default function OverviewIndicateursPage() {
-  return <IndicateursPage />;
+  return (
+    <ToastProvider>
+      <IndicateursPage />
+    </ToastProvider>
+  );
 }
 

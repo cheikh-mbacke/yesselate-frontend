@@ -13,10 +13,7 @@ import { paiementsApiService, type PaiementsStats } from '@/lib/services/paiemen
 import {
   PaiementsWorkspaceTabs,
   PaiementsWorkspaceContent,
-  PaiementsContentRouter,
   PaiementsCommandPalette,
-  PaiementsCommandSidebar,
-  PaiementsSubNavigation,
   PaiementsKPIBar,
   PaiementsStatusBar,
   PaiementsToast,
@@ -27,6 +24,13 @@ import {
   type PaiementModalType,
   PaiementsNotificationPanel,
 } from '@/components/features/bmo/workspace/paiements';
+// New 3-level navigation module
+import {
+  PaiementsSidebar,
+  PaiementsSubNavigation,
+  PaiementsContentRouter,
+  type PaiementsMainCategory,
+} from '@/modules/validation-paiements';
 import { SavedFiltersManager } from '@/components/shared/SavedFiltersManager';
 import { 
   DollarSign, 
@@ -151,10 +155,11 @@ export default function ValidationPaiementsPage() {
     amountRange: {},
   });
   
-  // Navigation state
+  // Navigation state - 3-level navigation
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategory, setActiveCategory] = useState('overview');
   const [activeSubCategory, setActiveSubCategory] = useState<string | null>('dashboard');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
   
   // Modal state
   const [modal, setModal] = useState<{
@@ -217,18 +222,27 @@ export default function ValidationPaiementsPage() {
     return () => clearInterval(interval);
   }, [autoRefresh, loadStats]);
 
-  // Navigation handlers
-  const handleCategoryChange = (category: string) => {
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = (category: string, subCategory?: string) => {
     if (category !== activeCategory) {
       setNavigationHistory(prev => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
       setActiveCategory(category);
       const subCats = getSubCategoriesMap(stats)[category] || [];
-      setActiveSubCategory(subCats[0]?.id || null);
+      setActiveSubCategory(subCategory || subCats[0]?.id || null);
+      setActiveSubSubCategory(undefined); // Reset level 3
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+      setActiveSubSubCategory(undefined); // Reset level 3
     }
   };
 
   const handleSubCategoryChange = (subCategory: string) => {
     setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
+  };
+
+  const handleSubSubCategoryChange = (subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
   };
 
   const handleGoBack = () => {
@@ -409,11 +423,17 @@ export default function ValidationPaiementsPage() {
         isFullScreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <PaiementsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <PaiementsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
-        stats={stats}
+        stats={stats ? {
+          pending: stats.pending,
+          urgent: (stats.byUrgency?.critical || 0) + (stats.byUrgency?.high || 0),
+          validated: stats.validated,
+          rejected: stats.rejected,
+        } : undefined}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -583,13 +603,19 @@ export default function ValidationPaiementsPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - 3-level */}
         <PaiementsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={CATEGORY_LABELS[activeCategory] || activeCategory}
-          subCategory={activeSubCategory}
-          subCategories={getSubCategoriesMap(stats)[activeCategory] || []}
+          mainCategory={activeCategory as PaiementsMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            pending: stats.pending,
+            urgent: (stats.byUrgency?.critical || 0) + (stats.byUrgency?.high || 0),
+            validated: stats.validated,
+            rejected: stats.rejected,
+          } : undefined}
         />
 
         {/* KPI Bar */}
@@ -608,11 +634,11 @@ export default function ValidationPaiementsPage() {
         <main className="flex-1 overflow-hidden bg-slate-950/50">
           <div className="h-full overflow-auto">
             <div className="p-4">
-              {/* Content Router basé sur la navigation sidebar */}
+              {/* Content Router basé sur la navigation 3-level */}
               <PaiementsContentRouter
-                category={activeCategory}
-                subCategory={activeSubCategory}
-                stats={stats}
+                mainCategory={activeCategory as PaiementsMainCategory}
+                subCategory={activeSubCategory || undefined}
+                subSubCategory={activeSubSubCategory}
               />
             </div>
           </div>

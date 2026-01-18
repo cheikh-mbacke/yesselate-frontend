@@ -24,13 +24,17 @@ import {
 import { useClientsWorkspaceStore, subCategoriesMap } from '@/lib/stores/clientsWorkspaceStore';
 import { useBMOStore } from '@/lib/stores';
 import {
-  ClientsCommandSidebar,
-  ClientsSubNavigation,
   ClientsKPIBar,
-  ClientsContentRouter,
   ClientsFiltersPanel,
   clientsCategories,
 } from '@/components/features/bmo/clients/command-center';
+// New 3-level navigation module
+import {
+  ClientsSidebar,
+  ClientsSubNavigation,
+  ClientsContentRouter,
+  type ClientsMainCategory,
+} from '@/modules/clients';
 import {
   ClientsCommandPalette,
   ClientsStatsModal,
@@ -137,13 +141,23 @@ export default function ClientsPage() {
     }, 1500);
   }, [addToast, addActionLog, currentUser]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    setActiveCategory(category);
-  }, [setActiveCategory]);
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setActiveCategory(category);
+      setActiveSubCategory(subCategory || 'all');
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+    }
+  }, [activeCategory, setActiveCategory, setActiveSubCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
   }, [setActiveSubCategory]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    // Level 3 navigation - to be implemented if needed
+    console.log('Sub-sub category changed:', subSubCategory);
+  }, []);
 
   const handleApplyFilters = useCallback((filters: Record<string, string[]>) => {
     setActiveFilters(filters);
@@ -397,10 +411,17 @@ export default function ClientsPage() {
         isFullScreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <ClientsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <ClientsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          active: 120,
+          inactive: 36,
+          vip: 8,
+          prospects: 45,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebarCollapsed}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -518,13 +539,19 @@ export default function ClientsPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <ClientsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as ClientsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: 120,
+            inactive: 36,
+            vip: 8,
+            prospects: 45,
+          }}
         />
 
         {/* KPI Bar */}
@@ -539,11 +566,9 @@ export default function ClientsPage() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4">
             <ClientsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as ClientsMainCategory}
               subCategory={activeSubCategory}
-              onViewClient={handleViewClient}
-              onEditClient={handleEditClient}
-              onDeleteClient={handleDeleteClient}
+              subSubCategory={undefined}
             />
           </div>
         </main>

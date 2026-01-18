@@ -35,14 +35,19 @@ import {
 import { useContratsWorkspaceStore } from '@/lib/stores/contratsWorkspaceStore';
 import { useNotifications } from '@/hooks/useNotifications';
 import {
-  ValidationContratsCommandSidebar,
-  ValidationContratsSubNavigation,
   ValidationContratsKPIBar,
-  ValidationContratsContentRouter,
   ValidationContratsFiltersPanel,
   validationContratsCategories,
   type ValidationContratsFilters,
 } from '@/components/features/bmo/validation-contrats/command-center';
+import {
+  ContratsSidebar,
+  ContratsSubNavigation,
+  ContratsContentRouter,
+  getSubCategories,
+  type ContratsMainCategory,
+} from '@/modules/validation-contrats';
+import { useContratsStats } from '@/modules/validation-contrats/hooks';
 import { ContratsCommandPalette } from '@/components/features/bmo/workspace/contrats';
 import { useContratToast } from '@/hooks/useContratToast';
 import { ToastProvider } from '@/components/ui/toast';
@@ -139,9 +144,14 @@ function ValidationContratsPageContent() {
   } = useNotifications();
 
   // Navigation state
-  const [activeCategory, setActiveCategory] = useState('overview');
-  const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [activeCategory, setActiveCategory] = useState<ContratsMainCategory>('overview');
+  // Initialiser avec la première sous-catégorie de 'overview'
+  const [activeSubCategory, setActiveSubCategory] = useState<string | undefined>('indicateurs');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Stats pour badges dynamiques
+  const { data: stats } = useContratsStats();
 
   // UI state
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -206,12 +216,21 @@ function ValidationContratsPageContent() {
 
   const handleCategoryChange = useCallback((category: string) => {
     setNavigationHistory((prev) => [...prev, activeCategory]);
-    setActiveCategory(category);
-    setActiveSubCategory('all');
+    const newCategory = category as ContratsMainCategory;
+    setActiveCategory(newCategory);
+    // Initialiser avec la première sous-catégorie
+    const subCats = getSubCategories(newCategory);
+    setActiveSubCategory(subCats.length > 0 ? subCats[0].id : undefined);
+    setActiveSubSubCategory(undefined);
   }, [activeCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset niveau 3 quand on change niveau 2
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
   }, []);
 
   const handleGoBack = useCallback(() => {
@@ -324,10 +343,28 @@ function ValidationContratsPageContent() {
       )}
     >
       {/* Sidebar Navigation */}
-      <ValidationContratsCommandSidebar
+      <ContratsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
-        onCategoryChange={handleCategoryChange}
+        stats={stats ? {
+          enAttente: stats.enAttente,
+          urgents: stats.urgents,
+          valides: stats.valides,
+          rejetes: stats.rejetes,
+          negociation: stats.negociation,
+        } : undefined}
+        onCategoryChange={(category, subCategory) => {
+          setActiveCategory(category as ContratsMainCategory);
+          // Si une sous-catégorie est fournie, l'utiliser, sinon prendre la première
+          if (subCategory) {
+            setActiveSubCategory(subCategory);
+          } else {
+            const subCats = getSubCategories(category as ContratsMainCategory);
+            setActiveSubCategory(subCats.length > 0 ? subCats[0].id : undefined);
+          }
+          setActiveSubSubCategory(undefined);
+        }}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       />
@@ -466,12 +503,19 @@ function ValidationContratsPageContent() {
         </header>
 
         {/* Sub Navigation */}
-        <ValidationContratsSubNavigation
+        <ContratsSubNavigation
           mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            enAttente: stats.enAttente,
+            urgents: stats.urgents,
+            valides: stats.valides,
+            rejetes: stats.rejetes,
+            negociation: stats.negociation,
+          } : undefined}
         />
 
         {/* KPI Bar */}
@@ -485,9 +529,10 @@ function ValidationContratsPageContent() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4">
-            <ValidationContratsContentRouter
-              category={activeCategory}
+            <ContratsContentRouter
+              mainCategory={activeCategory}
               subCategory={activeSubCategory}
+              subSubCategory={activeSubSubCategory}
             />
           </div>
         </main>

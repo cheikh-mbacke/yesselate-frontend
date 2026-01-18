@@ -27,11 +27,16 @@ import {
 import { useSubstitutionWorkspaceStore } from '@/lib/stores/substitutionWorkspaceStore';
 import { useBMOStore } from '@/lib/stores';
 import {
-  SubstitutionCommandSidebar,
-  SubstitutionSubNavigation,
   SubstitutionKPIBar,
   substitutionCategories,
 } from '@/components/features/bmo/substitution/command-center';
+// New 3-level navigation module
+import {
+  SubstitutionSidebar,
+  SubstitutionSubNavigation,
+  SubstitutionContentRouter,
+  type SubstitutionMainCategory,
+} from '@/modules/substitution';
 import {
   SubstitutionWorkspaceContent,
   SubstitutionCommandPalette,
@@ -119,9 +124,10 @@ export default function SubstitutionPage() {
   } = useSubstitutionWorkspaceStore();
   const { addToast, addActionLog, currentUser } = useBMOStore();
 
-  // Navigation state
+  // Navigation state - 3-level navigation
   const [activeCategory, setActiveCategory] = useState('overview');
   const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
 
@@ -146,12 +152,13 @@ export default function SubstitutionPage() {
   // Handlers
   // ================================
   const handleCategoryChange = useCallback(
-    (category: string) => {
+    (category: string, subCategory?: string) => {
       // Ajouter à l'historique
       setNavigationHistory((prev) => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
       
       setActiveCategory(category);
-      setActiveSubCategory(subCategoriesMap[category]?.[0]?.id || 'all');
+      setActiveSubCategory(subCategory || subCategoriesMap[category]?.[0]?.id || 'all');
+      setActiveSubSubCategory(undefined); // Reset level 3
       
       addActionLog({
         userId: currentUser.id,
@@ -171,6 +178,11 @@ export default function SubstitutionPage() {
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
   }, []);
 
   const handleRefresh = useCallback(async () => {
@@ -294,10 +306,16 @@ export default function SubstitutionPage() {
         isFullScreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <SubstitutionCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <SubstitutionSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
+        stats={{
+          critical: 3,
+          pending: 12,
+          active: 38,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -440,14 +458,19 @@ export default function SubstitutionPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - 3-level */}
         {subCategories.length > 0 && (
           <SubstitutionSubNavigation
-            mainCategory={activeCategory}
-            mainCategoryLabel={activeCategoryData?.label || activeCategory}
-            subCategory={activeSubCategory}
-            subCategories={subCategories}
+            mainCategory={activeCategory as SubstitutionMainCategory}
+            subCategory={activeSubCategory || undefined}
+            subSubCategory={activeSubSubCategory}
             onSubCategoryChange={handleSubCategoryChange}
+            onSubSubCategoryChange={handleSubSubCategoryChange}
+            stats={{
+              critical: 3,
+              pending: 12,
+              active: 38,
+            }}
           />
         )}
 
@@ -462,7 +485,11 @@ export default function SubstitutionPage() {
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
           <div className="p-6">
-            <SubstitutionWorkspaceContent />
+            <SubstitutionContentRouter
+              mainCategory={activeCategory as SubstitutionMainCategory}
+              subCategory={activeSubCategory || undefined}
+              subSubCategory={activeSubSubCategory}
+            />
           </div>
         </main>
 

@@ -36,10 +36,7 @@ import { ProjetsHelpModal } from '@/components/features/bmo/projets/modals/Proje
 
 // Command Center Components
 import {
-  ProjetsCommandSidebar,
-  ProjetsSubNavigation,
   ProjetsKPIBar,
-  ProjetsContentRouter,
   ProjetsModals,
   projetsCategories,
   projetsSubCategoriesMap,
@@ -49,6 +46,12 @@ import {
   type ProjetsMainCategory,
   type ProjetsSubCategoryMap,
 } from '@/components/features/bmo/projets/command-center';
+// New 3-level navigation module
+import {
+  ProjetsSidebar,
+  ProjetsSubNavigation,
+  ProjetsContentRouter,
+} from '@/modules/projets-en-cours';
 
 // Workspace Components
 import {
@@ -145,6 +148,11 @@ export default function ProjetsEnCoursPage() {
     endRefresh,
     setViewMode,
   } = useProjetsCommandCenterStore();
+
+  // 3-level navigation state
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState<string | undefined>(undefined);
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
 
   // Local UI state
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -271,13 +279,22 @@ export default function ProjetsEnCoursPage() {
     }, 1500);
   }, [startRefresh, endRefresh]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as ProjetsMainCategory, 'all' as any);
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    setActiveCategory(category);
+    setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined);
+    navigate(category as ProjetsMainCategory, (subCategory || 'all') as any);
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined);
     navigate(navigation.mainCategory, subCategory as any);
   }, [navigate, navigation.mainCategory]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
+  }, []);
 
   const handleNewProject = useCallback(() => {
     openModal('new-project');
@@ -367,13 +384,20 @@ export default function ProjetsEnCoursPage() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <ProjetsCommandSidebar
-        activeCategory={navigation.mainCategory}
-        onCategoryChange={handleCategoryChange}
+      {/* Sidebar Navigation - 3-level */}
+      <ProjetsSidebar
+        activeCategory={activeCategory || navigation.mainCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          active: stats?.active ?? 0,
+          delayed: stats?.delayed ?? 0,
+          completed: stats?.completed ?? 0,
+          planning: stats?.planning ?? 0,
+        }}
+        onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
-        stats={sidebarStats}
+        onOpenCommandPalette={toggleCommandPalette}
       />
 
       {/* Main Content Area */}
@@ -544,16 +568,19 @@ export default function ProjetsEnCoursPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - 3-level */}
         <ProjetsSubNavigation
-          mainCategory={navigation.mainCategory}
-          mainCategoryLabel={currentCategoryLabel}
-          subCategory={navigation.subCategory}
-          subCategories={currentSubCategories}
+          mainCategory={(activeCategory || navigation.mainCategory) as ProjetsMainCategory}
+          subCategory={activeSubCategory || navigation.subCategory}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
-          filters={currentFilters}
-          activeFilter={null}
-          onFilterChange={() => {}}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: stats?.active ?? 0,
+            delayed: stats?.delayed ?? 0,
+            completed: stats?.completed ?? 0,
+            planning: stats?.planning ?? 0,
+          }}
         />
 
         {/* KPI Bar */}
@@ -567,9 +594,9 @@ export default function ProjetsEnCoursPage() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <ProjetsContentRouter
-              onViewProject={handleViewProject}
-              onEditProject={handleEditProject}
-              onDeleteProject={handleDeleteProject}
+              mainCategory={(activeCategory || navigation.mainCategory) as ProjetsMainCategory}
+              subCategory={activeSubCategory || navigation.subCategory}
+              subSubCategory={activeSubSubCategory}
             />
           </div>
         </main>

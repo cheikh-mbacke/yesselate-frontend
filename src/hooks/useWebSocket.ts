@@ -62,13 +62,28 @@ export function useWebSocket({
       ws.onerror = (event) => {
         // WebSocket error events don't provide detailed error info
         // Log the event type and WebSocket state for debugging
+        const readyState = ws?.readyState ?? 'unknown';
+        const readyStateLabels: Record<number, string> = {
+          0: 'CONNECTING',
+          1: 'OPEN',
+          2: 'CLOSING',
+          3: 'CLOSED',
+        };
+        
         const errorInfo = {
-          type: event.type,
-          readyState: ws.readyState,
-          url: ws.url,
+          type: event?.type || 'error',
+          readyState: typeof readyState === 'number' ? readyStateLabels[readyState] || readyState : readyState,
+          url: ws?.url || url || 'unknown',
           timestamp: new Date().toISOString(),
         };
-        console.error('WebSocket error:', errorInfo);
+        
+        // Vérifier que l'objet n'est pas vide avant de logger
+        if (Object.keys(errorInfo).length > 0) {
+          console.error('WebSocket error:', errorInfo);
+        } else {
+          console.error('WebSocket error occurred (no details available)');
+        }
+        
         setIsConnected(false);
         onError?.(event);
       };

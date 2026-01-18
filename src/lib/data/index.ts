@@ -24,7 +24,6 @@ export {
   avenantsToValidate,
   blockedDossiers,
   demandesRH,
-  echangesBureaux,
   arbitrages,
   messagesExternes,
   recouvrements,

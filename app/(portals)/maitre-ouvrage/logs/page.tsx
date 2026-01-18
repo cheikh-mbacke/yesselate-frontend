@@ -21,15 +21,19 @@ import {
   type LogsMainCategory,
 } from '@/lib/stores/logsCommandCenterStore';
 import {
-  LogsCommandSidebar,
-  LogsSubNavigation,
   LogsKPIBar,
   ActionsMenu,
   LogsDetailPanel,
   LogsModals,
   logsCategories,
 } from '@/components/features/bmo/logs/command-center';
-import { LogsContentRouter } from '@/components/features/bmo/logs/command-center/LogsContentRouter';
+// New 3-level navigation module
+import {
+  LogsSidebar,
+  LogsSubNavigation,
+  LogsContentRouter,
+  type LogsMainCategory,
+} from '@/modules/logs';
 import { LogsCommandPalette } from '@/components/features/bmo/workspace/logs/LogsCommandPalette';
 import { LogsStatsModal } from '@/components/features/bmo/workspace/logs/LogsStatsModal';
 import { LogsDirectionPanel } from '@/components/features/bmo/workspace/logs/LogsDirectionPanel';
@@ -269,10 +273,12 @@ function LogsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <LogsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <LogsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{}}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -351,13 +357,14 @@ function LogsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <LogsSubNavigation
           mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+          stats={{}}
         />
 
         {/* KPI Bar */}
@@ -374,8 +381,9 @@ function LogsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <LogsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter || undefined}
             />
           </div>
         </main>

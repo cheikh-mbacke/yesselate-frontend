@@ -5,7 +5,7 @@ import { FluentCard, FluentCardContent, FluentCardHeader, FluentCardTitle } from
 import { Badge } from '@/components/ui/badge';
 import { Clock, FileText, MessageSquare, CheckCircle, XCircle } from 'lucide-react';
 
-import { demands, decisions, echangesBureaux } from '@/lib/data';
+import { demands, decisions } from '@/lib/data';
 
 type TimelineEvent = {
   id: string;
@@ -57,20 +57,8 @@ export function TimelineTab() {
       });
     });
 
-    // Échanges
-    echangesBureaux.forEach((e) => {
-      items.push({
-        id: `exchange-${e.id}`,
-        type: 'exchange',
-        date: e.date,
-        timestamp: parseDate(e.date),
-        title: e.subject,
-        subtitle: `${e.from} → ${e.to}`,
-        bureau: e.from,
-        icon: <MessageSquare className="w-4 h-4" />,
-        variant: 'default',
-      });
-    });
+    // Échanges - migré vers echanges-structures
+    // Les échanges sont maintenant gérés dans le module echanges-structures
 
     // Tri par date décroissante
     return items.sort((a, b) => b.timestamp - a.timestamp);

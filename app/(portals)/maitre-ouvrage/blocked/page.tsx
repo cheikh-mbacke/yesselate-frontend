@@ -40,16 +40,20 @@ import {
 
 import { useBlockedCommandCenterStore, type BlockedSubCategory } from '@/lib/stores/blockedCommandCenterStore';
 import {
-  BlockedCommandSidebar,
   BlockedKPIBar,
-  BlockedSubNavigation,
-  BlockedContentRouter,
   BlockedModals,
   BlockedFiltersPanel,
   countActiveFiltersUtil,
   blockedCategories,
   type BlockedActiveFilters,
 } from '@/components/features/bmo/workspace/blocked/command-center';
+// New 3-level navigation module
+import {
+  BlockedSidebar,
+  BlockedSubNavigation,
+  BlockedContentRouter,
+  type BlockedMainCategory,
+} from '@/modules/blocked';
 import { BlockedCommandPalette } from '@/components/features/bmo/workspace/blocked/BlockedCommandPalette';
 import { BlockedToastProvider, useBlockedToast } from '@/components/features/bmo/workspace/blocked/BlockedToast';
 import { BlockedHelpModal } from '@/components/features/bmo/workspace/blocked/modals/BlockedHelpModal';
@@ -216,9 +220,10 @@ function BlockedPageContent() {
     autoInvalidateQueries: true,
   });
 
-  // Navigation state
+  // Navigation state - 3-level navigation
   const [activeCategory, setActiveCategory] = useState(navigation.mainCategory);
   const [activeSubCategory, setActiveSubCategory] = useState(navigation.subCategory);
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
@@ -301,19 +306,27 @@ function BlockedPageContent() {
     };
   }, [loadStats]);
 
-  // Handle category change
-  const handleCategoryChange = useCallback((category: typeof activeCategory) => {
-    setActiveCategory(category);
-    navigate(category);
-    const defaultSub = (subCategoriesMap as any)[category]?.[0]?.id || null;
+  // Handle category change - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    const cat = category as typeof activeCategory;
+    setActiveCategory(cat);
+    navigate(cat);
+    const defaultSub = subCategory || (subCategoriesMap as any)[cat]?.[0]?.id || null;
     setActiveSubCategory(defaultSub);
+    setActiveSubSubCategory(undefined); // Reset level 3
   }, [navigate]);
 
   // Handle sub-category change
   const handleSubCategoryChange = useCallback((subCategory: BlockedSubCategory | null) => {
     setActiveSubCategory(subCategory);
     navigate(activeCategory, subCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
   }, [activeCategory, navigate]);
+
+  // Handle sub-sub-category change
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
+  }, []);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -479,10 +492,18 @@ function BlockedPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <BlockedCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <BlockedSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
+        stats={stats ? {
+          total: stats.total,
+          critical: stats.critical,
+          high: stats.high,
+          medium: stats.medium,
+          low: stats.low,
+        } : undefined}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -655,13 +676,20 @@ function BlockedPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - 3-level */}
         <BlockedSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
-          subCategory={activeSubCategory as any}
-          subCategories={currentSubCategories}
+          mainCategory={activeCategory as BlockedMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            total: stats.total,
+            critical: stats.critical,
+            high: stats.high,
+            medium: stats.medium,
+            low: stats.low,
+          } : undefined}
         />
 
         {/* KPI Bar */}
@@ -673,7 +701,11 @@ function BlockedPageContent() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
-            <BlockedContentRouter />
+            <BlockedContentRouter
+              mainCategory={activeCategory as BlockedMainCategory}
+              subCategory={activeSubCategory || undefined}
+              subSubCategory={activeSubSubCategory}
+            />
           </div>
         </main>
 

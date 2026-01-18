@@ -9,4 +9,5 @@ export { PointsAttentionPanel } from './PointsAttentionPanel';
 export { QuickActionsPanel } from './QuickActionsPanel';
 export { PeriodSelector } from './PeriodSelector';
 export { ViewSelector } from './ViewSelector';
+export { GovernanceContentRouter } from './GovernanceContentRouter';
 

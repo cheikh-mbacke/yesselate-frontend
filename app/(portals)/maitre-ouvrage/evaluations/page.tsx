@@ -21,16 +21,20 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
-  EvaluationsCommandSidebar,
-  EvaluationsSubNavigation,
   EvaluationsKPIBar,
-  EvaluationsContentRouter,
-  evaluationsCategories,
   EvaluationsFiltersPanel,
   EvaluationsExportModal,
   countActiveEvaluationsFilters,
   type EvaluationsActiveFilters,
+  evaluationsCategories,
 } from '@/components/features/bmo/evaluations/command-center';
+// New 3-level navigation module
+import {
+  EvaluationsSidebar,
+  EvaluationsSubNavigation,
+  EvaluationsContentRouter,
+  type EvaluationsMainCategory,
+} from '@/modules/evaluations';
 import { EvaluationsBatchActionsBar } from '@/components/features/bmo/evaluations/command-center/EvaluationsBatchActionsBar';
 import { EvaluationDetailModal } from '@/components/features/bmo/evaluations/modals';
 import { EvaluationsCommandPalette } from '@/components/features/bmo/evaluations/workspace/EvaluationsCommandPalette';
@@ -313,14 +317,21 @@ function EvaluationsPageContent() {
     }, 1500);
   }, [addToast]);
 
-  const handleCategoryChange = useCallback((category: string) => {
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
     setNavigationHistory((prev) => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
     setActiveCategory(category);
-    setActiveSubCategory('all');
+    setActiveSubCategory(subCategory || 'all');
+    setActiveFilter(null); // Reset level 3
   }, [activeCategory, activeSubCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
+    setActiveFilter(null); // Reset level 3
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveFilter(subSubCategory);
   }, []);
 
   const goBack = useCallback(() => {
@@ -618,19 +629,19 @@ function EvaluationsPageContent() {
   // ================================
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
-      {/* Sidebar Navigation */}
-      <EvaluationsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <EvaluationsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          pending: stats.scheduled,
+          inProgress: stats.inProgress,
+          completed: stats.completed,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-        stats={{
-          scheduled: stats.scheduled,
-          inProgress: stats.inProgress,
-          completed: stats.completed,
-          recommendations: stats.pendingRecsTotal,
-        }}
       />
 
       {/* Main Content Area */}
@@ -756,16 +767,18 @@ function EvaluationsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <EvaluationsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as EvaluationsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={activeFilter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
-          filters={currentFilters}
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            pending: stats.scheduled,
+            inProgress: stats.inProgress,
+            completed: stats.completed,
+          }}
         />
 
         {/* KPI Bar */}
@@ -793,22 +806,9 @@ function EvaluationsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <EvaluationsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as EvaluationsMainCategory}
               subCategory={activeSubCategory}
-              onOpenEvaluation={handleOpenEvaluation}
-              selectedEvaluationIds={selectedEvaluationIds}
-              onToggleEvaluationSelection={(id) => {
-                setSelectedEvaluationIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(id)) {
-                    next.delete(id);
-                  } else {
-                    next.add(id);
-                  }
-                  return next;
-                });
-              }}
-              filteredEvaluations={filteredEvaluations as Evaluation[]}
+              subSubCategory={activeFilter || undefined}
             />
           </div>
         </main>

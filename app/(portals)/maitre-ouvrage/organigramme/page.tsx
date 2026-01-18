@@ -18,19 +18,23 @@ import {
 } from 'lucide-react';
 import {
   useOrganigrammeCommandCenterStore,
-  type OrganigrammeMainCategory,
+  type OrganigrammeMainCategory as StoreOrganigrammeMainCategory,
 } from '@/lib/stores/organigrammeCommandCenterStore';
 import {
-  OrganigrammeCommandSidebar,
-  OrganigrammeSubNavigation,
   OrganigrammeKPIBar,
-  OrganigrammeContentRouter,
   OrganigrammeModals,
   OrganigrammeDetailPanel,
   OrganigrammeBatchActionsBar,
   ActionsMenu,
   organigrammeCategories,
 } from '@/components/features/bmo/organigramme/command-center';
+// New 3-level navigation module
+import {
+  OrganigrammeSidebar,
+  OrganigrammeSubNavigation,
+  OrganigrammeContentRouter,
+  type OrganigrammeMainCategory,
+} from '@/modules/organigramme';
 import { OrganigrammeCommandPalette } from '@/components/features/bmo/organigramme/workspace/OrganigrammeCommandPalette';
 
 // ================================
@@ -167,13 +171,18 @@ function OrganigrammePageContent() {
     }, 1500);
   }, []);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as OrganigrammeMainCategory, 'all', null);
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as StoreOrganigrammeMainCategory, subCategory || 'all', null);
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(activeCategory, subCategory, null);
   }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
     switch (actionId) {
@@ -286,10 +295,17 @@ function OrganigrammePageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <OrganigrammeCommandSidebar
-        activeCategory={activeCategory}
+      {/* Sidebar Navigation - 3-level */}
+      <OrganigrammeSidebar
+        activeCategory={activeCategory as OrganigrammeMainCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          total: 45,
+          vacant: 3,
+          occupied: 42,
+          teams: 24,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -368,13 +384,19 @@ function OrganigrammePageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <OrganigrammeSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as OrganigrammeMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            total: 45,
+            vacant: 3,
+            occupied: 42,
+            teams: 24,
+          }}
         />
 
         {/* KPI Bar */}
@@ -391,8 +413,9 @@ function OrganigrammePageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <OrganigrammeContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as OrganigrammeMainCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

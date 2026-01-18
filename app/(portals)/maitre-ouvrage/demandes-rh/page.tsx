@@ -17,15 +17,19 @@ import {
 } from 'lucide-react';
 import { useDemandesRHCommandCenterStore } from '@/lib/stores/demandesRHCommandCenterStore';
 import {
-  DemandesRHCommandSidebar,
-  DemandesRHSubNavigation,
   DemandesRHKPIBar,
-  DemandesRHContentRouter,
-  demandesRHCategories,
   ActionsMenu,
   DemandesRHDetailModal,
   DemandesRHFiltersPanel,
+  demandesRHCategories,
 } from '@/components/features/bmo/demandes-rh/command-center';
+// New 3-level navigation module
+import {
+  DemandesRhSidebar,
+  DemandesRhSubNavigation,
+  DemandesRhContentRouter,
+  type DemandesRhMainCategory,
+} from '@/modules/demandes-rh';
 
 // ================================
 // Types
@@ -168,13 +172,18 @@ function DemandesRHPageContent() {
     }, 1500);
   }, [startRefresh, endRefresh]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as any, 'all');
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as any, subCategory || 'all');
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(activeCategory, subCategory);
   }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   const handleGoBack = useCallback(() => {
     goBack();
@@ -233,10 +242,16 @@ function DemandesRHPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <DemandesRHCommandSidebar
-        activeCategory={activeCategory}
+      {/* Sidebar Navigation - 3-level */}
+      <DemandesRhSidebar
+        activeCategory={activeCategory as DemandesRhMainCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          pending: 23,
+          inProgress: 12,
+          completed: 178,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -324,13 +339,18 @@ function DemandesRHPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
-        <DemandesRHSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+        {/* Sub Navigation - Level 2 & 3 */}
+        <DemandesRhSubNavigation
+          mainCategory={activeCategory as DemandesRhMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            pending: 23,
+            inProgress: 12,
+            completed: 178,
+          }}
         />
 
         {/* KPI Bar */}
@@ -346,9 +366,10 @@ function DemandesRHPageContent() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4">
-            <DemandesRHContentRouter
-              category={activeCategory}
+            <DemandesRhContentRouter
+              mainCategory={activeCategory as DemandesRhMainCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

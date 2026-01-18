@@ -43,10 +43,7 @@ import {
 } from 'lucide-react';
 import { useTicketsWorkspaceStore } from '@/lib/stores/ticketsWorkspaceStore';
 import {
-  TicketsCommandSidebar,
-  TicketsSubNavigation,
   TicketsKPIBar,
-  TicketsContentRouter,
   TicketsModals,
   TicketsFiltersPanel,
   TicketsToastProvider,
@@ -56,6 +53,13 @@ import {
   ticketsFiltersMap,
   type TicketsActiveFilters,
 } from '@/components/features/bmo/workspace/tickets/command-center';
+// New 3-level navigation module
+import {
+  TicketsSidebar,
+  TicketsSubNavigation,
+  TicketsContentRouter,
+  type TicketsMainCategory,
+} from '@/modules/tickets-clients';
 import {
   TicketsCommandPalette,
   TicketsStatsModal,
@@ -367,16 +371,20 @@ function TicketsClientsPageContent() {
     // Les filtres seront utilisés par TicketsContentRouter pour filtrer les résultats
   }, []);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category, 'all', null);
-  }, [navigate]);
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== navigation.mainCategory) {
+      navigate(category, subCategory || 'all', null);
+    } else if (subCategory) {
+      navigate(category, subCategory, null);
+    }
+  }, [navigate, navigation.mainCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(navigation.mainCategory, subCategory, null);
   }, [navigate, navigation.mainCategory]);
 
-  const handleFilterChange = useCallback((filter: string) => {
-    navigate(navigation.mainCategory, navigation.subCategory, filter);
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(navigation.mainCategory, navigation.subCategory, subSubCategory);
   }, [navigate, navigation.mainCategory, navigation.subCategory]);
 
   const handleOpenTicket = useCallback((ticketId: string) => {
@@ -530,10 +538,17 @@ function TicketsClientsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <TicketsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <TicketsSidebar
         activeCategory={navigation.mainCategory}
+        activeSubCategory={navigation.subCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          open: stats.open,
+          pending: stats.open - stats.critical,
+          resolved: stats.resolvedToday,
+          closed: stats.total - stats.open,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={openCommandPalette}
@@ -776,13 +791,19 @@ function TicketsClientsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <TicketsSubNavigation
-          mainCategory={navigation.mainCategory}
+          mainCategory={navigation.mainCategory as TicketsMainCategory}
           subCategory={navigation.subCategory}
-          filter={navigation.filter ?? undefined}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
-          onFilterChange={currentFilters.length > 0 ? handleFilterChange : undefined}
+          onSubSubCategoryChange={currentFilters.length > 0 ? handleSubSubCategoryChange : undefined}
+          stats={{
+            open: stats.open,
+            pending: stats.open - stats.critical,
+            resolved: stats.resolvedToday,
+            closed: stats.total - stats.open,
+          }}
         />
 
         {/* KPI Bar */}
@@ -797,11 +818,9 @@ function TicketsClientsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <TicketsContentRouter
-              category={navigation.mainCategory}
+              mainCategory={navigation.mainCategory as TicketsMainCategory}
               subCategory={navigation.subCategory}
-              filter={navigation.filter ?? undefined}
-              onOpenTicket={handleOpenTicket}
-              onOpenModal={handleOpenModal}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

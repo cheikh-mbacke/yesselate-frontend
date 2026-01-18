@@ -26,12 +26,16 @@ import { ArbitragesHelpModal } from '@/components/features/bmo/workspace/arbitra
 import { useArbitragesWorkspaceStore } from '@/lib/stores/arbitragesWorkspaceStore';
 import { useBMOStore } from '@/lib/stores';
 import {
-  ArbitragesCommandSidebar,
-  ArbitragesSubNavigation,
   ArbitragesKPIBar,
-  ArbitragesContentRouter,
   arbitragesCategories,
 } from '@/components/features/bmo/workspace/arbitrages';
+// New 3-level navigation module
+import {
+  ArbitragesSidebar,
+  ArbitragesSubNavigation,
+  ArbitragesContentRouter,
+  type ArbitragesMainCategory,
+} from '@/modules/arbitrages-vivants';
 import { ArbitragesCommandPalette } from '@/components/features/bmo/workspace/arbitrages/ArbitragesCommandPalette';
 import { ArbitragesStatsModal } from '@/components/features/bmo/workspace/arbitrages/ArbitragesStatsModal';
 import { ArbitragesDirectionPanel } from '@/components/features/bmo/workspace/arbitrages/ArbitragesDirectionPanel';
@@ -109,9 +113,10 @@ export default function ArbitragesVivantsPage() {
     setDirectionPanelOpen,
   } = useArbitragesWorkspaceStore();
 
-  // Navigation state
+  // Navigation state - 3-level navigation
   const [activeCategory, setActiveCategory] = useState('overview');
   const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // UI state
@@ -156,14 +161,20 @@ export default function ArbitragesVivantsPage() {
     }, 1500);
   }, [addToast]);
 
-  const handleCategoryChange = useCallback((category: string) => {
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
     setNavigationHistory((prev) => [...prev, activeCategory]);
     setActiveCategory(category);
-    setActiveSubCategory('all');
+    setActiveSubCategory(subCategory || 'all');
+    setActiveSubSubCategory(undefined); // Reset level 3
   }, [activeCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
   }, []);
 
   const handleGoBack = useCallback(() => {
@@ -253,10 +264,16 @@ export default function ArbitragesVivantsPage() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <ArbitragesCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <ArbitragesSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
+        stats={{
+          critical: 7,
+          pending: 23,
+          resolved: 45,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -381,13 +398,18 @@ export default function ArbitragesVivantsPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - 3-level */}
         <ArbitragesSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
-          subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          mainCategory={activeCategory as ArbitragesMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            critical: 7,
+            pending: 23,
+            resolved: 45,
+          }}
         />
 
         {/* KPI Bar */}
@@ -402,8 +424,9 @@ export default function ArbitragesVivantsPage() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <ArbitragesContentRouter
-              category={activeCategory}
-              subCategory={activeSubCategory}
+              mainCategory={activeCategory as ArbitragesMainCategory}
+              subCategory={activeSubCategory || undefined}
+              subSubCategory={activeSubSubCategory}
             />
           </div>
         </main>

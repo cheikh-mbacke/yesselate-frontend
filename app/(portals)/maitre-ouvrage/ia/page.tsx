@@ -22,10 +22,7 @@ import {
   type IAMainCategory,
 } from '@/lib/stores/iaCommandCenterStore';
 import {
-  IACommandSidebar,
-  IASubNavigation,
   IAKPIBar,
-  IAContentRouter,
   IAModuleDetailModal,
   IAModals,
   IABatchActionsBar,
@@ -33,6 +30,13 @@ import {
   IACommandPalette,
   iaCategories,
 } from '@/components/features/bmo/ia/command-center';
+// New 3-level navigation module
+import {
+  IASidebar,
+  IASubNavigation,
+  IAContentRouter,
+  type IAMainCategory,
+} from '@/modules/ia';
 import { useBMOStore } from '@/lib/stores';
 import { aiModules, aiHistory } from '@/lib/data';
 
@@ -348,14 +352,15 @@ function IAPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <IACommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <IASidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={stats}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
-        stats={stats}
       />
 
       {/* Main Content Area */}
@@ -422,14 +427,15 @@ function IAPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         {currentSubCategories.length > 0 && (
           <IASubNavigation
             mainCategory={activeCategory}
-            mainCategoryLabel={currentCategoryLabel}
             subCategory={activeSubCategory}
-            subCategories={currentSubCategories}
+            subSubCategory={navigation.filter || undefined}
             onSubCategoryChange={handleSubCategoryChange}
+            onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+            stats={stats}
           />
         )}
 

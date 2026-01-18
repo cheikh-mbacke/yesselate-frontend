@@ -24,11 +24,16 @@ import {
   type MessagesExternesMainCategory,
 } from '@/lib/stores/messagesExternesCommandCenterStore';
 import {
-  MessagesExternesCommandSidebar,
-  MessagesExternesSubNavigation,
   MessagesExternesKPIBar,
   messagesExternesCategories,
 } from '@/components/features/bmo/messages-externes/command-center';
+// New 3-level navigation module
+import {
+  MessagesExternesSidebar,
+  MessagesExternesSubNavigation,
+  MessagesExternesContentRouter,
+  type MessagesExternesMainCategory,
+} from '@/modules/messages-externes';
 import { useAppStore, useBMOStore } from '@/lib/stores';
 import { messagesExternes } from '@/lib/data';
 import type { ExternalMessage } from '@/lib/types/bmo.types';
@@ -360,14 +365,21 @@ function MessagesExternesPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <MessagesExternesCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <MessagesExternesSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          overview: stats.total || 0,
+          unread: stats.unread || 0,
+          requires_response: stats.requiresResponse || 0,
+          replied: stats.replied || 0,
+          archived: stats.archived || 0,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
-        stats={stats}
       />
 
       {/* Main Content Area */}
@@ -474,13 +486,20 @@ function MessagesExternesPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <MessagesExternesSubNavigation
           mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+          stats={{
+            overview: stats.total || 0,
+            unread: stats.unread || 0,
+            requires_response: stats.requiresResponse || 0,
+            replied: stats.replied || 0,
+            archived: stats.archived || 0,
+          }}
         />
 
         {/* KPI Bar */}
@@ -496,173 +515,12 @@ function MessagesExternesPageContent() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto p-4">
-            {/* Alert pour messages nécessitant réponse */}
-            {stats.requiresResponse > 0 && activeCategory === 'overview' && (
-              <Card className="border-amber-500/50 bg-amber-500/10 mb-4">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">⚠️</span>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-amber-400">{stats.requiresResponse} message(s) nécessitant réponse</h3>
-                      <p className="text-sm text-slate-400">Sous responsabilité <strong>BMO (Accountable)</strong></p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Messages List */}
-            <div className="grid lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 space-y-3">
-                {filteredMessages.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <span className="text-4xl mb-4 block">📨</span>
-                      <p className="text-slate-400">Aucun message trouvé</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  filteredMessages.map((message) => {
-                    const isSelected = selectedMessage === message.id;
-                    
-                    return (
-                      <Card
-                        key={message.id}
-                        className={cn(
-                          'cursor-pointer transition-all',
-                          isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50',
-                          message.status === 'unread' && 'border-l-4 border-l-red-500',
-                          message.requiresResponse && message.status !== 'replied' && 'border-l-4 border-l-amber-500',
-                          message.status === 'replied' && 'border-l-4 border-l-emerald-500',
-                          message.status === 'archived' && 'opacity-60',
-                        )}
-                        onClick={() => setSelectedMessage(message.id)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-lg">{getTypeIcon(message.type)}</span>
-                                <span className="font-mono text-xs text-blue-400">{message.id}</span>
-                                <Badge variant={message.status === 'unread' ? 'urgent' : message.status === 'replied' ? 'success' : 'default'}>{message.status}</Badge>
-                                <Badge variant={message.priority === 'urgent' ? 'urgent' : message.priority === 'high' ? 'warning' : 'default'}>{message.priority}</Badge>
-                              </div>
-                              <h3 className="font-bold mt-1">{message.subject}</h3>
-                              <p className="text-sm text-slate-400">{message.sender}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-slate-400">{message.date}</p>
-                              {message.requiresResponse && message.status !== 'replied' && (
-                                <Badge variant="warning" className="mt-1">Réponse requise</Badge>
-                              )}
-                            </div>
-                          </div>
-
-                          {message.status !== 'archived' && (
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                              {message.requiresResponse && message.status !== 'replied' && (
-                                <Button size="sm" variant="success" onClick={(e) => { e.stopPropagation(); handleRespond(message); }}>💬 Répondre</Button>
-                              )}
-                              <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); handleAssign(message); }}>👤 Assigner</Button>
-                              <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); handleArchive(message); }}>📁 Archiver</Button>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Detail Panel */}
-              <div className="lg:col-span-1">
-                {selectedM ? (
-                  <Card className="sticky top-4">
-                    <CardContent className="p-4">
-                      <div className="mb-4 pb-4 border-b border-slate-700/50">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-2xl">{getTypeIcon(selectedM.type)}</span>
-                          <Badge variant={selectedM.status === 'unread' ? 'urgent' : selectedM.status === 'replied' ? 'success' : 'default'}>{selectedM.status}</Badge>
-                        </div>
-                        <span className="font-mono text-xs text-blue-400">{selectedM.id}</span>
-                        <h3 className="font-bold">{selectedM.subject}</h3>
-                        <p className="text-slate-400">{selectedM.sender}</p>
-                      </div>
-
-                      {/* Décision BMO */}
-                      {selectedM.decisionBMO && (
-                        <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 mb-3">
-                          <p className="text-[10px] text-purple-400 mb-1">Décision BMO</p>
-                          <Badge variant="default" className="text-[9px]">
-                            {selectedM.decisionBMO.validatorRole === 'A' ? 'BMO (Accountable)' : 'BM (Responsible)'}
-                          </Badge>
-                          <div className="flex items-center gap-2 mt-2">
-                            <code className="text-[10px] bg-slate-800/50 px-1 rounded">
-                              {selectedM.decisionBMO.hash.slice(0, 32)}...
-                            </code>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="text-[10px] text-blue-400 p-0 h-auto"
-                              onClick={async () => {
-                                const isValid = selectedM.decisionBMO?.hash.startsWith('SHA3-256:');
-                                addToast(
-                                  isValid ? '✅ Hash valide' : '❌ Hash invalide',
-                                  isValid ? 'success' : 'error'
-                                );
-                              }}
-                            >
-                              🔍 Vérifier
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-3 text-sm">
-                        <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <p className="text-xs text-slate-400">Type</p>
-                              <p className="capitalize">{selectedM.type}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Date</p>
-                              <p>{selectedM.date}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Priorité</p>
-                              <Badge variant={selectedM.priority === 'urgent' ? 'urgent' : 'default'}>{selectedM.priority}</Badge>
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-400">Réponse</p>
-                              <p>{selectedM.requiresResponse ? 'Requise' : 'Non requise'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {selectedM.status !== 'archived' && (
-                        <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                          {selectedM.requiresResponse && selectedM.status !== 'replied' && (
-                            <Button size="sm" variant="success" onClick={() => handleRespond(selectedM)}>💬 Répondre</Button>
-                          )}
-                          <Button size="sm" variant="info" onClick={() => handleAssign(selectedM)}>👤 Assigner</Button>
-                          <Button size="sm" variant="default" onClick={() => handleArchive(selectedM)}>📁 Archiver</Button>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card className="sticky top-4">
-                    <CardContent className="p-8 text-center">
-                      <span className="text-4xl mb-4 block">📨</span>
-                      <p className="text-slate-400">Sélectionnez un message</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </div>
+          <div className="h-full overflow-y-auto">
+            <MessagesExternesContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={navigation.filter || undefined}
+            />
           </div>
         </main>
 

@@ -131,7 +131,7 @@ export function SearchModal() {
       { id: 'validation-bc', title: 'Validation BC', icon: '✅', route: '/maitre-ouvrage/validation-bc' },
       { id: 'validation-contrats', title: 'Contrats', icon: '📜', route: '/maitre-ouvrage/validation-contrats' },
       { id: 'validation-paiements', title: 'Paiements', icon: '💳', route: '/maitre-ouvrage/validation-paiements' },
-      { id: 'echanges-bureaux', title: 'Échanges Inter-Bureaux', icon: '💬', route: '/maitre-ouvrage/echanges-bureaux' },
+      { id: 'echanges-structures', title: 'Échanges Structures', icon: '💬', route: '/maitre-ouvrage/echanges-structures' },
       { id: 'arbitrages-vivants', title: 'Arbitrages Vivants', icon: '⚖️', route: '/maitre-ouvrage/arbitrages-vivants' },
       { id: 'decisions', title: 'Décisions', icon: '⚖️', route: '/maitre-ouvrage/decisions' },
       { id: 'recouvrements', title: 'Recouvrements', icon: '📜', route: '/maitre-ouvrage/recouvrements' },

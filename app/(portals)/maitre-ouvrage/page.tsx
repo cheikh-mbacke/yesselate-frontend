@@ -24,23 +24,31 @@ import {
 } from 'lucide-react';
 import { useDashboardCommandCenterStore } from '@/lib/stores/dashboardCommandCenterStore';
 import {
-  DashboardSidebar,
   DashboardKPIBar,
-  DashboardSubNavigation,
-  DashboardContentRouter,
   DashboardCommandPalette,
   DashboardModals,
 } from '@/components/features/bmo/dashboard/command-center';
+// New 3-level navigation module
+import {
+  DashboardSidebar,
+  DashboardSubNavigation,
+  DashboardContentRouter,
+  type DashboardMainCategory,
+} from '@/modules/dashboard';
 
 export default function DashboardPage() {
   const {
+    navigation,
+    sidebarCollapsed,
     fullscreen,
     notificationsPanelOpen,
     liveStats,
     toggleFullscreen,
     toggleCommandPalette,
     toggleNotificationsPanel,
+    toggleSidebar,
     goBack,
+    navigate,
     navigationHistory,
     openModal,
     startRefresh,
@@ -117,8 +125,25 @@ export default function DashboardPage() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <DashboardSidebar />
+      {/* Sidebar Navigation - 3-level */}
+      <DashboardSidebar
+        activeCategory={navigation.mainCategory}
+        activeSubCategory={navigation.subCategory || undefined}
+        collapsed={sidebarCollapsed}
+        stats={{
+          overview: liveStats?.total || 0,
+          performance: liveStats?.performance || 0,
+          actions: liveStats?.actions || 0,
+          risks: liveStats?.risks || 0,
+          decisions: liveStats?.decisions || 0,
+          realtime: liveStats?.realtime || 0,
+        }}
+        onCategoryChange={(category, subCategory) => {
+          navigate(category as DashboardMainCategory, subCategory as any || null);
+        }}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -179,8 +204,22 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
-        <DashboardSubNavigation />
+        {/* Sub Navigation - Level 2 & 3 */}
+        <DashboardSubNavigation
+          mainCategory={navigation.mainCategory}
+          subCategory={navigation.subCategory || undefined}
+          subSubCategory={navigation.filter || undefined}
+          onSubCategoryChange={(subCategory) => navigate(navigation.mainCategory, subCategory as any, null)}
+          onSubSubCategoryChange={(subSubCategory) => navigate(navigation.mainCategory, navigation.subCategory, subSubCategory)}
+          stats={{
+            overview: liveStats?.total || 0,
+            performance: liveStats?.performance || 0,
+            actions: liveStats?.actions || 0,
+            risks: liveStats?.risks || 0,
+            decisions: liveStats?.decisions || 0,
+            realtime: liveStats?.realtime || 0,
+          }}
+        />
 
         {/* KPI Bar */}
         <DashboardKPIBar onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
@@ -188,7 +227,11 @@ export default function DashboardPage() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
-            <DashboardContentRouter />
+            <DashboardContentRouter
+              mainCategory={navigation.mainCategory}
+              subCategory={navigation.subCategory || undefined}
+              subSubCategory={navigation.filter || undefined}
+            />
           </div>
         </main>
 

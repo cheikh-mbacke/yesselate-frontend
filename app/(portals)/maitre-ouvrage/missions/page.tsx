@@ -18,13 +18,10 @@ import {
 } from 'lucide-react';
 import {
   useMissionsCommandCenterStore,
-  type MissionsMainCategory,
+  type MissionsMainCategory as StoreMissionsMainCategory,
 } from '@/lib/stores/missionsCommandCenterStore';
 import {
-  MissionsCommandSidebar,
-  MissionsSubNavigation,
   MissionsKPIBar,
-  MissionsContentRouter,
   MissionsModals,
   MissionsDetailPanel,
   MissionsBatchActionsBar,
@@ -33,6 +30,13 @@ import {
   missionsSubCategoriesMap,
   type MissionsKPIData,
 } from '@/components/features/bmo/missions/command-center';
+// New 3-level navigation module
+import {
+  MissionsSidebar,
+  MissionsSubNavigation,
+  MissionsContentRouter,
+  type MissionsMainCategory,
+} from '@/modules/missions';
 import { MissionsCommandPalette } from '@/components/features/bmo/workspace/missions/MissionsCommandPalette';
 
 // Mock KPI Data (à remplacer par des données réelles)
@@ -119,13 +123,18 @@ function MissionsPageContent() {
     }, 1500);
   }, []);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as MissionsMainCategory, 'all', null);
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as StoreMissionsMainCategory, subCategory || 'all', null);
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(activeCategory, subCategory, null);
   }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
     switch (actionId) {
@@ -229,10 +238,17 @@ function MissionsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <MissionsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <MissionsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          active: mockKPIData.activeMissions,
+          pending: mockKPIData.totalMissions - mockKPIData.activeMissions,
+          completed: Math.round(mockKPIData.totalMissions * (mockKPIData.completionRate / 100)),
+          cancelled: 0,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -311,13 +327,19 @@ function MissionsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <MissionsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as MissionsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: mockKPIData.activeMissions,
+            pending: mockKPIData.totalMissions - mockKPIData.activeMissions,
+            completed: Math.round(mockKPIData.totalMissions * (mockKPIData.completionRate / 100)),
+            cancelled: 0,
+          }}
         />
 
         {/* KPI Bar */}
@@ -333,8 +355,9 @@ function MissionsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <MissionsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as MissionsMainCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

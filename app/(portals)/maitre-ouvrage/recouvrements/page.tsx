@@ -31,15 +31,19 @@ import { useBMOStore } from '@/lib/stores';
 
 // Command Center Components
 import {
-  RecouvrementsCommandSidebar,
-  RecouvrementsSubNavigation,
   RecouvrementsKPIBar,
-  RecouvrementsContentRouter,
   RecouvrementsModals,
   RecouvrementsNotificationsPanel,
   recouvrementsCategories,
   type RecouvrementsModalType,
 } from '@/components/features/bmo/workspace/recouvrements/command-center';
+// New 3-level navigation module
+import {
+  RecouvrementsSidebar,
+  RecouvrementsSubNavigation,
+  RecouvrementsContentRouter,
+  type RecouvrementsMainCategory,
+} from '@/modules/recouvrements';
 
 // Workspace Components
 import {
@@ -225,15 +229,24 @@ function RecouvrementsPageContent() {
     setTimeout(() => setIsRefreshing(false), 1000);
   }, [loadStats, addToast, addActionLog, currentUser]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    setNavigationHistory((prev) => [...prev, activeCategory]);
-    setActiveCategory(category);
-    setActiveSubCategory('all');
-    // Le ContentRouter affiche automatiquement le contenu selon la catégorie active
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setNavigationHistory((prev) => [...prev, activeCategory]);
+      setActiveCategory(category);
+      setActiveSubCategory(subCategory || 'all');
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+    }
   }, [activeCategory]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    // Level 3 navigation - to be implemented if needed
+    console.log('Sub-sub category changed:', subSubCategory);
   }, []);
 
   const handleApplyFilters = useCallback((filters: Record<string, string[]>) => {
@@ -316,11 +329,17 @@ function RecouvrementsPageContent() {
         isFullScreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <RecouvrementsCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <RecouvrementsSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
-        categories={categoriesWithBadges}
+        stats={statsData ? {
+          pending: statsData.pending,
+          inProgress: statsData.in_progress,
+          paid: statsData.paid,
+          overdue: statsData.total - statsData.paid - statsData.litige,
+        } : undefined}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -418,13 +437,19 @@ function RecouvrementsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <RecouvrementsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as RecouvrementsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={statsData ? {
+            pending: statsData.pending,
+            inProgress: statsData.in_progress,
+            paid: statsData.paid,
+            overdue: statsData.total - statsData.paid - statsData.litige,
+          } : undefined}
         />
 
         {/* KPI Bar */}
@@ -440,9 +465,9 @@ function RecouvrementsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <RecouvrementsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as RecouvrementsMainCategory}
               subCategory={activeSubCategory}
-              stats={statsData}
+              subSubCategory={undefined}
             />
           </div>
         </main>

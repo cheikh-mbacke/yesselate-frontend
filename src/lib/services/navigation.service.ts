@@ -23,7 +23,6 @@ export interface PageCounts {
 }
 
 // Mapping automatique des routes
-// OPTIMISÉ le 10/01/2026 : Suppression pages redondantes, réorganisation
 export const routeMapping: Record<string, string> = {
   // PILOTAGE (5 pages)
   dashboard: '/maitre-ouvrage',
@@ -31,7 +30,6 @@ export const routeMapping: Record<string, string> = {
   calendrier: '/maitre-ouvrage/calendrier',
   analytics: '/maitre-ouvrage/analytics',
   alerts: '/maitre-ouvrage/alerts',
-  'centre-alertes': '/maitre-ouvrage/centre-alertes',
   
   // EXÉCUTION (7 pages) - inclut arbitrages-vivants déplacé
   demandes: '/maitre-ouvrage/demandes',
@@ -61,7 +59,6 @@ export const routeMapping: Record<string, string> = {
   organigramme: '/maitre-ouvrage/organigramme',
   
   // COMMUNICATION (4 pages) - arbitrages-vivants déplacé vers Exécution
-  'echanges-bureaux': '/maitre-ouvrage/echanges-bureaux',
   'echanges-structures': '/maitre-ouvrage/echanges-structures',
   conferences: '/maitre-ouvrage/conferences',
   'messages-externes': '/maitre-ouvrage/messages-externes',
@@ -72,7 +69,7 @@ export const routeMapping: Record<string, string> = {
   logs: '/maitre-ouvrage/logs',
   'system-logs': '/maitre-ouvrage/system-logs',
   ia: '/maitre-ouvrage/ia',
-  api: '/maitre-ouvrage/api',
+  api: '/maitre-ouvrage/analytics', // Redirigé vers analytics (fusion des pages)
   parametres: '/maitre-ouvrage/parametres',
 };
 

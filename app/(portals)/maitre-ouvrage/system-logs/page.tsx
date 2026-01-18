@@ -11,14 +11,19 @@ import { systemLogs } from '@/lib/data';
 import { usePageNavigation } from '@/hooks/usePageNavigation';
 import { useAutoSyncCounts } from '@/hooks/useAutoSync';
 import {
-  SystemLogsCommandSidebar,
-  SystemLogsSubNavigation,
   SystemLogsKPIBar,
   SystemLogsCommandPalette,
   SystemLogsModals,
   SystemLogsDetailPanel,
   systemLogsCategories,
 } from '@/components/features/bmo/system-logs/command-center';
+// New 3-level navigation module
+import {
+  SystemLogsSidebar,
+  SystemLogsSubNavigation,
+  SystemLogsContentRouter,
+  type SystemLogsMainCategory,
+} from '@/modules/system-logs';
 import { Terminal, Search, Bell, ChevronLeft, MoreHorizontal, Download, FileCheck } from 'lucide-react';
 import { useSystemLogsCommandCenterStore } from '@/lib/stores/systemLogsCommandCenterStore';
 
@@ -1259,9 +1264,12 @@ export default function SystemLogsPage() {
       )}
     >
       {/* Sidebar Navigation */}
-      <SystemLogsCommandSidebar
-        activeCategory={activeCategory}
+      {/* Sidebar Navigation - 3-level */}
+      <SystemLogsSidebar
+        activeCategory={activeCategory as SystemLogsMainCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{}}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         onOpenCommandPalette={() => setCommandPaletteOpen((v) => !v)}

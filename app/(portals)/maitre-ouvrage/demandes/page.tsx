@@ -24,15 +24,20 @@ import {
 } from 'lucide-react';
 import { useDemandesCommandCenterStore } from '@/lib/stores/demandesCommandCenterStore';
 import {
-  DemandesSidebar,
   DemandesKPIBar,
   DemandesSubNavigation,
-  DemandesContentRouter,
   DemandesCommandPalette,
   DemandesModals,
   demandesSubCategoriesMap,
   demandesCategories,
 } from '@/components/features/bmo/demandes/command-center';
+// Nouveau module modulaire
+import {
+  DemandesSidebar as DemandesSidebarModule,
+  DemandesSubNavigation as DemandesSubNavigationModule,
+  DemandesContentRouter,
+  useDemandesStats,
+} from '@/modules/demandes';
 
 export default function DemandesPage() {
   const {
@@ -50,24 +55,58 @@ export default function DemandesPage() {
     startRefresh,
     endRefresh,
     setLiveStats,
+    sidebarCollapsed,
+    toggleSidebar,
   } = useDemandesCommandCenterStore();
+
+  // Utiliser les stats du nouveau module
+  const { data: stats } = useDemandesStats();
 
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
-  // Load initial stats
+  // Load initial stats (utiliser les stats du nouveau module si disponibles)
   useEffect(() => {
-    // Simulate loading stats
-    setLiveStats({
-      total: 453,
-      pending: 45,
-      urgent: 12,
-      validated: 378,
-      rejected: 15,
-      overdue: 8,
-      avgDelay: 2.3,
-      totalMontant: 125000000000,
-    });
-  }, [setLiveStats]);
+    if (stats) {
+      setLiveStats({
+        total: stats.total || 453,
+        pending: stats.pending || 45,
+        urgent: stats.urgent || 12,
+        validated: stats.validated || 378,
+        rejected: stats.rejected || 15,
+        overdue: stats.overdue || 8,
+        avgDelay: stats.avgResponseTime || 2.3,
+        totalMontant: 125000000000,
+      });
+    } else {
+      // Fallback si stats non disponibles
+      setLiveStats({
+        total: 453,
+        pending: 45,
+        urgent: 12,
+        validated: 378,
+        rejected: 15,
+        overdue: 8,
+        avgDelay: 2.3,
+        totalMontant: 125000000000,
+      });
+    }
+  }, [stats, setLiveStats]);
+
+  // Gérer la navigation vers le nouveau module
+  const handleCategoryChange = (category: string, subCategory?: string, subSubCategory?: string) => {
+    // Mapper les catégories du nouveau module vers le store existant
+    navigate(category as any, subCategory as any, subSubCategory || null);
+  };
+
+  // Gérer le changement de sub-category (niveau 2)
+  const handleSubCategoryChange = (subCategory: string) => {
+    navigate(navigation.mainCategory, subCategory as any, null);
+  };
+
+  // Gérer le changement de sub-sub-category (niveau 3)
+  const handleSubSubCategoryChange = (subSubCategory: string) => {
+    navigate(navigation.mainCategory, navigation.subCategory, subSubCategory);
+  };
 
   const handleRefresh = () => {
     startRefresh();
@@ -137,8 +176,20 @@ export default function DemandesPage() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <DemandesSidebar />
+      {/* Sidebar Navigation - Nouveau module */}
+      <DemandesSidebarModule
+        activeCategory={navigation.mainCategory}
+        activeSubCategory={navigation.subCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          pending: liveStats.pending || 45,
+          urgent: liveStats.urgent || 12,
+          overdue: liveStats.overdue || 8,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -217,15 +268,18 @@ export default function DemandesPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
-        <DemandesSubNavigation
+        {/* Sub Navigation - Nouveau module (niveaux 2 et 3) */}
+        <DemandesSubNavigationModule
           mainCategory={navigation.mainCategory}
-          mainCategoryLabel={
-            demandesCategories.find((c) => c.id === navigation.mainCategory)?.label || 'Demandes'
-          }
           subCategory={navigation.subCategory}
-          subCategories={demandesSubCategoriesMap[navigation.mainCategory] ?? []}
-          onSubCategoryChange={(subCategory) => navigate(navigation.mainCategory, subCategory as any)}
+          subSubCategory={navigation.subSubCategory}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            pending: liveStats.pending || 45,
+            urgent: liveStats.urgent || 12,
+            overdue: liveStats.overdue || 8,
+          }}
         />
 
         {/* KPI Bar */}
@@ -248,10 +302,14 @@ export default function DemandesPage() {
           }}
         />
 
-        {/* Main Content */}
+        {/* Main Content - Nouveau module */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
-            <DemandesContentRouter />
+            <DemandesContentRouter
+              mainCategory={navigation.mainCategory as any}
+              subCategory={navigation.subCategory}
+              subSubCategory={navigation.subSubCategory || undefined}
+            />
           </div>
         </main>
 

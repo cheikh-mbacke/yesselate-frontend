@@ -21,16 +21,20 @@ import {
   type AuditMainCategory,
 } from '@/lib/stores/auditCommandCenterStore';
 import {
-  AuditCommandSidebar,
-  AuditSubNavigation,
   AuditKPIBar,
-  AuditContentRouter,
   ActionsMenu,
   AuditModals,
   AuditDetailPanel,
   AuditFiltersPanel,
   auditCategories,
 } from '@/components/features/bmo/audit/command-center';
+// New 3-level navigation module
+import {
+  AuditSidebar,
+  AuditSubNavigation,
+  AuditContentRouter,
+  type AuditMainCategory,
+} from '@/modules/audit';
 import { AuditCommandPalette } from '@/components/features/bmo/workspace/audit/AuditCommandPalette';
 
 // ================================
@@ -259,10 +263,12 @@ function AuditPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <AuditCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <AuditSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{}}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -341,13 +347,14 @@ function AuditPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <AuditSubNavigation
           mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+          stats={{}}
         />
 
         {/* KPI Bar */}
@@ -364,8 +371,9 @@ function AuditPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <AuditContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter || undefined}
             />
           </div>
         </main>

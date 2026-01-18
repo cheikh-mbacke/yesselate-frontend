@@ -191,7 +191,6 @@ export const navSections: NavSection[] = [
   {
     title: 'Communication',
     items: [
-      { id: 'echanges-bureaux', icon: '💬', label: 'Échanges Inter-Bureaux', badge: 5, badgeType: 'gray' },
       { id: 'echanges-structures', icon: '🏛️', label: 'Échanges Structures' },
       { id: 'conferences', icon: '📹', label: 'Conférences Décisionnelles' },
       { id: 'messages-externes', icon: '📨', label: 'Messages Externes' },

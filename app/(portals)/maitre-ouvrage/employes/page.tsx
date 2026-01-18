@@ -17,19 +17,23 @@ import {
 } from 'lucide-react';
 import {
   useEmployesCommandCenterStore,
-  type EmployesMainCategory,
+  type EmployesMainCategory as StoreEmployesMainCategory,
 } from '@/lib/stores/employesCommandCenterStore';
 import {
-  EmployesCommandSidebar,
-  EmployesSubNavigation,
   EmployesKPIBar,
-  EmployesContentRouter,
   EmployesDetailPanel,
   EmployesFiltersPanel,
   EmployesBatchActionsBar,
   ActionsMenu,
   employesCategories,
 } from '@/components/features/bmo/workspace/employes/command-center';
+// New 3-level navigation module
+import {
+  EmployesSidebar,
+  EmployesSubNavigation,
+  EmployesContentRouter,
+  type EmployesMainCategory,
+} from '@/modules/employes';
 import { EmployesCommandPalette } from '@/components/features/bmo/workspace/employes/EmployesCommandPalette';
 import { EmployesStatsModal } from '@/components/features/bmo/workspace/employes/EmployesStatsModal';
 import { EmployesNotificationPanel } from '@/components/features/bmo/workspace/employes/EmployesNotificationPanel';
@@ -257,13 +261,18 @@ function EmployesPageContent() {
     }, 1500);
   }, []);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as EmployesMainCategory, 'all', null);
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as StoreEmployesMainCategory, subCategory || 'all', null);
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(activeCategory, subCategory, null);
   }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
     switch (actionId) {
@@ -392,10 +401,16 @@ function EmployesPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <EmployesCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <EmployesSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          active: 118,
+          inactive: 6,
+          all: 124,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -488,13 +503,18 @@ function EmployesPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <EmployesSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as EmployesMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: 118,
+            inactive: 6,
+            all: 124,
+          }}
         />
 
         {/* KPI Bar */}
@@ -511,8 +531,9 @@ function EmployesPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4">
             <EmployesContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as EmployesMainCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

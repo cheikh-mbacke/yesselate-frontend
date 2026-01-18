@@ -1,251 +1,162 @@
 /**
- * Store Command Center - Validation BC
- * Architecture identique à governanceCommandCenterStore
+ * Store Zustand pour la navigation Validation-BC
+ * Gestion de l'état de navigation hiérarchique
  */
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type ValidationBCMainCategory = 
-  | 'overview' 
-  | 'pending' 
-  | 'anomalies' 
-  | 'urgent' 
-  | 'validated' 
-  | 'rejected';
+// ================================
+// Types
+// ================================
 
-export type ValidationBCSubCategory = 
-  | 'all' 
-  | 'bc' 
-  | 'factures' 
-  | 'avenants' 
-  | 'achats' 
-  | 'finance' 
-  | 'juridique';
+export type ValidationBCMainCategory =
+  | 'overview'
+  | 'types'
+  | 'statut'
+  | 'historique'
+  | 'analyse';
 
-export interface ValidationBCFilters {
-  status: string[];
-  bureaux: string[];
-  types: string[];
-  dateRange: { from: string | null; to: string | null };
-  montantMin: number | null;
-  montantMax: number | null;
-  search: string;
-}
+export type ValidationBCSubCategory =
+  | 'indicateurs'
+  | 'stats'
+  | 'tendances'
+  | 'bc'
+  | 'factures'
+  | 'avenants'
+  | 'en-attente'
+  | 'valides'
+  | 'rejetes'
+  | 'urgents'
+  | 'validations'
+  | 'rejets'
+  | 'validateurs'
+  | 'services'
+  | 'regles-metier'
+  | null;
 
-export interface ValidationBCLiveStats {
-  total: number;
-  pending: number;
-  anomalies: number;
-  urgent: number;
-  validated: number;
-  rejected: number;
-  avgDelay: number;
-  totalMontant: number;
-  isRefreshing: boolean;
-  connectionStatus: 'connected' | 'syncing' | 'disconnected';
+interface ValidationBCNavigationState {
+  mainCategory: ValidationBCMainCategory;
+  subCategory: ValidationBCSubCategory;
 }
 
 interface ValidationBCCommandCenterState {
-  navigation: {
-    mainCategory: ValidationBCMainCategory;
-    subCategory: ValidationBCSubCategory;
-    subSubCategory: string | null;
-  };
-  navigationHistory: Array<{
-    mainCategory: ValidationBCMainCategory;
-    subCategory: ValidationBCSubCategory;
-    subSubCategory: string | null;
-  }>;
+  // Navigation
+  navigation: ValidationBCNavigationState;
+  navigationHistory: ValidationBCNavigationState[];
 
+  // UI State
   sidebarCollapsed: boolean;
   fullscreen: boolean;
   commandPaletteOpen: boolean;
   notificationsPanelOpen: boolean;
+  kpiBarCollapsed: boolean;
 
-  activeModal: string | null;
-  modalData: Record<string, unknown>;
+  // Filtres
+  filtersPanelOpen: boolean;
 
-  filters: ValidationBCFilters;
-  activeFilterPreset: string | null;
-
-  tableConfig: {
-    sortBy: string;
-    sortOrder: 'asc' | 'desc';
-    pageSize: number;
-    currentPage: number;
-  };
-
-  liveStats: ValidationBCLiveStats;
-  selectedItems: string[];
-  globalSearch: string;
-  autoRefresh: boolean;
-  refreshInterval: number;
-
-  // Actions
-  navigate: (main: ValidationBCMainCategory, sub?: ValidationBCSubCategory, subSub?: string | null) => void;
+  // Actions Navigation
+  navigate: (
+    main: ValidationBCMainCategory,
+    sub?: ValidationBCSubCategory | null
+  ) => void;
   goBack: () => void;
+  resetNavigation: () => void;
+
+  // Actions UI
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   toggleFullscreen: () => void;
   toggleCommandPalette: () => void;
   toggleNotificationsPanel: () => void;
-  openModal: (modalId: string, data?: Record<string, unknown>) => void;
-  closeModal: () => void;
-  setFilters: (filters: Partial<ValidationBCFilters>) => void;
-  resetFilters: () => void;
-  setTableConfig: (config: Partial<ValidationBCCommandCenterState['tableConfig']>) => void;
-  setLiveStats: (stats: Partial<ValidationBCLiveStats>) => void;
-  startRefresh: () => void;
-  endRefresh: () => void;
-  toggleItemSelection: (id: string) => void;
-  selectAllItems: (ids: string[]) => void;
-  clearSelection: () => void;
-  setGlobalSearch: (search: string) => void;
-  setAutoRefresh: (enabled: boolean) => void;
+  toggleKpiBar: () => void;
+  toggleFiltersPanel: () => void;
 }
 
-const defaultFilters: ValidationBCFilters = {
-  status: [],
-  bureaux: [],
-  types: [],
-  dateRange: { from: null, to: null },
-  montantMin: null,
-  montantMax: null,
-  search: '',
+// ================================
+// Default State
+// ================================
+
+const defaultNavigation: ValidationBCNavigationState = {
+  mainCategory: 'overview',
+  subCategory: 'indicateurs',
 };
 
-const defaultLiveStats: ValidationBCLiveStats = {
-  total: 0,
-  pending: 0,
-  anomalies: 0,
-  urgent: 0,
-  validated: 0,
-  rejected: 0,
-  avgDelay: 0,
-  totalMontant: 0,
-  isRefreshing: false,
-  connectionStatus: 'connected',
-};
+// ================================
+// Store Creation
+// ================================
 
-export const useValidationBCCommandCenterStore = create<ValidationBCCommandCenterState>()(
-  persist(
-    (set, get) => ({
-      navigation: {
-        mainCategory: 'overview',
-        subCategory: 'all',
-        subSubCategory: null,
-      },
-      navigationHistory: [],
+export const useValidationBCCommandCenterStore =
+  create<ValidationBCCommandCenterState>()(
+    persist(
+      (set, get) => ({
+        // Initial state
+        navigation: defaultNavigation,
+        navigationHistory: [],
 
-      sidebarCollapsed: false,
-      fullscreen: false,
-      commandPaletteOpen: false,
-      notificationsPanelOpen: false,
+        sidebarCollapsed: false,
+        fullscreen: false,
+        commandPaletteOpen: false,
+        notificationsPanelOpen: false,
+        kpiBarCollapsed: false,
+        filtersPanelOpen: false,
 
-      activeModal: null,
-      modalData: {},
+        // Navigation Actions
+        navigate: (main, sub = null) => {
+          const current = get().navigation;
+          set((state) => ({
+            navigationHistory: [...state.navigationHistory.slice(-9), current],
+            navigation: {
+              mainCategory: main,
+              subCategory: sub,
+            },
+          }));
+        },
 
-      filters: defaultFilters,
-      activeFilterPreset: null,
+        goBack: () => {
+          const history = get().navigationHistory;
+          if (history.length > 0) {
+            const previous = history[history.length - 1];
+            set({
+              navigation: previous,
+              navigationHistory: history.slice(0, -1),
+            });
+          }
+        },
 
-      tableConfig: {
-        sortBy: 'date',
-        sortOrder: 'desc',
-        pageSize: 25,
-        currentPage: 1,
-      },
+        resetNavigation: () => {
+          set({
+            navigation: defaultNavigation,
+            navigationHistory: [],
+          });
+        },
 
-      liveStats: defaultLiveStats,
-
-      selectedItems: [],
-      globalSearch: '',
-      autoRefresh: true,
-      refreshInterval: 60000,
-
-      navigate: (main, sub = 'all', subSub = null) => {
-        const current = get().navigation;
-        set({
-          navigationHistory: [
-            ...get().navigationHistory.slice(-9),
-            { ...current },
-          ],
-          navigation: {
-            mainCategory: main,
-            subCategory: sub,
-            subSubCategory: subSub,
-          },
-          selectedItems: [],
-        });
-      },
-
-      goBack: () => {
-        const history = get().navigationHistory;
-        if (history.length === 0) return;
-        const previous = history[history.length - 1];
-        set({
-          navigation: previous,
-          navigationHistory: history.slice(0, -1),
-        });
-      },
-
-      toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
-      toggleFullscreen: () => set({ fullscreen: !get().fullscreen }),
-      toggleCommandPalette: () => set({ commandPaletteOpen: !get().commandPaletteOpen }),
-      toggleNotificationsPanel: () => set({ notificationsPanelOpen: !get().notificationsPanelOpen }),
-
-      openModal: (modalId, data = {}) => set({ activeModal: modalId, modalData: data }),
-      closeModal: () => set({ activeModal: null, modalData: {} }),
-
-      setFilters: (newFilters) => set({
-        filters: { ...get().filters, ...newFilters },
-        tableConfig: { ...get().tableConfig, currentPage: 1 },
+        // UI Actions
+        toggleSidebar: () =>
+          set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+        setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+        toggleFullscreen: () =>
+          set((state) => ({ fullscreen: !state.fullscreen })),
+        toggleCommandPalette: () =>
+          set((state) => ({
+            commandPaletteOpen: !state.commandPaletteOpen,
+          })),
+        toggleNotificationsPanel: () =>
+          set((state) => ({
+            notificationsPanelOpen: !state.notificationsPanelOpen,
+          })),
+        toggleKpiBar: () =>
+          set((state) => ({ kpiBarCollapsed: !state.kpiBarCollapsed })),
+        toggleFiltersPanel: () =>
+          set((state) => ({ filtersPanelOpen: !state.filtersPanelOpen })),
       }),
-
-      resetFilters: () => set({
-        filters: defaultFilters,
-        activeFilterPreset: null,
-        tableConfig: { ...get().tableConfig, currentPage: 1 },
-      }),
-
-      setTableConfig: (config) => set({
-        tableConfig: { ...get().tableConfig, ...config },
-      }),
-
-      setLiveStats: (stats) => set({
-        liveStats: { ...get().liveStats, ...stats },
-      }),
-
-      startRefresh: () => set({
-        liveStats: { ...get().liveStats, isRefreshing: true },
-      }),
-
-      endRefresh: () => set({
-        liveStats: { ...get().liveStats, isRefreshing: false },
-      }),
-
-      toggleItemSelection: (id) => {
-        const current = get().selectedItems;
-        set({
-          selectedItems: current.includes(id)
-            ? current.filter((i) => i !== id)
-            : [...current, id],
-        });
-      },
-
-      selectAllItems: (ids) => set({ selectedItems: ids }),
-      clearSelection: () => set({ selectedItems: [] }),
-      setGlobalSearch: (search) => set({ globalSearch: search }),
-      setAutoRefresh: (enabled) => set({ autoRefresh: enabled }),
-    }),
-    {
-      name: 'bmo-validation-bc-command-center',
-      partialize: (state) => ({
-        sidebarCollapsed: state.sidebarCollapsed,
-        autoRefresh: state.autoRefresh,
-        tableConfig: state.tableConfig,
-      }),
-    }
-  )
-);
-
-
+      {
+        name: 'validation-bc-command-center',
+        partialize: (state) => ({
+          navigation: state.navigation,
+          sidebarCollapsed: state.sidebarCollapsed,
+          kpiBarCollapsed: state.kpiBarCollapsed,
+        }),
+      }
+    )
+  );

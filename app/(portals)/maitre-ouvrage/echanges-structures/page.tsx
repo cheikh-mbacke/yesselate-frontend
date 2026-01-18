@@ -15,12 +15,16 @@ import {
   type EchangesStructuresMainCategory,
 } from '@/lib/stores/echangesStructuresCommandCenterStore';
 import {
-  EchangesStructuresCommandSidebar,
-  EchangesStructuresSubNavigation,
   EchangesStructuresKPIBar,
-  EchangesStructuresContentRouter,
   echangesStructuresCategories,
 } from '@/components/features/bmo/echanges-structures/command-center';
+// New 3-level navigation module
+import {
+  EchangesStructuresSidebar,
+  EchangesStructuresSubNavigation,
+  EchangesStructuresContentRouter,
+  type EchangesStructuresMainCategory,
+} from '@/modules/echanges-structures';
 import { useBMOStore } from '@/lib/stores';
 import { coordinationStats } from '@/lib/data';
 
@@ -252,10 +256,20 @@ function EchangesStructuresPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <EchangesStructuresCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <EchangesStructuresSidebar
         activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          overview: stats.total || 0,
+          ouvert: stats.ouverts || 0,
+          en_traitement: stats.en_traitement || 0,
+          escalade: stats.escalades || 0,
+          resolu: stats.resolus || 0,
+          critiques: stats.critiques || 0,
+          en_retard: stats.en_retard || 0,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
@@ -364,7 +378,11 @@ function EchangesStructuresPageContent() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
-            <EchangesStructuresContentRouter category={activeCategory} subCategory={activeSubCategory} />
+            <EchangesStructuresContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={navigation.filter || undefined}
+            />
           </div>
         </main>
 

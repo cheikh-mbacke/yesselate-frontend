@@ -18,19 +18,23 @@ import {
 } from 'lucide-react';
 import {
   useDelegationsCommandCenterStore,
-  type DelegationsMainCategory,
+  type DelegationsMainCategory as StoreDelegationsMainCategory,
 } from '@/lib/stores/delegationsCommandCenterStore';
 import {
-  DelegationsCommandSidebar,
-  DelegationsSubNavigation,
   DelegationsKPIBar,
-  DelegationsContentRouter,
   DelegationsModals,
   DelegationsDetailPanel,
   DelegationsBatchActionsBar,
   ActionsMenu,
   delegationsCategories,
 } from '@/components/features/delegations/command-center';
+// New 3-level navigation module
+import {
+  DelegationsSidebar,
+  DelegationsSubNavigation,
+  DelegationsContentRouter,
+  type DelegationsMainCategory,
+} from '@/modules/delegations';
 import { DelegationCommandPalette } from '@/components/features/delegations/workspace/DelegationCommandPalette';
 import { DelegationToastProvider, useDelegationToast } from '@/components/features/delegations/workspace/DelegationToast';
 import { DelegationNotifications } from '@/components/features/delegations/workspace/DelegationNotifications';
@@ -169,13 +173,18 @@ function DelegationsPageContent() {
     }, 1500);
   }, [toast, refreshStats]);
 
-  const handleCategoryChange = useCallback((category: string) => {
-    navigate(category as DelegationsMainCategory, 'all', null);
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as StoreDelegationsMainCategory, subCategory || 'all', null);
   }, [navigate]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     navigate(activeCategory, subCategory, null);
   }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
 
   // ================================
   // Keyboard shortcuts
@@ -258,14 +267,20 @@ function DelegationsPageContent() {
         fullscreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <DelegationsCommandSidebar
-        activeCategory={activeCategory}
+      {/* Sidebar Navigation - 3-level */}
+      <DelegationsSidebar
+        activeCategory={activeCategory as DelegationsMainCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
+        stats={{
+          active: stats?.active || 0,
+          expired: stats?.expired || 0,
+          revoked: stats?.revoked || 0,
+          suspended: stats?.suspended || 0,
+        }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={toggleCommandPalette}
-        stats={stats}
       />
 
       {/* Main Content Area */}
@@ -341,13 +356,19 @@ function DelegationsPageContent() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <DelegationsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as DelegationsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
+          subSubCategory={navigation.filter ?? undefined}
           onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: stats?.active || 0,
+            expired: stats?.expired || 0,
+            revoked: stats?.revoked || 0,
+            suspended: stats?.suspended || 0,
+          }}
         />
 
         {/* KPI Bar */}
@@ -365,8 +386,9 @@ function DelegationsPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <DelegationsContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as DelegationsMainCategory}
               subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
             />
           </div>
         </main>

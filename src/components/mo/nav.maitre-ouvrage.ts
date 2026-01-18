@@ -102,7 +102,6 @@ export const navMaitreOuvrage: NavDomain[] = [
     label: 'Communication',
     icon: FileText,
     items: [
-      { id: 'echanges-bureaux', label: 'Échanges bureaux', href: '/maitre-ouvrage/echanges-bureaux' },
       { id: 'echanges-structures', label: 'Échanges structures', href: '/maitre-ouvrage/echanges-structures' },
       { id: 'conferences', label: 'Conférences', href: '/maitre-ouvrage/conferences' },
       { id: 'messages-externes', label: 'Messages externes', href: '/maitre-ouvrage/messages-externes' },
@@ -118,7 +117,6 @@ export const navMaitreOuvrage: NavDomain[] = [
       { id: 'logs', label: 'Logs', href: '/maitre-ouvrage/logs' },
       { id: 'system-logs', label: 'Logs système', href: '/maitre-ouvrage/system-logs' },
       { id: 'ia', label: 'IA', href: '/maitre-ouvrage/ia' },
-      { id: 'api', label: 'API', href: '/maitre-ouvrage/api' },
     ],
   },
 ];

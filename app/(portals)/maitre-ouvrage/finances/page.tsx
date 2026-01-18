@@ -24,16 +24,20 @@ import {
 } from 'lucide-react';
 import { useFinancesWorkspaceStore } from '@/lib/stores/financesWorkspaceStore';
 import {
-  FinancesCommandSidebar,
-  FinancesSubNavigation,
   FinancesKPIBar,
-  FinancesContentRouter,
   FinancesFiltersPanel,
   financesCategories,
   financesSubCategoriesMap,
   financesFiltersMap,
   type FinancesKPIData,
 } from '@/components/features/bmo/finances/command-center';
+// New 3-level navigation module
+import {
+  FinancesSidebar,
+  FinancesSubNavigation,
+  FinancesContentRouter,
+  type FinancesMainCategory,
+} from '@/modules/finances';
 import { FinancesCommandPalette } from '@/components/features/bmo/workspace/finances';
 import {
   TransactionDetailModal,
@@ -341,6 +345,27 @@ export default function FinancesPage() {
     []
   );
 
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setActiveCategory(category);
+      setActiveSubCategory(subCategory || 'all');
+      setActiveFilter(undefined);
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+      setActiveFilter(undefined);
+    }
+  }, [activeCategory, setActiveCategory, setActiveSubCategory, setActiveFilter]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveFilter(undefined);
+  }, [setActiveSubCategory, setActiveFilter]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveFilter(subSubCategory);
+  }, [setActiveFilter]);
+
   // Handlers pour les modales (pattern tickets-clients)
   const handleViewTransaction = useCallback((transaction: any) => {
     setSelectedTransactionId(transaction.id);
@@ -446,12 +471,11 @@ export default function FinancesPage() {
         isFullScreen && 'fixed inset-0 z-50'
       )}
     >
-      {/* Sidebar Navigation */}
-      <FinancesCommandSidebar
+      {/* Sidebar Navigation - 3-level */}
+      <FinancesSidebar
         activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
+        activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
-        onToggleCollapse={toggleSidebar}
         stats={{
           revenue: 24,
           expenses: 18,
@@ -461,6 +485,9 @@ export default function FinancesPage() {
           validated: 156,
           reports: 45,
         }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -577,16 +604,22 @@ export default function FinancesPage() {
           </div>
         </header>
 
-        {/* Sub Navigation */}
+        {/* Sub Navigation - Level 2 & 3 */}
         <FinancesSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as FinancesMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
-          onSubCategoryChange={setActiveSubCategory}
-          filters={currentFilters}
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
+          subSubCategory={activeFilter}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            revenue: 24,
+            expenses: 18,
+            budget: 8,
+            pending: 12,
+            overdue: 3,
+            validated: 156,
+            reports: 45,
+          }}
         />
 
         {/* KPI Bar */}
@@ -601,12 +634,9 @@ export default function FinancesPage() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4">
             <FinancesContentRouter
-              category={activeCategory}
+              mainCategory={activeCategory as FinancesMainCategory}
               subCategory={activeSubCategory}
-              filter={activeFilter}
-              onViewTransaction={handleViewTransaction}
-              onEditTransaction={handleEditTransaction}
-              onDeleteTransaction={handleDeleteTransaction}
+              subSubCategory={activeFilter}
             />
           </div>
         </main>

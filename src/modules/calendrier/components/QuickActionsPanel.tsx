@@ -31,7 +31,7 @@ import {
 } from '../api/calendrierApi';
 import { useCalendrierData } from '../hooks/useCalendrierData';
 import { useCalendrierFilters } from '../hooks/useCalendrierFilters';
-import { useToast } from '@/components/ui/toast';
+import { useToast } from '@/components/features/bmo/ToastProvider';
 
 interface QuickAction {
   id: string;
@@ -43,7 +43,7 @@ interface QuickAction {
 
 export function QuickActionsPanel() {
   const router = useRouter();
-  const { toast } = useToast();
+  const { success, error } = useToast();
   const { periode, dateDebut, dateFin, chantierId } = useCalendrierFilters();
   const { refetch } = useCalendrierData();
   
@@ -111,20 +111,12 @@ export function QuickActionsPanel() {
         chantier_id: chantierId || null,
       });
       
-      toast({
-        type: 'success',
-        title: 'Événement créé',
-        message: 'L\'événement a été créé avec succès.',
-      });
+      success('L\'événement a été créé avec succès.', { title: 'Événement créé' });
       
       setCreateEventOpen(false);
       await refetch();
     } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Erreur',
-        message: 'Impossible de créer l\'événement. Veuillez réessayer.',
-      });
+      error('Impossible de créer l\'événement. Veuillez réessayer.', { title: 'Erreur' });
       if (process.env.NODE_ENV === 'development') {
         console.error('Erreur création événement:', error);
       }
@@ -152,20 +144,12 @@ export function QuickActionsPanel() {
         chantier_id: data.chantier_id || null,
       });
       
-      toast({
-        type: 'success',
-        title: 'Absence ajoutée',
-        message: 'L\'absence a été ajoutée avec succès.',
-      });
+      success('L\'absence a été ajoutée avec succès.', { title: 'Absence ajoutée' });
       
       setAddAbsenceOpen(false);
       await refetch();
     } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Erreur',
-        message: 'Impossible d\'ajouter l\'absence. Veuillez réessayer.',
-      });
+      error('Impossible d\'ajouter l\'absence. Veuillez réessayer.', { title: 'Erreur' });
       if (process.env.NODE_ENV === 'development') {
         console.error('Erreur ajout absence:', error);
       }
@@ -182,20 +166,12 @@ export function QuickActionsPanel() {
     try {
       await linkEvenementToChantier(data.event_id, data.chantier_id);
       
-      toast({
-        type: 'success',
-        title: 'Liaison effectuée',
-        message: 'L\'événement a été lié au chantier avec succès.',
-      });
+      success('L\'événement a été lié au chantier avec succès.', { title: 'Liaison effectuée' });
       
       setLinkChantierOpen(false);
       await refetch();
     } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Erreur',
-        message: 'Impossible de lier l\'événement au chantier. Veuillez réessayer.',
-      });
+      error('Impossible de lier l\'événement au chantier. Veuillez réessayer.', { title: 'Erreur' });
       if (process.env.NODE_ENV === 'development') {
         console.error('Erreur liaison chantier:', error);
       }
@@ -227,19 +203,11 @@ export function QuickActionsPanel() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       
-      toast({
-        type: 'success',
-        title: 'Export réussi',
-        message: `Le calendrier a été exporté en ${format.toUpperCase()}.`,
-      });
+      success(`Le calendrier a été exporté en ${format.toUpperCase()}.`, { title: 'Export réussi' });
       
       setExportOpen(false);
     } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Erreur',
-        message: 'Impossible d\'exporter le calendrier. Veuillez réessayer.',
-      });
+      error('Impossible d\'exporter le calendrier. Veuillez réessayer.', { title: 'Erreur' });
       if (process.env.NODE_ENV === 'development') {
         console.error('Erreur export:', error);
       }
@@ -260,20 +228,12 @@ export function QuickActionsPanel() {
         chantier_id: chantierId || undefined,
       });
       
-      toast({
-        type: 'success',
-        title: 'Alerte activée',
-        message: 'L\'alerte a été activée avec succès.',
-      });
+      success('L\'alerte a été activée avec succès.', { title: 'Alerte activée' });
       
       setAlertOpen(false);
       await refetch();
     } catch (error) {
-      toast({
-        type: 'error',
-        title: 'Erreur',
-        message: 'Impossible d\'activer l\'alerte. Veuillez réessayer.',
-      });
+      error('Impossible d\'activer l\'alerte. Veuillez réessayer.', { title: 'Erreur' });
       if (process.env.NODE_ENV === 'development') {
         console.error('Erreur activation alerte:', error);
       }

@@ -96,8 +96,32 @@ export class BlockedWebSocketService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('[BlockedWS] Erreur:', error);
-        this.emit('error', { error });
+        // WebSocket error events don't provide detailed error info
+        // Capture additional context for debugging
+        const readyState = this.ws?.readyState ?? 'unknown';
+        const readyStateLabels: Record<number, string> = {
+          0: 'CONNECTING',
+          1: 'OPEN',
+          2: 'CLOSING',
+          3: 'CLOSED',
+        };
+        
+        const errorInfo = {
+          type: error?.type || 'error',
+          readyState: typeof readyState === 'number' ? readyStateLabels[readyState] || readyState : readyState,
+          url: this.ws?.url || this.url || 'unknown',
+          timestamp: new Date().toISOString(),
+          reconnectAttempts: this.reconnectAttempts,
+        };
+        
+        // Log error with available context
+        if (Object.keys(errorInfo).length > 0) {
+          console.error('[BlockedWS] Erreur:', errorInfo);
+        } else {
+          console.error('[BlockedWS] Erreur WebSocket (détails non disponibles)');
+        }
+        
+        this.emit('error', { error: errorInfo });
       };
 
       this.ws.onclose = () => {

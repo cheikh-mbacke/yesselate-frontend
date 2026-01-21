@@ -121,7 +121,7 @@ export function SearchModal() {
 
     // Pages
     const pages = [
-      { id: 'dashboard', title: 'Tableau de bord', icon: '📊', route: '/maitre-ouvrage' },
+      { id: 'dashboard', title: 'Tableau de bord', icon: '📊', route: '/maitre-ouvrage/dashboard' },
       { id: 'demandes', title: 'Demandes', icon: '📋', route: '/maitre-ouvrage/demandes' },
       { id: 'projets-en-cours', title: 'Projets en cours', icon: '🏗️', route: '/maitre-ouvrage/projets-en-cours' },
       { id: 'employes', title: 'Employés', icon: '👤', route: '/maitre-ouvrage/employes' },

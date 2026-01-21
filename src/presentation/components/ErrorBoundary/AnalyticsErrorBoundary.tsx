@@ -168,7 +168,7 @@ export class AnalyticsErrorBoundary extends Component<
   };
 
   handleGoHome = () => {
-    window.location.href = '/maitre-ouvrage';
+    window.location.href = '/maitre-ouvrage/dashboard';
   };
 
   render() {

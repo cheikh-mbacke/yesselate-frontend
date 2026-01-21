@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import {
   useMessagesExternesCommandCenterStore,
-  type MessagesExternesMainCategory,
 } from '@/lib/stores/messagesExternesCommandCenterStore';
 import {
   MessagesExternesKPIBar,

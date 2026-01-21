@@ -39,8 +39,8 @@ export async function GET(request: NextRequest) {
       sortOrder: (searchParams.get('sortOrder') as 'asc' | 'desc') || 'desc',
     };
 
-    const page = parseInt(filters.page);
-    const limit = parseInt(filters.limit);
+    const page = parseInt(filters.page || '1');
+    const limit = parseInt(filters.limit || '20');
 
     // Générer ou récupérer les alertes mockées
     let alerts = generateMockAlerts(100);

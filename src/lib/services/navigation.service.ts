@@ -25,7 +25,7 @@ export interface PageCounts {
 // Mapping automatique des routes
 export const routeMapping: Record<string, string> = {
   // PILOTAGE (5 pages)
-  dashboard: '/maitre-ouvrage',
+  dashboard: '/maitre-ouvrage/dashboard',
   governance: '/maitre-ouvrage/governance',
   calendrier: '/maitre-ouvrage/calendrier',
   analytics: '/maitre-ouvrage/analytics',

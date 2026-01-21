@@ -35,16 +35,16 @@ export async function GET(request: NextRequest) {
     // Filtrer par queue
     switch (queue) {
       case 'pending':
-        filtered = filtered.filter(d => d.statut === 'en_attente');
+        filtered = filtered.filter(d => d.status === 'en_attente');
         break;
       case 'urgent':
-        filtered = filtered.filter(d => d.statut === 'en_attente');
+        filtered = filtered.filter(d => d.status === 'en_attente');
         break;
       case 'validated':
-        filtered = filtered.filter(d => d.statut === 'validée');
+        filtered = filtered.filter(d => d.status === 'validée');
         break;
       case 'rejected':
-        filtered = filtered.filter(d => d.statut === 'rejetée');
+        filtered = filtered.filter(d => d.status === 'rejetée');
         break;
       default:
         if (['Congé', 'Dépense', 'Maladie', 'Déplacement', 'Paie'].includes(queue)) {
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       Type: d.type,
       Agent: d.agent,
       Bureau: d.bureau,
-      Statut: d.statut,
+      Statut: d.status,
       DateCreation: d.dateCreation,
       DateDebut: d.dateDebut || '',
       DateFin: d.dateFin || '',

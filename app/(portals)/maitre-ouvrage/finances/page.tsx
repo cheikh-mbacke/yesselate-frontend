@@ -260,20 +260,16 @@ export default function FinancesPage() {
     setNotificationsPanelOpen,
     isFullScreen,
     toggleFullScreen,
-    // Detail Modals (pattern tickets-clients)
-    selectedTransactionId,
-    setSelectedTransactionId,
-    selectedInvoiceId,
-    setSelectedInvoiceId,
-    invoiceFormOpen,
-    setInvoiceFormOpen,
-    exportModalOpen,
-    setExportModalOpen,
   } = useFinancesWorkspaceStore();
 
   // UI state
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  // Detail Modals (pattern tickets-clients)
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoiceFormOpen, setInvoiceFormOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   // Mutations hooks
   const { deleteTransaction } = useDeleteTransaction();
@@ -350,16 +346,16 @@ export default function FinancesPage() {
     if (category !== activeCategory) {
       setActiveCategory(category);
       setActiveSubCategory(subCategory || 'all');
-      setActiveFilter(undefined);
+      setActiveFilter(null);
     } else if (subCategory) {
       setActiveSubCategory(subCategory);
-      setActiveFilter(undefined);
+      setActiveFilter(null);
     }
   }, [activeCategory, setActiveCategory, setActiveSubCategory, setActiveFilter]);
 
   const handleSubCategoryChange = useCallback((subCategory: string) => {
     setActiveSubCategory(subCategory);
-    setActiveFilter(undefined);
+    setActiveFilter(null);
   }, [setActiveSubCategory, setActiveFilter]);
 
   const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
@@ -477,13 +473,10 @@ export default function FinancesPage() {
         activeSubCategory={activeSubCategory}
         collapsed={sidebarCollapsed}
         stats={{
-          revenue: 24,
-          expenses: 18,
-          budget: 8,
-          pending: 12,
-          overdue: 3,
-          validated: 156,
-          reports: 45,
+          transactions: 24,
+          invoices: 18,
+          payments: 8,
+          budgets: 12,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
@@ -608,17 +601,14 @@ export default function FinancesPage() {
         <FinancesSubNavigation
           mainCategory={activeCategory as FinancesMainCategory}
           subCategory={activeSubCategory}
-          subSubCategory={activeFilter}
+          subSubCategory={activeFilter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
           stats={{
-            revenue: 24,
-            expenses: 18,
-            budget: 8,
-            pending: 12,
-            overdue: 3,
-            validated: 156,
-            reports: 45,
+            transactions: 24,
+            invoices: 18,
+            payments: 8,
+            budgets: 12,
           }}
         />
 
@@ -636,7 +626,7 @@ export default function FinancesPage() {
             <FinancesContentRouter
               mainCategory={activeCategory as FinancesMainCategory}
               subCategory={activeSubCategory}
-              subSubCategory={activeFilter}
+              subSubCategory={activeFilter || undefined}
             />
           </div>
         </main>

@@ -64,12 +64,14 @@ export async function POST(
     // Calculer le hash de l'événement
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'REACTIVATED',
+      eventType: 'REACTIVATED',
       actorId,
-      actorName,
-      actorRole,
-      reason,
-      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      details: {
+        actorName,
+        actorRole,
+        reason,
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 

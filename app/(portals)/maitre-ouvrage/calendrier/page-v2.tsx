@@ -15,7 +15,7 @@ import {
   Link2,
   GanttChart,
   Rows3,
-  Timeline,
+  Clock,
   CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -360,7 +360,7 @@ export default function CalendarPageV2() {
                 options={[
                   { value: 'gantt', label: 'Gantt', icon: GanttChart },
                   { value: 'calendar', label: 'Calendrier', icon: Rows3 },
-                  { value: 'timeline', label: 'Timeline', icon: Timeline },
+                  { value: 'timeline', label: 'Timeline', icon: Clock },
                 ]}
                 onChange={(v) => pushParams({ view: v as CalendarView })}
               />

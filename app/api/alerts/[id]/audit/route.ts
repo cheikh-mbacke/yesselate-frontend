@@ -104,7 +104,6 @@ export async function GET(
         },
         metadata: {
           note: 'Paiement validé et traité',
-          proof: 'REF-PAY-12345',
           ip: '192.168.1.100',
           userAgent: 'Chrome/120.0',
           duration: 3600000, // 1 heure

@@ -359,7 +359,7 @@ function EvaluationsPageContent() {
       userName: 'A. DIALLO',
       userRole: 'Directeur Général',
       module: 'evaluations',
-      action: `batch_${action}`,
+      action: `batch_${action}` as any,
       targetId: actualIds.join(','),
       targetType: 'Evaluation',
       details: `Action groupée: ${action} sur ${actualIds.length} évaluation(s)`,
@@ -632,7 +632,7 @@ function EvaluationsPageContent() {
       {/* Sidebar Navigation - 3-level */}
       <EvaluationsSidebar
         activeCategory={activeCategory}
-        activeSubCategory={activeSubCategory}
+        activeSubCategory={activeSubCategory || undefined}
         collapsed={sidebarCollapsed}
         stats={{
           pending: stats.scheduled,
@@ -770,7 +770,7 @@ function EvaluationsPageContent() {
         {/* Sub Navigation - Level 2 & 3 */}
         <EvaluationsSubNavigation
           mainCategory={activeCategory as EvaluationsMainCategory}
-          subCategory={activeSubCategory}
+          subCategory={activeSubCategory || undefined}
           subSubCategory={activeFilter || undefined}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
@@ -807,7 +807,7 @@ function EvaluationsPageContent() {
           <div className="h-full overflow-y-auto">
             <EvaluationsContentRouter
               mainCategory={activeCategory as EvaluationsMainCategory}
-              subCategory={activeSubCategory}
+              subCategory={activeSubCategory || undefined}
               subSubCategory={activeFilter || undefined}
             />
           </div>

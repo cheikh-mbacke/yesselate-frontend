@@ -211,35 +211,35 @@ export async function GET(req: Request) {
 
   // Transformation des données
   const items = delegations.map(d => {
-    const actualStatus = computeStatus(d);
-    const expiringSoon = isExpiringSoon(d.endDate);
+    const actualStatus = computeStatus({ ...d, endDate: d.endsAt });
+    const expiringSoon = isExpiringSoon(d.endsAt);
     
     return {
       id: d.id,
-      type: d.type,
+      type: d.object || d.category || 'unknown',
       status: actualStatus,
-      agentId: d.agentId,
-      agentName: d.agentName,
-      agentRole: d.agentRole,
+      agentId: d.delegateId,
+      agentName: d.delegateName,
+      agentRole: d.delegateRole,
       bureau: d.bureau,
-      scope: d.scope,
+      scope: 'all', // Non disponible dans Prisma
       maxAmount: d.maxAmount,
-      startDate: d.startDate.toISOString(),
-      endDate: d.endDate.toISOString(),
-      delegatorName: d.delegatorName,
+      startDate: d.startsAt.toISOString(),
+      endDate: d.endsAt.toISOString(),
+      delegatorName: d.grantorName,
       usageCount: d.usageCount,
       lastUsedAt: d.lastUsedAt?.toISOString() ?? null,
       lastUsedFor: d.lastUsedFor,
-      decisionId: d.decisionId,
-      hash: d.hash,
+      decisionId: d.decisionRef || null,
+      hash: d.headHash || d.decisionHash || null,
       expiringSoon,
       createdAt: d.createdAt.toISOString(),
       recentEvents: d.events.map(e => ({
         id: e.id,
-        action: e.action,
+        action: e.eventType,
         actorName: e.actorName,
         details: e.details,
-        targetDoc: e.targetDoc,
+        targetDoc: e.targetDocRef,
         createdAt: e.createdAt.toISOString(),
       })),
     };
@@ -357,31 +357,24 @@ export async function POST(req: Request) {
   const delegation = await prisma.delegation.create({
     data: {
       id,
-      type,
-      status: 'active',
-      agentId,
-      agentName,
-      agentRole,
-      agentEmail,
-      agentPhone,
+      title: type || 'Délégation',
+      object: type || 'Délégation',
+      category: type || 'OPERATIONNEL',
+      status: 'draft',
+      delegateId: agentId,
+      delegateName: agentName,
+      delegateRole: agentRole || null,
+      delegateEmail: agentEmail || null,
+      delegatePhone: agentPhone || null,
       bureau,
-      scope,
-      scopeDetails,
       maxAmount: maxAmount ? parseInt(maxAmount, 10) : null,
-      startDate: new Date(startDate),
-      endDate: new Date(endDate),
-      delegatorId,
-      delegatorName,
-      hash,
+      startsAt: new Date(startDate),
+      endsAt: new Date(endDate),
+      grantorId: delegatorId,
+      grantorName: delegatorName,
+      decisionHash: hash,
+      headHash: hash,
       notes,
-      events: {
-        create: {
-          action: 'created',
-          actorId: delegatorId,
-          actorName: delegatorName,
-          details: `Délégation créée: ${type} pour ${agentName}`,
-        },
-      },
     },
   });
 

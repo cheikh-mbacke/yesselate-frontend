@@ -275,8 +275,6 @@ function DelegationsPageContent() {
         stats={{
           active: stats?.active || 0,
           expired: stats?.expired || 0,
-          revoked: stats?.revoked || 0,
-          suspended: stats?.suspended || 0,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
@@ -366,8 +364,6 @@ function DelegationsPageContent() {
           stats={{
             active: stats?.active || 0,
             expired: stats?.expired || 0,
-            revoked: stats?.revoked || 0,
-            suspended: stats?.suspended || 0,
           }}
         />
 

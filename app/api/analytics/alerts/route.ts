@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
       alerts = alerts.filter(a => statusFilter.includes(a.status));
     }
     if (severityFilter && severityFilter.length > 0) {
-      alerts = alerts.filter(a => severityFilter.includes(a.severity));
+      alerts = alerts.filter(a => a.severity && severityFilter.includes(a.severity));
     }
     if (bureauId) {
       alerts = alerts.filter(a => a.bureauId === bureauId || a.affectedBureaux.includes(bureauId));

@@ -5,7 +5,7 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -90,26 +90,26 @@ export function RealtimeView() {
     ];
   }, [liveStats]);
 
-  const doRefresh = async () => {
+  const doRefresh = useCallback(async () => {
     startRefresh();
     try {
       const res = await dashboardAPI.refresh('kpis');
       const k = res?.data || {};
-      setLiveStats({
-        ...liveStats,
-        validationsJour: Number(k.validationsJour ?? liveStats.validationsJour ?? 0),
-        tempsReponse: String(k.tempsReponse ?? liveStats.tempsReponse ?? '—'),
-        montantTraite: String(k.montantTraite ?? liveStats.montantTraite ?? '—'),
-        tauxValidation: String(k.tauxValidation ?? liveStats.tauxValidation ?? '—'),
+      setLiveStats((prev) => ({
+        ...prev,
+        validationsJour: Number(k.validationsJour ?? prev.validationsJour ?? 0),
+        tempsReponse: String(k.tempsReponse ?? prev.tempsReponse ?? '—'),
+        montantTraite: String(k.montantTraite ?? prev.montantTraite ?? '—'),
+        tauxValidation: String(k.tauxValidation ?? prev.tauxValidation ?? '—'),
         isRefreshing: false,
-      } as any);
+      }));
     } catch {
       // fallback silent: keep previous
     } finally {
       endRefresh();
       setLastRefresh(new Date());
     }
-  };
+  }, []); // Pas de dépendances - utilise setLiveStats avec fonction updater
 
   // Rafraîchissement auto (API)
   useEffect(() => {
@@ -120,7 +120,7 @@ export function RealtimeView() {
     }, refreshInterval * 1000);
 
     return () => clearInterval(interval);
-  }, [autoRefresh, refreshInterval]);
+  }, [autoRefresh, refreshInterval, doRefresh]);
 
   const handleManualRefresh = () => {
     void doRefresh();

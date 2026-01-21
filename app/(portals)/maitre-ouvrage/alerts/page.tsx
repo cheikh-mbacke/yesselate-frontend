@@ -7,6 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAlertWorkspaceStore } from '@/lib/stores/alertWorkspaceStore';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,8 @@ import {
   AlertsContentRouter,
   findNavNodeById,
   type AlertsMainCategory,
+  type AlertsSubCategory,
+  type AlertsSubSubCategory,
 } from '@/modules/alerts';
 // Store pour le nouveau module alerts
 import { useAlertsCommandCenterStore } from '@/lib/stores/alertsCommandCenterStore';
@@ -180,15 +183,15 @@ function AlertsPageContent() {
   const mapOldCategoryToNew = (oldCategory: string): AlertsMainCategory => {
     const mapping: Record<string, AlertsMainCategory> = {
       'overview': 'overview',
-      'critical': 'en-cours',
-      'warning': 'en-cours',
-      'sla': 'en-cours',
-      'blocked': 'en-cours',
-      'acknowledged': 'traitements',
-      'resolved': 'traitements',
-      'rules': 'governance',
-      'history': 'governance',
-      'favorites': 'governance',
+      'critical': 'critiques',
+      'warning': 'critiques',
+      'sla': 'sla',
+      'blocked': 'projets',
+      'acknowledged': 'critiques',
+      'resolved': 'critiques',
+      'rules': 'overview',
+      'history': 'overview',
+      'favorites': 'overview',
     };
     return mapping[oldCategory] || 'overview';
   };
@@ -650,8 +653,8 @@ function AlertsPageContent() {
     return (
       <AlertsContentRouter
         mainCategory={activeCategory as AlertsMainCategory}
-        subCategory={activeSubCategory || undefined}
-        subSubCategory={activeSubSubCategory || undefined}
+        subCategory={(activeSubCategory as AlertsSubCategory) || undefined}
+        subSubCategory={(activeSubSubCategory as AlertsSubSubCategory) || undefined}
       />
     );
   };
@@ -870,8 +873,8 @@ function AlertsPageContent() {
             ) : (
               <AlertsContentRouter
                 mainCategory={activeCategory as AlertsMainCategory}
-                subCategory={activeSubCategory || undefined}
-                subSubCategory={activeSubSubCategory || undefined}
+                subCategory={(activeSubCategory as AlertsSubCategory) || undefined}
+                subSubCategory={(activeSubSubCategory as AlertsSubSubCategory) || undefined}
               />
             )}
           </div>

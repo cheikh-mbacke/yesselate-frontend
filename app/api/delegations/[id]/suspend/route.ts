@@ -63,13 +63,10 @@ export async function POST(
     // Calculer le hash de l'événement
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'SUSPENDED',
+      eventType: 'SUSPENDED',
       actorId,
-      actorName,
-      actorRole,
-      reason,
-      expectedReactivation,
-      timestamp: new Date().toISOString(),
+      details: JSON.stringify({ reason, expectedReactivation }),
+      createdAt: new Date().toISOString(),
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 

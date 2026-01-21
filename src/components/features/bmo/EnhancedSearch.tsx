@@ -68,7 +68,7 @@ export const EnhancedSearch = React.forwardRef<
       { id: '7', type: 'decision', title: 'Décisions en attente', description: 'Décisions nécessitant validation', route: '/maitre-ouvrage/decisions' },
       { id: '8', type: 'bureau', title: 'Bureau BMO', description: 'Vue du bureau BMO', route: '/maitre-ouvrage/arbitrages-vivants?bureau=BMO' },
       { id: '9', type: 'bureau', title: 'Bureau BF', description: 'Vue du bureau BF', route: '/maitre-ouvrage/arbitrages-vivants?bureau=BF' },
-      { id: '10', type: 'action', title: 'Actions prioritaires', description: 'Actions à traiter', route: '/maitre-ouvrage' },
+      { id: '10', type: 'action', title: 'Actions prioritaires', description: 'Actions à traiter', route: '/maitre-ouvrage/dashboard' },
     ];
   }, []);
 

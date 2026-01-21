@@ -21,20 +21,20 @@ export async function GET(request: NextRequest) {
       const score = Math.round(
         (bureau.completion * 0.6) + // 60% basé sur completion
         ((100 - (blocages.length * 5)) * 0.3) + // 30% basé sur absence de blocages
-        (bureau.charge < 85 ? 10 : 0) // 10% bonus si charge raisonnable
+        (0) // 10% bonus si charge raisonnable (charge non disponible)
       );
 
-      // Tendance simulée (basée sur score vs charge)
+      // Tendance simulée (basée sur score vs completion)
       const trend = 
-        bureau.charge > 90 ? 'down' :
         bureau.completion > 85 ? 'up' :
+        bureau.completion < 60 ? 'down' :
         'stable';
 
       return {
         code: bureau.code,
         name: bureau.name || bureau.code,
         score: Math.min(100, Math.max(0, score)),
-        charge: bureau.charge,
+        charge: 0, // charge non disponible
         completion: bureau.completion,
         blocages: blocages.length,
         blocagesCritiques: blocagesCritiques.length,

@@ -26,7 +26,7 @@ export async function POST(
       status: 'escalated',
       escalatedAt: new Date().toISOString(),
       escalatedBy: userId,
-      escalatedTo,
+      escalateTo,
       escalationReason: reason,
       priority: priority || 10,
       updatedAt: new Date().toISOString(),

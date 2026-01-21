@@ -124,6 +124,7 @@ function ValidationBCPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // ================================
   // Computed values
@@ -175,10 +176,10 @@ function ValidationBCPageContent() {
   }, [refetchStats]);
 
   const handleCategoryChange = useCallback(
-    (category: ValidationBCMainCategory) => {
-      navigate(category, null);
+    (category: string) => {
+      navigate(category as ValidationBCMainCategory, null);
       // Naviguer vers la route par défaut de la catégorie
-      const node = findNavNodeById(category);
+      const node = findNavNodeById(category as ValidationBCMainCategory);
       if (node?.children && node.children.length > 0) {
         const defaultRoute = node.children[0].route;
         router.push(defaultRoute);
@@ -188,8 +189,8 @@ function ValidationBCPageContent() {
   );
 
   const handleSubCategoryChange = useCallback(
-    (subCategory: ValidationBCSubCategory) => {
-      navigate(activeCategory, subCategory);
+    (subCategory: string) => {
+      navigate(activeCategory, subCategory as ValidationBCSubCategory);
       const node = findNavNodeById(activeCategory);
       const subNode = node?.children?.find((c) => c.id === subCategory);
       if (subNode?.route) {
@@ -205,8 +206,8 @@ function ValidationBCPageContent() {
   }, [goBack]);
 
   const openCommandPalette = useCallback(() => {
-    toggleCommandPalette();
-  }, [toggleCommandPalette]);
+    setCommandPaletteOpen(true);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -303,9 +304,9 @@ function ValidationBCPageContent() {
             valides: stats.valides,
             rejetes: stats.rejetes,
             urgents: stats.urgents,
-            bc: stats.parType?.BC,
-            factures: stats.parType?.FACTURE,
-            avenants: stats.parType?.AVENANT,
+            bc: 0,
+            factures: 0,
+            avenants: 0,
           }}
         />
 

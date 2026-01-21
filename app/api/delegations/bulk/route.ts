@@ -48,7 +48,7 @@ export async function POST(req: Request) {
 
   for (const delegation of delegations) {
     try {
-      const prevHash = delegation.hash ?? 'genesis';
+      const prevHash = delegation.headHash || delegation.decisionHash || 'genesis';
       let updateData: Record<string, unknown> = {};
       let eventAction = action;
       let eventDetails = '';
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
             suspendedBy: actorName,
             suspendReason: reason,
           };
-          eventAction = 'suspended';
+          eventAction = 'suspend';
           eventDetails = `Suspension groupée: ${reason}`;
           break;
 
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
             suspendedBy: null,
             suspendReason: null,
           };
-          eventAction = 'reactivated';
+          eventAction = 'reactivate';
           eventDetails = 'Réactivation groupée';
           break;
 
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
             revokedBy: actorName,
             revokeReason: reason,
           };
-          eventAction = 'revoked';
+          eventAction = 'revoke';
           eventDetails = `Révocation groupée: ${reason}`;
           break;
 
@@ -103,13 +103,13 @@ export async function POST(req: Request) {
           const days = payload?.days ?? 30;
           const newEndDate = payload?.newEndDate 
             ? new Date(payload.newEndDate)
-            : new Date(delegation.endDate.getTime() + days * 24 * 60 * 60 * 1000);
+            : new Date(delegation.endsAt.getTime() + days * 24 * 60 * 60 * 1000);
           
           updateData = {
-            endDate: newEndDate,
+            endsAt: newEndDate,
             status: 'active',
           };
-          eventAction = 'extended';
+          eventAction = 'extend';
           eventDetails = `Prolongation groupée jusqu'au ${newEndDate.toLocaleDateString('fr-FR')}`;
           break;
 
@@ -128,20 +128,28 @@ export async function POST(req: Request) {
       };
       const newHash = hashChain(prevHash, chainPayload);
 
-      await prisma.delegation.update({
-        where: { id: delegation.id },
-        data: {
-          ...updateData,
-          hash: newHash,
-          events: {
-            create: {
-              action: eventAction,
-              actorId,
-              actorName,
-              details: eventDetails,
-            },
+      // Créer l'événement et mettre à jour la délégation dans une transaction
+      await prisma.$transaction(async (tx) => {
+        await tx.delegationEvent.create({
+          data: {
+            delegationId: delegation.id,
+            eventType: eventAction.toUpperCase(),
+            actorId,
+            actorName,
+            summary: eventDetails.substring(0, 100),
+            details: eventDetails,
+            previousHash: prevHash === 'genesis' ? null : prevHash,
+            eventHash: newHash,
           },
-        },
+        });
+        
+        await tx.delegation.update({
+          where: { id: delegation.id },
+          data: {
+            ...updateData,
+            headHash: newHash,
+          },
+        });
       });
 
       results.push({ id: delegation.id, success: true });

@@ -41,12 +41,12 @@ export async function GET() {
     recentActivity,
   ] = await Promise.all([
     prisma.delegation.count(),
-    prisma.delegation.count({ where: { status: 'active', endDate: { gte: now } } }),
+    prisma.delegation.count({ where: { status: 'active', endsAt: { gte: now } } }),
     prisma.delegation.count({ 
       where: { 
         OR: [
           { status: 'expired' },
-          { endDate: { lt: now }, status: { notIn: ['revoked', 'suspended'] } }
+          { endsAt: { lt: now }, status: { notIn: ['revoked', 'suspended'] } }
         ]
       } 
     }),
@@ -55,28 +55,28 @@ export async function GET() {
     prisma.delegation.count({ 
       where: { 
         status: 'active', 
-        endDate: { gte: now, lte: in7Days } 
+        endsAt: { gte: now, lte: in7Days } 
       } 
     }),
     prisma.delegation.aggregate({ _sum: { usageCount: true } }),
     prisma.delegation.groupBy({
       by: ['bureau'],
       _count: true,
-      where: { status: 'active', endDate: { gte: now } },
+      where: { status: 'active', endsAt: { gte: now } },
       orderBy: { _count: { bureau: 'desc' } },
       take: 5,
     }),
     prisma.delegation.groupBy({
-      by: ['type'],
+      by: ['category'],
       _count: true,
-      where: { status: 'active', endDate: { gte: now } },
-      orderBy: { _count: { type: 'desc' } },
+      where: { status: 'active', endsAt: { gte: now } },
+      orderBy: { _count: { category: 'desc' } },
       take: 5,
     }),
     prisma.delegationEvent.findMany({
       orderBy: { createdAt: 'desc' },
       take: 5,
-      include: { delegation: { select: { id: true, type: true, agentName: true } } },
+      include: { delegation: { select: { id: true, category: true, object: true, delegateName: true } } },
     }),
   ]);
 
@@ -89,13 +89,13 @@ export async function GET() {
       expiringSoon,
       totalUsage: totalUsage._sum.usageCount ?? 0,
       byBureau: byBureau.map(b => ({ bureau: b.bureau, count: b._count })),
-      byType: byType.map(t => ({ type: t.type, count: t._count })),
+      byType: byType.map(t => ({ type: t.category, count: t._count })),
       recentActivity: recentActivity.map(e => ({
         id: e.id,
         delegationId: e.delegationId,
-        delegationType: e.delegation.type,
-        agentName: e.delegation.agentName,
-        action: e.action,
+        delegationType: e.delegation.category || e.delegation.object,
+        agentName: e.delegation.delegateName,
+        action: e.eventType,
         actorName: e.actorName,
         details: e.details,
         createdAt: e.createdAt.toISOString(),

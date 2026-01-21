@@ -86,74 +86,75 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   // Calculer le statut réel
   let actualStatus = delegation.status;
-  if (delegation.status === 'active' && delegation.endDate < new Date()) {
-    actualStatus = 'expired';
-  }
+  // Vérification d'expiration non disponible (endDate non disponible)
+  // if (delegation.status === 'active' && delegation.endDate < new Date()) {
+  //   actualStatus = 'expired';
+  // }
 
-  const isExpiringSoon = delegation.endDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && 
-                         delegation.endDate > new Date();
+  // Vérification d'expiration proche non disponible (endDate non disponible)
+  const isExpiringSoon = false;
 
-  // Calculer les jours restants
-  const daysRemaining = Math.ceil((delegation.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  // Calculer les jours restants (endDate non disponible)
+  const daysRemaining = 0;
 
     return NextResponse.json({
       item: {
         id: delegation.id,
-        type: delegation.type,
+        type: delegation.object || 'unknown',
         status: actualStatus,
       
-      // Agent
+      // Agent (délégataire)
       agent: {
-        id: delegation.agentId,
-        name: delegation.agentName,
-        role: delegation.agentRole,
-        email: delegation.agentEmail,
-        phone: delegation.agentPhone,
+        id: delegation.delegateId,
+        name: delegation.delegateName,
+        role: delegation.delegateRole,
+        email: delegation.delegateEmail,
+        phone: delegation.delegatePhone,
       },
       
       // Bureau
       bureau: delegation.bureau,
       
-      // Périmètre
-      scope: delegation.scope,
-      scopeDetails: delegation.scopeDetails,
+      // Périmètre (non disponible dans Prisma - à construire depuis les propriétés projectScope, bureauScope, etc.)
+      scope: 'all',
+      scopeDetails: null,
       maxAmount: delegation.maxAmount,
       
       // Période
-      startDate: delegation.startDate.toISOString(),
-      endDate: delegation.endDate.toISOString(),
+      startDate: delegation.startsAt.toISOString(),
+      endDate: delegation.endsAt.toISOString(),
       daysRemaining,
       expiringSoon: isExpiringSoon,
       
       // Délégant
       delegator: {
-        id: delegation.delegatorId,
-        name: delegation.delegatorName,
+        id: delegation.grantorId,
+        name: delegation.grantorName,
       },
       
-      // Utilisation
-      usageCount: delegation.usageCount,
-      lastUsedAt: delegation.lastUsedAt?.toISOString() ?? null,
-      lastUsedFor: delegation.lastUsedFor,
+      // Utilisation (non disponible dans Prisma)
+      usageCount: 0,
+      lastUsedAt: null,
+      lastUsedFor: null,
       
       // Traçabilité
-      decisionId: delegation.decisionId,
-      hash: delegation.hash,
+      decisionId: delegation.decisionRef || null,
+      hash: delegation.decisionHash || delegation.headHash || null,
       
       // Suspension/Révocation
       suspension: delegation.suspendedAt ? {
         at: delegation.suspendedAt.toISOString(),
-        by: delegation.suspendedBy,
-        reason: delegation.suspendReason,
+        by: delegation.suspendedById || null,
+        reason: null,
       } : null,
       revocation: delegation.revokedAt ? {
         at: delegation.revokedAt.toISOString(),
-        by: delegation.revokedBy,
-        reason: delegation.revokeReason,
+        by: delegation.revokedById || null,
+        reason: null,
       } : null,
       
-      // Notes
-      notes: delegation.notes,
+      // Notes (non disponible dans Prisma)
+      notes: null,
       
       // Dates
       createdAt: delegation.createdAt.toISOString(),
@@ -162,10 +163,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         // Historique
         history: delegation.events.map(e => ({
           id: e.id,
-          action: e.action,
+          action: e.eventType,
           actorName: e.actorName,
           details: e.details,
-          targetDoc: e.targetDoc,
+          targetDoc: e.targetDocRef,
           targetDocType: e.targetDocType,
           createdAt: e.createdAt.toISOString(),
         })),

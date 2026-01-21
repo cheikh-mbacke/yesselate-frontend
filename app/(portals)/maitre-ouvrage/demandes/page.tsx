@@ -270,9 +270,9 @@ export default function DemandesPage() {
 
         {/* Sub Navigation - Nouveau module (niveaux 2 et 3) */}
         <DemandesSubNavigationModule
-          mainCategory={navigation.mainCategory}
-          subCategory={navigation.subCategory}
-          subSubCategory={navigation.subSubCategory}
+          mainCategory={navigation.mainCategory as any}
+          subCategory={navigation.subCategory || undefined}
+          subSubCategory={navigation.subSubCategory || undefined}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
           stats={{

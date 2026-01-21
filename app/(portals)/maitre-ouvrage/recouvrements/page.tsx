@@ -337,8 +337,8 @@ function RecouvrementsPageContent() {
         stats={statsData ? {
           pending: statsData.pending,
           inProgress: statsData.in_progress,
-          paid: statsData.paid,
-          overdue: statsData.total - statsData.paid - statsData.litige,
+          resolved: statsData.paid,
+          failed: statsData.total - statsData.paid - statsData.litige,
         } : undefined}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
@@ -447,8 +447,8 @@ function RecouvrementsPageContent() {
           stats={statsData ? {
             pending: statsData.pending,
             inProgress: statsData.in_progress,
-            paid: statsData.paid,
-            overdue: statsData.total - statsData.paid - statsData.litige,
+            resolved: statsData.paid,
+            failed: statsData.total - statsData.paid - statsData.litige,
           } : undefined}
         />
 

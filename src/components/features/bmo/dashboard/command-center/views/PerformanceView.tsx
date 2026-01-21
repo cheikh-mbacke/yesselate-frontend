@@ -1,11 +1,12 @@
 /**
  * Vue Performance du Dashboard
  * KPIs détaillés, tendances et comparaisons
+ * Filtrage dynamique selon la navigation
  */
 
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,11 +21,30 @@ import {
   Minus,
   Calendar,
   Download,
+  Eye,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { useDashboardCommandCenterStore } from '@/lib/stores/dashboardCommandCenterStore';
 import { TrendChart, DistributionChart } from '@/components/features/bmo/dashboard/charts';
 import { useApiQuery } from '@/lib/api/hooks/useApiQuery';
 import { dashboardAPI } from '@/lib/api/pilotage/dashboardClient';
+import { validationsMock, type Validation } from '../data/validationsMock';
+
+// Composant Badge Bureau réutilisable
+function BureauBadge({ code, size = 'default' }: { code: string; size?: 'sm' | 'default' }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'border-slate-700 text-slate-400',
+        size === 'sm' ? 'text-[10px]' : 'text-xs'
+      )}
+    >
+      {code}
+    </Badge>
+  );
+}
 
 // Données de démo
 const performanceMetrics = [
@@ -89,9 +109,59 @@ const bureauPerformance = [
 ];
 
 export function PerformanceView() {
-  const { navigation, openModal } = useDashboardCommandCenterStore();
+  const { navigation, openModal, navigate } = useDashboardCommandCenterStore();
 
   const { data: statsData } = useApiQuery(async (_signal: AbortSignal) => dashboardAPI.getStats({ period: 'year' }), []);
+
+  // Fonction de filtrage des validations selon la navigation
+  const getFilteredValidations = useCallback((): Validation[] => {
+    let filtered = [...validationsMock];
+
+    // Filtre selon subCategory et filter (niveau 3)
+    if (navigation.subCategory === 'validation') {
+      const filter = navigation.filter;
+      
+      if (filter === 'en-attente') {
+        filtered = filtered.filter((v) => v.statut === 'en_attente');
+      } else if (filter === 'validees') {
+        filtered = filtered.filter((v) => v.statut === 'validee');
+      } else if (filter === 'rejetees') {
+        filtered = filtered.filter((v) => v.statut === 'rejetee');
+      }
+      // Si pas de filter, affiche toutes les validations
+    }
+
+    // Filtre pour les retards (peut être utilisé dans plusieurs sections)
+    if (navigation.subCategory === 'delays' || navigation.filter === 'retards') {
+      filtered = filtered.filter((v) => v.delai < 0);
+    }
+
+    // Tri par priorité et délai
+    filtered.sort((a, b) => {
+      // Critiques en premier
+      if (a.priorite === 'critique' && b.priorite !== 'critique') return -1;
+      if (a.priorite !== 'critique' && b.priorite === 'critique') return 1;
+      
+      // Puis par délai (retards en premier)
+      return a.delai - b.delai;
+    });
+
+    return filtered;
+  }, [navigation.subCategory, navigation.filter]);
+
+  // Validations filtrées
+  const filteredValidations = useMemo(() => getFilteredValidations(), [getFilteredValidations]);
+
+  // Helper pour formater les montants
+  const formatAmount = useCallback((amount: number) => {
+    if (amount >= 1000000) {
+      return `${(amount / 1000000).toFixed(1)}M FCFA`;
+    }
+    if (amount >= 1000) {
+      return `${(amount / 1000).toFixed(0)}K FCFA`;
+    }
+    return `${amount} FCFA`;
+  }, []);
   const trendData = useMemo(() => {
     const fallback = [
       { period: 'Juil', demandes: 180, validations: 160 },
@@ -115,9 +185,17 @@ export function PerformanceView() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-200">Performance & KPIs</h1>
+          <h1 className="text-xl font-bold text-slate-200">
+            {navigation.subCategory === 'validation' && navigation.filter === 'en-attente' && 'Validations en attente'}
+            {navigation.subCategory === 'validation' && navigation.filter === 'validees' && 'Validations approuvées'}
+            {navigation.subCategory === 'validation' && navigation.filter === 'rejetees' && 'Validations rejetées'}
+            {navigation.subCategory === 'validation' && !navigation.filter && 'Toutes les validations'}
+            {navigation.subCategory !== 'validation' && 'Performance & KPIs'}
+          </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Suivi des indicateurs clés de performance
+            {navigation.subCategory === 'validation' 
+              ? `${filteredValidations.length} résultat${filteredValidations.length > 1 ? 's' : ''}`
+              : 'Suivi des indicateurs clés de performance'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -132,7 +210,141 @@ export function PerformanceView() {
         </div>
       </div>
 
-      {/* Métriques principales */}
+      {/* Tableau des Validations - Affiché uniquement pour subCategory === 'validation' */}
+      {navigation.subCategory === 'validation' && (
+        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-900 border-b border-slate-700">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400">Référence</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400">Fournisseur</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400">Montant</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400">Projet</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400">Bureau</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Priorité</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Délai</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Statut</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {filteredValidations.map((validation) => (
+                  <tr key={validation.id} className="hover:bg-slate-700/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-medium text-white">{validation.reference}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="outline" className="text-xs border-slate-700 text-slate-400">
+                        {validation.type.toUpperCase()}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-slate-300">{validation.fournisseur}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-sm font-semibold text-white">
+                        {formatAmount(validation.montant)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-slate-400">{validation.projet}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <BureauBadge code={validation.bureau} size="sm" />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge
+                        variant={
+                          validation.priorite === 'critique'
+                            ? 'destructive'
+                            : validation.priorite === 'haute'
+                            ? 'warning'
+                            : 'default'
+                        }
+                        className="text-xs"
+                      >
+                        {validation.priorite}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={cn(
+                          'text-sm font-semibold',
+                          validation.delai < 0
+                            ? 'text-red-400'
+                            : validation.delai === 0
+                            ? 'text-orange-400'
+                            : 'text-green-400'
+                        )}
+                      >
+                        {validation.delai < 0
+                          ? `${Math.abs(validation.delai)}j retard`
+                          : validation.delai === 0
+                          ? "Aujourd'hui"
+                          : `J+${validation.delai}`}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {validation.statut === 'en_attente' && (
+                        <Badge variant="warning" className="text-xs">
+                          En attente
+                        </Badge>
+                      )}
+                      {validation.statut === 'validee' && (
+                        <Badge variant="success" className="text-xs bg-green-600">
+                          Validée
+                        </Badge>
+                      )}
+                      {validation.statut === 'rejetee' && (
+                        <Badge variant="destructive" className="text-xs">
+                          Rejetée
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => openModal('action-detail', { validation })}
+                        >
+                          <Eye className="w-3 h-3" />
+                        </Button>
+                        {validation.statut === 'en_attente' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-green-400 hover:text-green-300"
+                              onClick={() => openModal('action-detail', { validation, action: 'validate' })}
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
+                              onClick={() => openModal('action-detail', { validation, action: 'reject' })}
+                            >
+                              <XCircle className="w-3 h-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Métriques principales - Masqué pour vue validations */}
+      {navigation.subCategory !== 'validation' && (
       <section>
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
           Métriques clés
@@ -187,8 +399,10 @@ export function PerformanceView() {
           })}
         </div>
       </section>
+      )}
 
-      {/* Performance par bureau */}
+      {/* Performance par bureau - Masqué pour vue validations */}
+      {navigation.subCategory !== 'validation' && (
       <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
           <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
@@ -271,8 +485,10 @@ export function PerformanceView() {
           </table>
         </div>
       </section>
+      )}
 
-      {/* Graphiques réels */}
+      {/* Graphiques réels - Masqués pour vue validations */}
+      {navigation.subCategory !== 'validation' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
           <div className="flex items-center gap-2 mb-4">
@@ -306,6 +522,7 @@ export function PerformanceView() {
           />
         </section>
       </div>
+      )}
     </div>
   );
 }

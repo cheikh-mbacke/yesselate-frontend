@@ -237,7 +237,7 @@ function ValidationContratsPageContent() {
     if (navigationHistory.length > 0) {
       const previousCategory = navigationHistory[navigationHistory.length - 1];
       setNavigationHistory((prev) => prev.slice(0, -1));
-      setActiveCategory(previousCategory);
+      setActiveCategory(previousCategory as ContratsMainCategory);
       setActiveSubCategory('all');
     }
   }, [navigationHistory]);

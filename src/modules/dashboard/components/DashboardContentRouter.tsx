@@ -1,11 +1,12 @@
 /**
  * Router de contenu pour le module Dashboard
  * Route vers les bonnes pages selon la navigation (niveaux 1, 2 et 3)
+ * VERSION OPTIMISÉE avec mapping cleaner et meilleur logging
  */
 
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { DashboardMainCategory } from '../types/dashboardNavigationTypes';
 import {
   OverviewView,
@@ -15,150 +16,242 @@ import {
   DecisionsView,
   RealtimeView,
 } from '@/components/features/bmo/dashboard/command-center/views';
+import { useDashboardCommandCenterStore } from '@/lib/stores/dashboardCommandCenterStore';
+import { useLogger } from '@/lib/utils/logger';
 
-interface DashboardContentRouterProps {
-  mainCategory: DashboardMainCategory;
+export interface DashboardContentRouterProps {
+  mainCategory?: DashboardMainCategory;
   subCategory?: string;
   subSubCategory?: string;
+  fallbackView?: React.ComponentType;
 }
+
+// ============================================
+// MAPPING DES ROUTES
+// ============================================
+
+type ViewComponent = React.ComponentType<any>;
+
+const ROUTE_MAPPING: Record<DashboardMainCategory, ViewComponent> = {
+  overview: OverviewView,
+  performance: PerformanceView,
+  actions: ActionsView,
+  risks: RisksView,
+  decisions: DecisionsView,
+  realtime: RealtimeView,
+};
+
+// ============================================
+// COMPOSANT PRINCIPAL
+// ============================================
 
 export function DashboardContentRouter({
-  mainCategory,
-  subCategory,
-  subSubCategory,
+  mainCategory: propMainCategory,
+  subCategory: propSubCategory,
+  subSubCategory: propSubSubCategory,
+  fallbackView: FallbackView = OverviewView,
 }: DashboardContentRouterProps) {
-  // Vue d'ensemble
-  if (mainCategory === 'overview') {
-    if (subCategory === 'summary') {
-      if (subSubCategory === 'dashboard' || !subSubCategory) {
-        return <OverviewView />;
-      }
-      if (subSubCategory === 'highlights') {
-        return <OverviewView />;
-      }
+  const log = useLogger('DashboardContentRouter');
+  // ============================================
+  // NAVIGATION STATE
+  // ============================================
+
+  // Récupérer l'état du store
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+
+  // Utiliser le store EN PRIORITÉ, fallback sur les props
+  const mainCategory = navigation.mainCategory || propMainCategory || 'overview';
+  const subCategory = navigation.subCategory || propSubCategory;
+  const subSubCategory = navigation.subSubCategory || propSubSubCategory;
+
+  // ============================================
+  // LOGGING & DIAGNOSTICS
+  // ============================================
+
+  const navigationLog = useMemo(() => {
+    const log = {
+      mainCategory,
+      subCategory: subCategory || 'null',
+      subSubCategory: subSubCategory || 'null',
+      fromStore: {
+        main: navigation.mainCategory,
+        sub: navigation.subCategory,
+        subSubCategory: navigation.subSubCategory,
+      },
+      fromProps: {
+        main: propMainCategory,
+        sub: propSubCategory,
+        subSub: propSubSubCategory,
+      },
+    };
+
+    log.debug('Routing', log);
+
+    return log;
+  }, [mainCategory, subCategory, subSubCategory, navigation, propMainCategory, propSubCategory, propSubSubCategory]);
+
+  // ============================================
+  // RESOLVE VIEW COMPONENT
+  // ============================================
+
+  const ViewComponent = useMemo(() => {
+    // Valider que mainCategory est correct
+    if (!mainCategory || !ROUTE_MAPPING[mainCategory as DashboardMainCategory]) {
+      log.warn('Invalid mainCategory', { mainCategory });
+      return FallbackView;
     }
 
-    if (subCategory === 'kpis') {
-      if (subSubCategory === 'projets' || !subSubCategory) {
-        return <OverviewView />;
-      }
-      if (subSubCategory === 'demandes') {
-        return <OverviewView />;
-      }
-      if (subSubCategory === 'budget') {
-        return <OverviewView />;
-      }
-    }
+    // Retourner le composant approprié basé sur mainCategory
+    // Les sub-categories et sub-sub-categories sont gérées DANS le composant lui-même
+    // (ex: OverviewView gère ses propres conditions pour afficher dashboard/highlights/etc.)
+    const componentKey = mainCategory as DashboardMainCategory;
+    const Component = ROUTE_MAPPING[componentKey];
 
-    if (subCategory === 'bureaux') {
-      return <OverviewView />;
-    }
+    log.debug('Resolved view', {
+      mainCategory: componentKey,
+      component: Component.name || 'Unknown',
+    });
 
-    if (subCategory === 'trends') {
-      return <OverviewView />;
-    }
+    return Component;
+  }, [mainCategory, FallbackView]);
 
-    // Par défaut pour overview
-    return <OverviewView />;
-  }
+  // ============================================
+  // RENDER
+  // ============================================
 
-  // Performance & KPIs
-  if (mainCategory === 'performance') {
-    if (subCategory === 'validation') {
-      return <PerformanceView />;
-    }
-    if (subCategory === 'budget') {
-      return <PerformanceView />;
-    }
-    if (subCategory === 'delays') {
-      return <PerformanceView />;
-    }
-    if (subCategory === 'comparison') {
-      return <PerformanceView />;
-    }
-    // Par défaut pour performance
-    return <PerformanceView />;
-  }
-
-  // Actions prioritaires
-  if (mainCategory === 'actions') {
-    if (subCategory === 'all') {
-      return <ActionsView />;
-    }
-    if (subCategory === 'urgent') {
-      return <ActionsView />;
-    }
-    if (subCategory === 'blocked') {
-      return <ActionsView />;
-    }
-    if (subCategory === 'pending') {
-      return <ActionsView />;
-    }
-    if (subCategory === 'completed') {
-      return <ActionsView />;
-    }
-    // Par défaut pour actions
-    return <ActionsView />;
-  }
-
-  // Risques & Santé
-  if (mainCategory === 'risks') {
-    if (subCategory === 'critical') {
-      return <RisksView />;
-    }
-    if (subCategory === 'warnings') {
-      return <RisksView />;
-    }
-    if (subCategory === 'blocages') {
-      return <RisksView />;
-    }
-    if (subCategory === 'payments') {
-      return <RisksView />;
-    }
-    if (subCategory === 'contracts') {
-      return <RisksView />;
-    }
-    // Par défaut pour risks
-    return <RisksView />;
-  }
-
-  // Décisions & Timeline
-  if (mainCategory === 'decisions') {
-    if (subCategory === 'pending') {
-      return <DecisionsView />;
-    }
-    if (subCategory === 'executed') {
-      return <DecisionsView />;
-    }
-    if (subCategory === 'timeline') {
-      return <DecisionsView />;
-    }
-    if (subCategory === 'audit') {
-      return <DecisionsView />;
-    }
-    // Par défaut pour decisions
-    return <DecisionsView />;
-  }
-
-  // Temps réel
-  if (mainCategory === 'realtime') {
-    if (subCategory === 'live') {
-      return <RealtimeView />;
-    }
-    if (subCategory === 'alerts') {
-      return <RealtimeView />;
-    }
-    if (subCategory === 'notifications') {
-      return <RealtimeView />;
-    }
-    if (subCategory === 'sync') {
-      return <RealtimeView />;
-    }
-    // Par défaut pour realtime
-    return <RealtimeView />;
-  }
-
-  // Par défaut
-  return <OverviewView />;
+  return <ViewComponent />;
 }
 
+// ============================================
+// HELPERS & HOOKS
+// ============================================
+
+/**
+ * Hook pour obtenir le composant à renderer basé sur la navigation
+ * Utile si tu veux décider en dehors du composant Router
+ */
+export function useNavigationView() {
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+
+  return useMemo(() => {
+    const { mainCategory } = navigation;
+    if (!mainCategory || !ROUTE_MAPPING[mainCategory]) {
+      return OverviewView;
+    }
+    return ROUTE_MAPPING[mainCategory];
+  }, [navigation]);
+}
+
+/**
+ * Hook pour vérifier si une vue spécifique est actuellement active
+ */
+export function useIsViewActive(targetMainCategory: DashboardMainCategory): boolean {
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+  return navigation.mainCategory === targetMainCategory;
+}
+
+/**
+ * Composant pour logger toute la navigation (debug)
+ */
+export function NavigationDebugger() {
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+
+  if (process.env.NODE_ENV !== 'development') {
+    return null;
+  }
+
+  return (
+    <div className="fixed bottom-4 left-4 p-4 bg-slate-900 border border-orange-500 rounded text-xs text-orange-300 z-40 max-w-sm">
+      <h3 className="font-bold mb-2">🔍 Navigation Debug</h3>
+      <pre className="font-mono text-[10px] space-y-1">
+        <div>Main: <span className="text-blue-400">{navigation.mainCategory}</span></div>
+        <div>Sub: <span className="text-green-400">{navigation.subCategory || 'null'}</span></div>
+        <div>SubSubCategory: <span className="text-purple-400">{navigation.subSubCategory || 'null'}</span></div>
+      </pre>
+    </div>
+  );
+}
+
+// ============================================
+// ALTERNATIVE: Avec props pour chaque view
+// (Si tu veux passer des props spécifiques à chaque view)
+// ============================================
+
+interface DashboardContentRouterWithPropsProps extends DashboardContentRouterProps {
+  viewProps?: Record<string, any>;
+}
+
+export function DashboardContentRouterWithProps({
+  mainCategory: propMainCategory,
+  subCategory: propSubCategory,
+  subSubCategory: propSubSubCategory,
+  viewProps = {},
+  fallbackView: FallbackView = OverviewView,
+}: DashboardContentRouterWithPropsProps) {
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+
+  const mainCategory = navigation.mainCategory || propMainCategory || 'overview';
+  const subCategory = navigation.subCategory || propSubCategory;
+  const subSubCategory = navigation.subSubCategory || propSubSubCategory;
+
+  const ViewComponent = useMemo(() => {
+    if (!mainCategory || !ROUTE_MAPPING[mainCategory as DashboardMainCategory]) {
+      return FallbackView;
+    }
+    return ROUTE_MAPPING[mainCategory as DashboardMainCategory];
+  }, [mainCategory, FallbackView]);
+
+  // Props spécifiques par view
+  const propsForView = useMemo(() => {
+    const baseProps = {
+      mainCategory,
+      subCategory,
+      subSubCategory,
+      ...viewProps,
+    };
+
+    // Tu peux ajouter des props spécifiques par mainCategory ici
+    switch (mainCategory) {
+      case 'overview':
+        return {
+          ...baseProps,
+          // Props spécifiques pour OverviewView
+        };
+      case 'performance':
+        return {
+          ...baseProps,
+          // Props spécifiques pour PerformanceView
+        };
+      case 'actions':
+        return {
+          ...baseProps,
+          // Props spécifiques pour ActionsView
+        };
+      default:
+        return baseProps;
+    }
+  }, [mainCategory, subCategory, subSubCategory, viewProps]);
+
+  return <ViewComponent {...propsForView} />;
+}
+
+// ============================================
+// MIGRATION GUIDE
+// ============================================
+
+/**
+ * IMPORTANT: Comment utiliser ce composant
+ * 
+ * SIMPLE (Recommandé):
+ * <DashboardContentRouter />
+ * 
+ * Avec fallback personnalisé:
+ * <DashboardContentRouter fallbackView={CustomView} />
+ * 
+ * Avec props:
+ * <DashboardContentRouterWithProps viewProps={{ theme: 'dark' }} />
+ * 
+ * NOTE: La logique des sous-catégories (niveau 2 et 3) doit être
+ * implémentée DANS chaque View component (ex: OverviewView).
+ * Le router ne s'occupe que du mainCategory (niveau 1).
+ */

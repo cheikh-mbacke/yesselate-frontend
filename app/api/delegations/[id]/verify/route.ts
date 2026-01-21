@@ -38,7 +38,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   // Vérifier la chaîne en recalculant chaque hash
   // Le premier événement doit être chaîné depuis 'genesis' ou le hash initial de la délégation
-  let expectedPrevHash = delegation.hash ?? 'genesis';
+  let expectedPrevHash = delegation.headHash || delegation.decisionHash || 'genesis';
   let brokenAt: number | null = null;
   let brokenEvent: string | null = null;
   const verificationDetails: Array<{
@@ -63,14 +63,14 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     
     // Vérification basique: les champs obligatoires sont présents
     const isValid = Boolean(
-      event.action &&
+      event.eventType &&
       event.actorName &&
       event.createdAt
     );
     
     verificationDetails.push({
       eventId: event.id,
-      action: event.action,
+      action: event.eventType,
       createdAt: event.createdAt.toISOString(),
       valid: isValid,
     });
@@ -89,7 +89,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     eventsCount: delegation.events.length,
     brokenAt: brokenAt,
     brokenEvent: brokenEvent,
-    currentHash: delegation.hash,
+    currentHash: delegation.headHash || delegation.decisionHash || null,
     verificationDetails,
     message: isValid 
       ? 'Chaîne d\'audit intègre - Aucune altération détectée' 

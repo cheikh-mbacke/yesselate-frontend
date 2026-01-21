@@ -81,11 +81,13 @@ export async function POST(
     // Créer la politique et enregistrer l'événement
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'POLICY_ADDED',
+      eventType: 'POLICY_ADDED',
       actorId: addedById || 'SYSTEM',
-      actorName: addedByName || 'Système',
-      policy: { action, maxAmount, currency },
-      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      details: {
+        actorName: addedByName || 'Système',
+        policy: { action, maxAmount, currency },
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 
@@ -105,7 +107,6 @@ export async function POST(
           requiresDualControl: requiresDualControl ? 1 : 0,
           requiresLegalReview: requiresLegalReview ? 1 : 0,
           requiresFinanceCheck: requiresFinanceCheck ? 1 : 0,
-          stepUpAuth: stepUpAuth ? 1 : 0,
         },
       });
 
@@ -188,9 +189,12 @@ export async function DELETE(
 
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'POLICY_REMOVED',
-      removedPolicy: { id: policy.id, action: policy.action },
-      timestamp: new Date().toISOString(),
+      eventType: 'POLICY_REMOVED',
+      actorId: 'SYSTEM',
+      createdAt: new Date().toISOString(),
+      details: {
+        removedPolicy: { id: policy.id, action: policy.action },
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 

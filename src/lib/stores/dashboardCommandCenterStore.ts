@@ -1,521 +1,479 @@
-/**
- * Store Zustand pour le Centre de Commandement Dashboard
- * Architecture multi-niveaux comme Gouvernance
- * Pilotage stratégique et opérationnel du BMO
- */
+'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { devtools } from 'zustand/middleware';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TYPES & INTERFACES
-// ═══════════════════════════════════════════════════════════════════════════
+// ============================================
+// TYPES
+// ============================================
 
-// Catégories principales (onglets niveau 1)
-export type DashboardMainCategory =
-  | 'overview'      // Vue d'ensemble - Dashboard principal
-  | 'performance'   // Performance & KPIs
-  | 'actions'       // Actions prioritaires (Work Inbox)
-  | 'risks'         // Risques & Santé organisationnelle
-  | 'decisions'     // Décisions & Timeline
-  | 'realtime';     // Indicateurs temps réel
+export type DashboardMainCategory = 
+  | 'overview' 
+  | 'performance' 
+  | 'actions' 
+  | 'risks' 
+  | 'decisions' 
+  | 'realtime';
 
-// Sous-catégories par thématique (onglets niveau 2)
-export type DashboardSubCategoryMap = {
-  overview: 'summary' | 'kpis' | 'bureaux' | 'trends';
-  performance: 'validation' | 'budget' | 'delays' | 'comparison';
-  actions: 'all' | 'urgent' | 'blocked' | 'pending' | 'completed';
-  risks: 'critical' | 'warnings' | 'blocages' | 'payments' | 'contracts';
-  decisions: 'pending' | 'executed' | 'timeline' | 'audit';
-  realtime: 'live' | 'alerts' | 'notifications' | 'sync';
+export interface DashboardNavigation {
+  mainCategory: DashboardMainCategory;
+  subCategory: string | null;
+  subSubCategory: string | null;
+}
+
+export type CacheEntry = {
+  data: any;
+  fetchedAt: number;
+  ttl: number;
 };
 
-export type DashboardSubCategory = DashboardSubCategoryMap[DashboardMainCategory];
-
-// Types de modales
-export type DashboardModalType =
-  | 'kpi-drilldown'
-  | 'risk-detail'
-  | 'action-detail'
-  | 'decision-detail'
-  | 'bureau-detail'
-  | 'export'
-  | 'filters'
-  | 'settings'
-  | 'shortcuts'
-  | 'theme'
-  | 'layout'
-  | 'confirm';
-
-// État de navigation
-export interface DashboardNavigationState {
-  mainCategory: DashboardMainCategory;
-  subCategory: DashboardSubCategory | null;
-  filter?: string | null; // Niveau 3 (sub-sub-category)
-}
-
-// État d'une modale
-export interface DashboardModalState {
-  type: DashboardModalType | null;
+export interface ModalState {
   isOpen: boolean;
-  data: Record<string, unknown>;
-  title?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  type: string | null;
+  data?: Record<string, any>;
 }
 
-// Configuration KPI Bar
-export interface DashboardKPIConfig {
-  visible: boolean;
-  collapsed: boolean;
-  refreshInterval: number; // en secondes
-  autoRefresh: boolean;
-}
-
-// Filtres actifs
-export interface DashboardActiveFilters {
-  period: 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
-  bureaux: string[];
-  search: string;
-  status: string[];
-  severity: string[];
-  dateRange?: { start: string; end: string };
-}
-
-// Configuration d'affichage
-export interface DashboardDisplayConfig {
-  viewMode: 'compact' | 'extended';
-  theme: 'dark' | 'light' | 'system';
-  focusMode: boolean;
-  presentationMode: boolean;
-}
-
-// Sections du dashboard (pour layout editor)
-export interface DashboardSection {
-  id: string;
-  label: string;
-  visible: boolean;
-  order: number;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STORE STATE
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface DashboardCommandCenterState {
+export interface DashboardCommandCenterStore {
   // Navigation
-  navigation: DashboardNavigationState;
-  navigationHistory: DashboardNavigationState[];
+  navigation: DashboardNavigation;
+  navigate: (
+    mainCategory: DashboardMainCategory, 
+    subCategory?: string | null, 
+    filter?: string | null
+  ) => void;
+  setMainCategory: (category: DashboardMainCategory) => void;
+  setSubCategory: (category: string | null) => void;
+  setFilter: (filter: string | null) => void;
+  resetNavigation: () => void;
+  goBack: () => void;
+  navigationHistory: DashboardNavigation[];
 
   // UI State
   sidebarCollapsed: boolean;
   fullscreen: boolean;
-  commandPaletteOpen: boolean;
   notificationsPanelOpen: boolean;
+  commandPaletteOpen: boolean;
+  toggleSidebar: () => void;
+  toggleFullscreen: () => void;
+  toggleNotificationsPanel: () => void;
+  toggleCommandPalette: () => void;
 
-  // Modal
-  modal: DashboardModalState;
-  modalStack: DashboardModalState[];
-
-  // Filtres
-  filters: DashboardActiveFilters;
-  savedFilters: { name: string; filters: DashboardActiveFilters }[];
-
-  // KPIs
-  kpiConfig: DashboardKPIConfig;
-
-  // Display
-  displayConfig: DashboardDisplayConfig;
-
-  // Sections
-  sections: DashboardSection[];
-
-  // Sélections
-  selectedItems: string[];
-  pinnedBureaux: string[];
-
-  // Recherche globale
-  globalSearch: string;
-
-  // Stats temps réel
+  // Live Stats
   liveStats: {
     lastUpdate: string | null;
     isRefreshing: boolean;
     connectionStatus: 'connected' | 'disconnected' | 'syncing';
+    total?: number;
+    performance?: number;
+    actions?: number;
+    risks?: number;
+    decisions?: number;
+    realtime?: number;
   };
-
-  // Actions Navigation
-  navigate: (main: DashboardMainCategory, sub?: DashboardSubCategory | null, filter?: string | null) => void;
-  goBack: () => void;
-  resetNavigation: () => void;
-
-  // Actions UI
-  toggleSidebar: () => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
-  toggleFullscreen: () => void;
-  toggleCommandPalette: () => void;
-  toggleNotificationsPanel: () => void;
-
-  // Actions Modal
-  openModal: (type: DashboardModalType, data?: Record<string, unknown>, options?: Partial<DashboardModalState>) => void;
-  closeModal: () => void;
-  pushModal: (type: DashboardModalType, data?: Record<string, unknown>, options?: Partial<DashboardModalState>) => void;
-  popModal: () => void;
-
-  // Actions Filtres
-  setFilter: <K extends keyof DashboardActiveFilters>(key: K, value: DashboardActiveFilters[K]) => void;
-  resetFilters: () => void;
-  saveCurrentFilters: (name: string) => void;
-  loadSavedFilters: (name: string) => void;
-  deleteSavedFilters: (name: string) => void;
-
-  // Actions KPI
-  setKPIConfig: (config: Partial<DashboardKPIConfig>) => void;
-  toggleKPIBar: () => void;
-
-  // Actions Display
-  setDisplayConfig: (config: Partial<DashboardDisplayConfig>) => void;
-  toggleFocusMode: () => void;
-  togglePresentationMode: () => void;
-
-  // Actions Sections
-  setSections: (sections: DashboardSection[]) => void;
-  toggleSectionVisibility: (sectionId: string) => void;
-  reorderSections: (fromIndex: number, toIndex: number) => void;
-  resetSections: () => void;
-
-  // Actions Sélection
-  selectItem: (id: string) => void;
-  deselectItem: (id: string) => void;
-  toggleItemSelection: (id: string) => void;
-  selectAll: (ids: string[]) => void;
-  clearSelection: () => void;
-
-  // Actions Bureaux épinglés
-  togglePinBureau: (code: string) => void;
-  setPinnedBureaux: (codes: string[]) => void;
-
-  // Actions Recherche
-  setGlobalSearch: (search: string) => void;
-
-  // Actions Stats temps réel
-  setLiveStats: (stats: Partial<DashboardCommandCenterState['liveStats']>) => void;
   startRefresh: () => void;
   endRefresh: () => void;
+
+  // KPI Config
+  kpiConfig: {
+    visible: boolean;
+    collapsed: boolean;
+    refreshInterval: number;
+    autoRefresh: boolean;
+  };
+  setKPIConfig: (config: Partial<{ visible: boolean; collapsed: boolean; refreshInterval: number; autoRefresh: boolean }>) => void;
+
+  // Display Config
+  displayConfig: {
+    viewMode: 'compact' | 'extended';
+    theme: 'dark' | 'light' | 'system';
+    focusMode: boolean;
+    presentationMode: boolean;
+  };
+  setDisplayConfig: (config: Partial<{ viewMode: 'compact' | 'extended'; theme: 'dark' | 'light' | 'system'; focusMode: boolean; presentationMode: boolean }>) => void;
+
+  // Modal management
+  modal: ModalState;
+  openModal: (type: string, data?: Record<string, any>) => void;
+  closeModal: () => void;
+
+  // Quick actions
+  quickAction: (action: string, payload?: any) => void;
+
+  // Cache management
+  cache: Record<string, CacheEntry>;
+  setCache: (key: string, entry: CacheEntry) => void;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DEFAULT VALUES
-// ═══════════════════════════════════════════════════════════════════════════
+// ============================================
+// STORE
+// ============================================
 
-const defaultNavigation: DashboardNavigationState = {
-  mainCategory: 'overview',
-  subCategory: 'summary',
-  filter: null,
-};
-
-const defaultFilters: DashboardActiveFilters = {
-  period: 'year',
-  bureaux: [],
-  search: '',
-  status: [],
-  severity: [],
-};
-
-const defaultKPIConfig: DashboardKPIConfig = {
-  visible: true,
-  collapsed: false,
-  refreshInterval: 30,
-  autoRefresh: true,
-};
-
-const defaultDisplayConfig: DashboardDisplayConfig = {
-  viewMode: 'extended',
-  theme: 'dark',
-  focusMode: false,
-  presentationMode: false,
-};
-
-const defaultSections: DashboardSection[] = [
-  { id: 'performance', label: 'Performance Globale', visible: true, order: 0 },
-  { id: 'actions', label: 'Actions Prioritaires', visible: true, order: 1 },
-  { id: 'risks', label: 'Risques & Santé', visible: true, order: 2 },
-  { id: 'decisions', label: 'Décisions', visible: true, order: 3 },
-  { id: 'realtime', label: 'Indicateurs Temps Réel', visible: true, order: 4 },
-  { id: 'analytics', label: 'Analyses Avancées', visible: true, order: 5 },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STORE IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-export const useDashboardCommandCenterStore = create<DashboardCommandCenterState>()(
-  persist(
+export const useDashboardCommandCenterStore = create<DashboardCommandCenterStore>()(
+  devtools(
     (set, get) => ({
-      // Initial State
-      navigation: defaultNavigation,
+      // Initial navigation state
+      navigation: {
+        mainCategory: 'overview',
+        subCategory: 'summary',
+        subSubCategory: 'dashboard',
+      },
       navigationHistory: [],
+
+      // Cache initial
+      cache: {},
+
+      // UI State
       sidebarCollapsed: false,
       fullscreen: false,
-      commandPaletteOpen: false,
       notificationsPanelOpen: false,
-      modal: { type: null, isOpen: false, data: {} },
-      modalStack: [],
-      filters: defaultFilters,
-      savedFilters: [],
-      kpiConfig: defaultKPIConfig,
-      displayConfig: defaultDisplayConfig,
-      sections: defaultSections,
-      selectedItems: [],
-      pinnedBureaux: [],
-      globalSearch: '',
+      commandPaletteOpen: false,
+
+      // Live Stats
       liveStats: {
         lastUpdate: null,
         isRefreshing: false,
         connectionStatus: 'connected',
       },
 
-      // Navigation Actions
-      navigate: (main, sub = null, filter = null) => {
-        const current = get().navigation;
-        set({
-          navigation: { mainCategory: main, subCategory: sub, filter: filter || null },
-          navigationHistory: [...get().navigationHistory, current].slice(-20),
-        });
+      // KPI Config
+      kpiConfig: {
+        visible: true,
+        collapsed: false,
+        refreshInterval: 30,
+        autoRefresh: true,
       },
 
+      // Display Config
+      displayConfig: {
+        viewMode: 'extended',
+        theme: 'dark',
+        focusMode: false,
+        presentationMode: false,
+      },
+
+      // Navigate simplifié selon la structure proposée
+      navigate: (mainCategory, subCategory = null, subSubCategory = null) => {
+        const current = get().navigation;
+        const newNavigation: DashboardNavigation = {
+          mainCategory,
+          subCategory: subCategory || null,
+          subSubCategory: subSubCategory || null,
+        };
+
+        // Log pour debug
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🚀 [Store] Navigate appelé:', { 
+            mainCategory, 
+            subCategory, 
+            subSubCategory,
+            currentNavigation: current,
+            newNavigation 
+          });
+        }
+
+        // CORRECTION: Utiliser set avec fonction updater pour garantir la mise à jour
+        // Forcer la mise à jour en créant un nouvel objet pour déclencher les re-renders
+        set((state) => {
+          const updated = {
+            ...state,
+            navigation: { ...newNavigation }, // Nouvel objet pour forcer le re-render
+            navigationHistory: [...state.navigationHistory, current].slice(-20),
+          };
+          
+          // Log après mise à jour pour vérifier
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ [Store] Navigation mise à jour dans set:', updated.navigation);
+            console.log('✅ [Store] État complet après mise à jour:', {
+              mainCategory: updated.navigation.mainCategory,
+              subCategory: updated.navigation.subCategory,
+              subSubCategory: updated.navigation.subSubCategory,
+            });
+          }
+          
+          return updated;
+        }, false, { type: 'navigate', payload: newNavigation });
+      },
+
+      // Set main category seul
+      setMainCategory: (category: DashboardMainCategory) => {
+        set(
+          (state) => ({
+            navigation: {
+              ...state.navigation,
+              mainCategory: category,
+            },
+          }),
+          false,
+          { type: 'setMainCategory', payload: category }
+        );
+      },
+
+      // Set sub category seul
+      setSubCategory: (category: string | null) => {
+        set(
+          (state) => ({
+            navigation: {
+              ...state.navigation,
+              subCategory: category,
+            },
+          }),
+          false,
+          { type: 'setSubCategory', payload: category }
+        );
+      },
+
+      // Set subSubCategory seul
+      setFilter: (subSubCategory: string | null) => {
+        set(
+          (state) => ({
+            navigation: {
+              ...state.navigation,
+              subSubCategory,
+            },
+          }),
+          false,
+          { type: 'setFilter', payload: subSubCategory }
+        );
+      },
+
+      // Reset navigation au state initial
+      resetNavigation: () => {
+        set(
+          {
+            navigation: {
+              mainCategory: 'overview',
+              subCategory: 'summary',
+              subSubCategory: 'dashboard',
+            },
+            navigationHistory: [],
+          },
+          false,
+          { type: 'resetNavigation' }
+        );
+      },
+
+      // Go back dans l'historique
       goBack: () => {
         const history = get().navigationHistory;
         if (history.length === 0) return;
         const previous = history[history.length - 1];
-        set({
-          navigation: previous,
-          navigationHistory: history.slice(0, -1),
-        });
+        set(
+          (state) => ({
+            navigation: previous,
+            navigationHistory: state.navigationHistory.slice(0, -1),
+          }),
+          false,
+          { type: 'goBack' }
+        );
       },
 
-      resetNavigation: () => {
-        set({
-          navigation: defaultNavigation,
-          navigationHistory: [],
-        });
+      // UI Toggles
+      toggleSidebar: () => {
+        set(
+          (state) => ({ sidebarCollapsed: !state.sidebarCollapsed }),
+          false,
+          { type: 'toggleSidebar' }
+        );
       },
 
-      // UI Actions
-      toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
-      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-      toggleFullscreen: () => set({ fullscreen: !get().fullscreen }),
-      toggleCommandPalette: () => set({ commandPaletteOpen: !get().commandPaletteOpen }),
-      toggleNotificationsPanel: () => set({ notificationsPanelOpen: !get().notificationsPanelOpen }),
-
-      // Modal Actions
-      openModal: (type, data = {}, options = {}) => {
-        set({
-          modal: {
-            type,
-            isOpen: true,
-            data,
-            ...options,
-          },
-        });
+      toggleFullscreen: () => {
+        set(
+          (state) => ({ fullscreen: !state.fullscreen }),
+          false,
+          { type: 'toggleFullscreen' }
+        );
       },
 
-      closeModal: () => {
-        set({
-          modal: { type: null, isOpen: false, data: {} },
-        });
+      toggleNotificationsPanel: () => {
+        set(
+          (state) => ({ notificationsPanelOpen: !state.notificationsPanelOpen }),
+          false,
+          { type: 'toggleNotificationsPanel' }
+        );
       },
 
-      pushModal: (type, data = {}, options = {}) => {
-        const currentModal = get().modal;
-        if (currentModal.isOpen) {
-          set({
-            modalStack: [...get().modalStack, currentModal],
-          });
-        }
-        set({
-          modal: {
-            type,
-            isOpen: true,
-            data,
-            ...options,
-          },
-        });
+      toggleCommandPalette: () => {
+        set(
+          (state) => ({ commandPaletteOpen: !state.commandPaletteOpen }),
+          false,
+          { type: 'toggleCommandPalette' }
+        );
       },
 
-      popModal: () => {
-        const stack = get().modalStack;
-        if (stack.length === 0) {
-          set({ modal: { type: null, isOpen: false, data: {} } });
-          return;
-        }
-        const previous = stack[stack.length - 1];
-        set({
-          modal: previous,
-          modalStack: stack.slice(0, -1),
-        });
-      },
-
-      // Filter Actions
-      setFilter: (key, value) => {
-        set({
-          filters: { ...get().filters, [key]: value },
-        });
-      },
-
-      resetFilters: () => set({ filters: defaultFilters }),
-
-      saveCurrentFilters: (name) => {
-        const current = get().filters;
-        const saved = get().savedFilters.filter((f) => f.name !== name);
-        set({
-          savedFilters: [...saved, { name, filters: current }],
-        });
-      },
-
-      loadSavedFilters: (name) => {
-        const saved = get().savedFilters.find((f) => f.name === name);
-        if (saved) {
-          set({ filters: saved.filters });
-        }
-      },
-
-      deleteSavedFilters: (name) => {
-        set({
-          savedFilters: get().savedFilters.filter((f) => f.name !== name),
-        });
-      },
-
-      // KPI Actions
-      setKPIConfig: (config) => {
-        set({
-          kpiConfig: { ...get().kpiConfig, ...config },
-        });
-      },
-
-      toggleKPIBar: () => {
-        set({
-          kpiConfig: { ...get().kpiConfig, collapsed: !get().kpiConfig.collapsed },
-        });
-      },
-
-      // Display Actions
-      setDisplayConfig: (config) => {
-        set({
-          displayConfig: { ...get().displayConfig, ...config },
-        });
-      },
-
-      toggleFocusMode: () => {
-        set({
-          displayConfig: { ...get().displayConfig, focusMode: !get().displayConfig.focusMode },
-        });
-      },
-
-      togglePresentationMode: () => {
-        set({
-          displayConfig: { ...get().displayConfig, presentationMode: !get().displayConfig.presentationMode },
-        });
-      },
-
-      // Sections Actions
-      setSections: (sections) => set({ sections }),
-
-      toggleSectionVisibility: (sectionId) => {
-        set({
-          sections: get().sections.map((s) =>
-            s.id === sectionId ? { ...s, visible: !s.visible } : s
-          ),
-        });
-      },
-
-      reorderSections: (fromIndex, toIndex) => {
-        const sections = [...get().sections];
-        const [removed] = sections.splice(fromIndex, 1);
-        sections.splice(toIndex, 0, removed);
-        set({
-          sections: sections.map((s, i) => ({ ...s, order: i })),
-        });
-      },
-
-      resetSections: () => set({ sections: defaultSections }),
-
-      // Selection Actions
-      selectItem: (id) => {
-        if (!get().selectedItems.includes(id)) {
-          set({ selectedItems: [...get().selectedItems, id] });
-        }
-      },
-
-      deselectItem: (id) => {
-        set({ selectedItems: get().selectedItems.filter((i) => i !== id) });
-      },
-
-      toggleItemSelection: (id) => {
-        const items = get().selectedItems;
-        if (items.includes(id)) {
-          set({ selectedItems: items.filter((i) => i !== id) });
-        } else {
-          set({ selectedItems: [...items, id] });
-        }
-      },
-
-      selectAll: (ids) => set({ selectedItems: ids }),
-      clearSelection: () => set({ selectedItems: [] }),
-
-      // Bureaux épinglés
-      togglePinBureau: (code) => {
-        const pinned = get().pinnedBureaux;
-        if (pinned.includes(code)) {
-          set({ pinnedBureaux: pinned.filter((c) => c !== code) });
-        } else {
-          set({ pinnedBureaux: [...pinned, code] });
-        }
-      },
-
-      setPinnedBureaux: (codes) => set({ pinnedBureaux: codes }),
-
-      // Recherche
-      setGlobalSearch: (search) => set({ globalSearch: search }),
-
-      // Stats temps réel
-      setLiveStats: (stats) => {
-        set({
-          liveStats: { ...get().liveStats, ...stats },
-        });
-      },
-
+      // Live Stats
       startRefresh: () => {
-        set({
-          liveStats: { ...get().liveStats, isRefreshing: true, connectionStatus: 'syncing' },
-        });
+        set(
+          (state) => ({
+            liveStats: {
+              ...state.liveStats,
+              isRefreshing: true,
+            },
+          }),
+          false,
+          { type: 'startRefresh' }
+        );
       },
 
       endRefresh: () => {
-        set({
-          liveStats: {
-            ...get().liveStats,
-            isRefreshing: false,
-            connectionStatus: 'connected',
-            lastUpdate: new Date().toISOString(),
+        set(
+          (state) => ({
+            liveStats: {
+              ...state.liveStats,
+              isRefreshing: false,
+              lastUpdate: new Date().toISOString(),
+            },
+          }),
+          false,
+          { type: 'endRefresh' }
+        );
+      },
+
+      // KPI Config
+      setKPIConfig: (config) => {
+        set(
+          (state) => ({
+            kpiConfig: {
+              ...state.kpiConfig,
+              ...config,
+            },
+          }),
+          false,
+          { type: 'setKPIConfig', payload: config }
+        );
+      },
+
+      // Display Config
+      setDisplayConfig: (config) => {
+        set(
+          (state) => ({
+            displayConfig: {
+              ...state.displayConfig,
+              ...config,
+            },
+          }),
+          false,
+          { type: 'setDisplayConfig', payload: config }
+        );
+      },
+
+      // Modal management
+      modal: {
+        isOpen: false,
+        type: null,
+        data: undefined,
+      },
+
+      openModal: (type: string, data?: Record<string, any>) => {
+        set(
+          {
+            modal: {
+              isOpen: true,
+              type,
+              data,
+            },
           },
-        });
+          false,
+          { type: 'openModal', payload: { type, data } }
+        );
+      },
+
+      closeModal: () => {
+        set(
+          {
+            modal: {
+              isOpen: false,
+              type: null,
+              data: undefined,
+            },
+          },
+          false,
+          { type: 'closeModal' }
+        );
+      },
+
+      // Quick actions pour futures extensions
+      quickAction: (action: string, payload?: any) => {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⚡ [Store] Quick Action:', action, payload);
+        }
+        // Logique des actions rapides ici
+      },
+
+      // Cache management
+      setCache: (key: string, entry: CacheEntry) => {
+        set(
+          (state) => ({
+            ...state,
+            cache: {
+              ...state.cache,
+              [key]: entry,
+            },
+          }),
+          false,
+          { type: 'setCache', payload: { key, entry } }
+        );
       },
     }),
     {
-      name: 'bmo-dashboard-command-center',
-      partialize: (state) => ({
-        sidebarCollapsed: state.sidebarCollapsed,
-        filters: state.filters,
-        savedFilters: state.savedFilters,
-        kpiConfig: state.kpiConfig,
-        displayConfig: state.displayConfig,
-        sections: state.sections,
-        pinnedBureaux: state.pinnedBureaux,
-      }),
+      name: 'DashboardCommandCenter',
+      enabled: process.env.NODE_ENV === 'development',
     }
   )
 );
 
-// Export du type pour utilisation externe
-export type { DashboardCommandCenterState };
+// ============================================
+// HOOKS UTILITAIRES
+// ============================================
 
+/**
+ * Hook pour naviguer facilement
+ * Usage: const nav = useNavigate(); nav.overview(); nav.overview('summary', 'highlights');
+ */
+export function useNavigate() {
+  const navigate = useDashboardCommandCenterStore((state) => state.navigate);
+
+  return {
+    overview: (subCat?: string, filter?: string) => 
+      navigate('overview', subCat || 'summary', filter || 'dashboard'),
+    
+    performance: (subCat?: string, filter?: string) => 
+      navigate('performance', subCat || 'kpis', filter),
+    
+    actions: () => 
+      navigate('actions', null, null),
+    
+    risks: () => 
+      navigate('risks', null, null),
+    
+    decisions: () => 
+      navigate('decisions', null, null),
+    
+    realtime: () => 
+      navigate('realtime', null, null),
+  };
+}
+
+/**
+ * Hook pour check si une vue est active
+ * Usage: const isActive = useIsActive('overview', 'summary', 'dashboard');
+ */
+export function useIsActive(
+  mainCategory?: DashboardMainCategory | null,
+  subCategory?: string | null,
+  subSubCategory?: string | null
+) {
+  const navigation = useDashboardCommandCenterStore((state) => state.navigation);
+
+  if (mainCategory && navigation.mainCategory !== mainCategory) return false;
+  if (subCategory !== undefined && navigation.subCategory !== subCategory) return false;
+  if (subSubCategory !== undefined && navigation.subSubCategory !== subSubCategory) return false;
+
+  return true;
+}
+
+/**
+ * Hook pour obtenir l'état de navigation avec sélecteur
+ */
+export function useNavigationState() {
+  return useDashboardCommandCenterStore((state) => state.navigation);
+}

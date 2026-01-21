@@ -570,9 +570,9 @@ export default function ProjetsEnCoursPage() {
 
         {/* Sub Navigation - 3-level */}
         <ProjetsSubNavigation
-          mainCategory={(activeCategory || navigation.mainCategory) as ProjetsMainCategory}
-          subCategory={activeSubCategory || navigation.subCategory}
-          subSubCategory={activeSubSubCategory}
+          mainCategory={(activeCategory || navigation.mainCategory) as any}
+          subCategory={activeSubCategory || navigation.subCategory || undefined}
+          subSubCategory={activeSubSubCategory || undefined}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
           stats={{
@@ -594,9 +594,9 @@ export default function ProjetsEnCoursPage() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <ProjetsContentRouter
-              mainCategory={(activeCategory || navigation.mainCategory) as ProjetsMainCategory}
-              subCategory={activeSubCategory || navigation.subCategory}
-              subSubCategory={activeSubSubCategory}
+              mainCategory={(activeCategory || navigation.mainCategory) as any}
+              subCategory={activeSubCategory || navigation.subCategory || undefined}
+              subSubCategory={activeSubSubCategory || undefined}
             />
           </div>
         </main>
@@ -661,108 +661,102 @@ export default function ProjetsEnCoursPage() {
           }}
           title={selectedProject.name || selectedProject.title || 'Détails du projet'}
           subtitle={selectedProject.id}
-          icon={Briefcase}
-          iconClassName="bg-blue-500/10 text-blue-400"
-          badge={selectedProject.status ? {
+          statusBadge={selectedProject.status ? {
             label: selectedProject.status,
-            className: cn(
-              'text-xs',
-              selectedProject.status === 'En cours' && 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-              selectedProject.status === 'Terminé' && 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-              selectedProject.status === 'En retard' && 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-            )
+            variant: selectedProject.status === 'En cours' ? 'info' as const :
+                     selectedProject.status === 'Terminé' ? 'success' as const :
+                     selectedProject.status === 'En retard' ? 'critical' as const :
+                     'default' as const,
           } : undefined}
-          sections={[
+          tabs={[
             {
-              title: 'Informations générales',
-              icon: Building2,
-              fields: [
-                { label: 'Code projet', value: selectedProject.id, icon: Briefcase },
-                { label: 'Type', value: selectedProject.type || 'Infrastructure', icon: Building2 },
-                { label: 'Bureau', value: selectedProject.bureau || 'BTP', icon: Building2 },
-                { label: 'Priorité', value: selectedProject.priority || 'Haute', icon: AlertCircle },
-              ]
+              id: 'general',
+              label: 'Informations générales',
+              icon: <Building2 className="w-4 h-4" />,
+              content: (
+                <div className="grid grid-cols-2 gap-4">
+                  <div><strong>Code projet:</strong> {selectedProject.id}</div>
+                  <div><strong>Type:</strong> {selectedProject.type || 'Infrastructure'}</div>
+                  <div><strong>Bureau:</strong> {selectedProject.bureau || 'BTP'}</div>
+                  <div><strong>Priorité:</strong> {selectedProject.priority || 'Haute'}</div>
+                </div>
+              )
             },
             {
-              title: 'Planning',
-              icon: Calendar,
-              fields: [
-                { 
-                  label: 'Date de début', 
-                  value: selectedProject.startDate ? new Date(selectedProject.startDate).toLocaleDateString('fr-FR') : 'N/A',
-                  icon: Calendar 
-                },
-                { 
-                  label: 'Date de fin prévue', 
-                  value: selectedProject.endDate ? new Date(selectedProject.endDate).toLocaleDateString('fr-FR') : 'N/A',
-                  icon: Calendar 
-                },
-                { 
-                  label: 'Progression', 
-                  value: selectedProject.progress ? `${selectedProject.progress}%` : '0%',
-                  icon: CheckCircle2 
-                },
-                { label: 'Jours restants', value: selectedProject.daysLeft || 'N/A', icon: Calendar },
-              ]
+              id: 'planning',
+              label: 'Planning',
+              icon: <Calendar className="w-4 h-4" />,
+              content: (
+                <div className="grid grid-cols-2 gap-4">
+                  <div><strong>Date de début:</strong> {selectedProject.startDate ? new Date(selectedProject.startDate).toLocaleDateString('fr-FR') : 'N/A'}</div>
+                  <div><strong>Date de fin prévue:</strong> {selectedProject.endDate ? new Date(selectedProject.endDate).toLocaleDateString('fr-FR') : 'N/A'}</div>
+                  <div><strong>Progression:</strong> {selectedProject.progress ? `${selectedProject.progress}%` : '0%'}</div>
+                  <div><strong>Jours restants:</strong> {selectedProject.daysLeft || 'N/A'}</div>
+                </div>
+              )
             },
             {
-              title: 'Budget',
-              icon: DollarSign,
-              fields: [
-                { 
-                  label: 'Budget total', 
-                  value: selectedProject.budget ? `${(selectedProject.budget / 1000000).toFixed(1)}M XOF` : 'N/A',
-                  icon: DollarSign 
-                },
-                { 
-                  label: 'Budget consommé', 
-                  value: selectedProject.budgetUsed ? `${(selectedProject.budgetUsed / 1000000).toFixed(1)}M XOF` : 'N/A',
-                  icon: DollarSign 
-                },
-                { 
-                  label: 'Taux d\'utilisation', 
-                  value: selectedProject.budgetUsage ? `${selectedProject.budgetUsage}%` : 'N/A',
-                  icon: DollarSign 
-                },
-                { label: 'Budget restant', value: selectedProject.budgetRemaining ? `${(selectedProject.budgetRemaining / 1000000).toFixed(1)}M XOF` : 'N/A', icon: DollarSign },
-              ]
+              id: 'budget',
+              label: 'Budget',
+              icon: <DollarSign className="w-4 h-4" />,
+              content: (
+                <div className="grid grid-cols-2 gap-4">
+                  <div><strong>Budget total:</strong> {selectedProject.budget ? `${(selectedProject.budget / 1000000).toFixed(1)}M XOF` : 'N/A'}</div>
+                  <div><strong>Budget consommé:</strong> {selectedProject.budgetUsed ? `${(selectedProject.budgetUsed / 1000000).toFixed(1)}M XOF` : 'N/A'}</div>
+                  <div><strong>Taux d'utilisation:</strong> {selectedProject.budgetUsage ? `${selectedProject.budgetUsage}%` : 'N/A'}</div>
+                  <div><strong>Budget restant:</strong> {selectedProject.budgetRemaining ? `${(selectedProject.budgetRemaining / 1000000).toFixed(1)}M XOF` : 'N/A'}</div>
+                </div>
+              )
             },
             {
-              title: 'Équipe',
-              icon: Users,
-              fields: [
-                { label: 'Chef de projet', value: selectedProject.manager || 'Non assigné', icon: Users },
-                { label: 'Équipe', value: selectedProject.teamSize ? `${selectedProject.teamSize} personnes` : 'N/A', icon: Users },
-              ]
+              id: 'team',
+              label: 'Équipe',
+              icon: <Users className="w-4 h-4" />,
+              content: (
+                <div className="grid grid-cols-2 gap-4">
+                  <div><strong>Chef de projet:</strong> {selectedProject.manager || 'Non assigné'}</div>
+                  <div><strong>Équipe:</strong> {selectedProject.teamSize ? `${selectedProject.teamSize} personnes` : 'N/A'}</div>
+                </div>
+              )
             },
             ...(selectedProject.description ? [{
-              fields: [
-                { 
-                  label: 'Description', 
-                  value: selectedProject.description, 
-                  fullWidth: true,
-                  className: 'col-span-2'
-                }
-              ]
+              id: 'description',
+              label: 'Description',
+              content: <div>{selectedProject.description}</div>
             }] : [])
           ]}
-          actions={{
-            onEdit: () => handleEditProject(selectedProject),
-            onDelete: () => handleDeleteProject(selectedProject.id),
-            onDownload: () => console.log('Download project report'),
-            customActions: [
+          actions={[
+            {
+              id: 'edit',
+              label: 'Modifier',
+              variant: 'default',
+              onClick: () => handleEditProject(selectedProject),
+            },
+            {
+              id: 'delete',
+              label: 'Supprimer',
+              variant: 'destructive',
+              onClick: () => handleDeleteProject(selectedProject.id),
+            },
+            {
+              id: 'download',
+              label: 'Télécharger',
+              variant: 'outline',
+              onClick: () => console.log('Download project report'),
+            },
               {
+                id: 'timeline',
                 label: 'Voir la timeline',
-                icon: GanttChart,
+                icon: <GanttChart className="w-4 h-4" />,
                 onClick: () => console.log('View timeline'),
               },
               {
+                id: 'reports',
                 label: 'Rapports',
-                icon: Download,
+                icon: <Download className="w-4 h-4" />,
                 onClick: () => console.log('View reports'),
               },
-            ]
-          }}
+            ]}
         />
       )}
     </div>

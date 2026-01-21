@@ -250,7 +250,8 @@ function DemandesRHPageContent() {
         stats={{
           pending: 23,
           inProgress: 12,
-          completed: 178,
+          approved: 178,
+          rejected: 0,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
@@ -349,7 +350,8 @@ function DemandesRHPageContent() {
           stats={{
             pending: 23,
             inProgress: 12,
-            completed: 178,
+            approved: 178,
+            rejected: 0,
           }}
         />
 

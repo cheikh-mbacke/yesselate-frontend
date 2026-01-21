@@ -151,7 +151,7 @@ function EmployeeDetailModalWrapper({
     phone: employee.phone,
     position: employee.poste,
     bureau: employee.bureau,
-    status: employee.status === 'actif' ? 'active' : employee.status === 'inactif' ? 'inactive' : employee.status === 'conges' ? 'on_leave' : 'terminated',
+    status: (employee.status === 'actif' ? 'active' : employee.status === 'inactif' ? 'inactive' : employee.status === 'conges' ? 'on_leave' : 'terminated') as 'active' | 'inactive' | 'on_leave' | 'terminated',
     contractType: employee.contrat as 'CDI' | 'CDD' | 'Stage' | 'Intérim',
     startDate: employee.dateEmbauche,
     endDate: employee.dateFinContrat,

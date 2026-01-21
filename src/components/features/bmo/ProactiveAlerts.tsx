@@ -74,7 +74,7 @@ export function ProactiveAlerts({
           title: 'Baisse des validations',
           description: `Les validations ont diminué de ${((1 - recentAvg.validations / previousAvg.validations) * 100).toFixed(0)}%`,
           prediction: 'Risque de retard sur les objectifs trimestriels',
-          action: { label: 'Voir les actions', route: '/maitre-ouvrage' },
+          action: { label: 'Voir les actions', route: '/maitre-ouvrage/dashboard' },
           severity: 9,
         });
       }

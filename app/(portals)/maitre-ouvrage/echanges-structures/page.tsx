@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { Mail, Search, Bell, ChevronLeft } from 'lucide-react';
 import {
   useEchangesStructuresCommandCenterStore,
-  type EchangesStructuresMainCategory,
 } from '@/lib/stores/echangesStructuresCommandCenterStore';
 import {
   EchangesStructuresKPIBar,
@@ -264,11 +263,9 @@ function EchangesStructuresPageContent() {
         stats={{
           overview: stats.total || 0,
           ouvert: stats.ouverts || 0,
-          en_traitement: stats.en_traitement || 0,
           escalade: stats.escalades || 0,
           resolu: stats.resolus || 0,
           critiques: stats.critiques || 0,
-          en_retard: stats.en_retard || 0,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
@@ -359,9 +356,7 @@ function EchangesStructuresPageContent() {
         {/* Sub Navigation */}
         <EchangesStructuresSubNavigation
           mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
           onSubCategoryChange={handleSubCategoryChange}
         />
 

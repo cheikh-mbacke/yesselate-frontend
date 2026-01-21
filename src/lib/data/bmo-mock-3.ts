@@ -777,7 +777,7 @@ export const bureauxDetails: Record<string, BureauDetails> = {
     code: 'BMO',
     platforms: [
       { id: 'plt-1', name: 'Portail Validation', url: '/maitre-ouvrage/validation-bc', icon: '✅', description: 'Gestion des validations BC, factures et avenants', status: 'active' },
-      { id: 'plt-2', name: 'Tableau de bord', url: '/maitre-ouvrage', icon: '📊', description: 'Vue globale et KPIs', status: 'active' },
+      { id: 'plt-2', name: 'Tableau de bord', url: '/maitre-ouvrage/dashboard', icon: '📊', description: 'Vue globale et KPIs', status: 'active' },
       { id: 'plt-3', name: 'Gestion RH', url: '/maitre-ouvrage/employes', icon: '👥', description: 'Suivi des employés et demandes RH', status: 'active' },
     ],
     organigramme: [

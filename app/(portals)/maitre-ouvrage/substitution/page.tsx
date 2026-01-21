@@ -164,7 +164,7 @@ export default function SubstitutionPage() {
         userId: currentUser.id,
         userName: currentUser.name,
         userRole: currentUser.role,
-        action: 'navigation',
+        action: 'view',
         module: 'substitution',
         targetId: category,
         targetType: 'category',
@@ -549,8 +549,6 @@ export default function SubstitutionPage() {
       <SubstitutionCommandPalette
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
-        onOpenStats={() => setStatsModalOpen(true)}
-        onRefresh={handleRefresh}
       />
 
       {/* Stats Modal */}

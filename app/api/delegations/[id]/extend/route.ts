@@ -115,17 +115,19 @@ export async function POST(
     // Calculer le hash de l'événement
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'EXTENDED',
+      eventType: 'EXTENDED',
       actorId,
-      actorName,
-      actorRole,
-      previousEndDate: delegation.endsAt.toISOString(),
-      newEndDate: newEnd.toISOString(),
-      daysExtended,
-      extensionNumber: extensionCount + 1,
-      reason,
-      decisionRef,
-      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      details: {
+        actorName,
+        actorRole,
+        previousEndDate: delegation.endsAt?.toISOString() || new Date().toISOString(),
+        newEndDate: newEnd.toISOString(),
+        daysExtended,
+        extensionNumber: extensionCount + 1,
+        reason,
+        decisionRef,
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 

@@ -302,8 +302,7 @@ function OrganigrammePageContent() {
         collapsed={sidebarCollapsed}
         stats={{
           total: 45,
-          vacant: 3,
-          occupied: 42,
+          departments: 3,
           teams: 24,
         }}
         onCategoryChange={handleCategoryChange}
@@ -393,8 +392,7 @@ function OrganigrammePageContent() {
           onSubSubCategoryChange={handleSubSubCategoryChange}
           stats={{
             total: 45,
-            vacant: 3,
-            occupied: 42,
+            departments: 3,
             teams: 24,
           }}
         />

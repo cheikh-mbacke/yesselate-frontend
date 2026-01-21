@@ -30,6 +30,7 @@ export default function CalendrierLayout({
     sidebarCollapsed,
     toggleSidebar,
     navigate,
+    goBack,
   } = useCalendrierCommandCenterStore();
 
   const { stats } = useCalendrierFiltersStore();
@@ -93,14 +94,14 @@ export default function CalendrierLayout({
       // Alt+← - Retour (si historique disponible)
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
-        // TODO: Implémenter goBack dans le store
+        goBack();
         return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
+  }, [toggleSidebar, goBack]);
 
   const handleOpenCommandPalette = useCallback(() => {
     setCommandPaletteOpen(true);
@@ -131,7 +132,7 @@ export default function CalendrierLayout({
         activeCategory={navigation.mainCategory}
         activeSubCategory={navigation.subCategory}
         collapsed={sidebarCollapsed}
-        stats={stats || {}}
+        stats={(stats as unknown) as Record<string, number> | undefined}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={handleOpenCommandPalette}
@@ -146,7 +147,7 @@ export default function CalendrierLayout({
           subSubCategory={navigation.subSubCategory}
           onSubCategoryChange={handleSubCategoryChange}
           onSubSubCategoryChange={handleSubSubCategoryChange}
-          stats={stats || {}}
+          stats={(stats as unknown) as Record<string, number> | undefined}
         />
 
         {/* Content */}

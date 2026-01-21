@@ -317,9 +317,10 @@ function BlockedPageContent() {
   }, [navigate]);
 
   // Handle sub-category change
-  const handleSubCategoryChange = useCallback((subCategory: BlockedSubCategory | null) => {
-    setActiveSubCategory(subCategory);
-    navigate(activeCategory, subCategory);
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    const typedSubCategory = subCategory as BlockedSubCategory | null;
+    setActiveSubCategory(typedSubCategory);
+    navigate(activeCategory, typedSubCategory);
     setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
   }, [activeCategory, navigate]);
 

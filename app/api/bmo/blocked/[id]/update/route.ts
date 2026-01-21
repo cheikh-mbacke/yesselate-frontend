@@ -93,7 +93,8 @@ export async function PATCH(
       changes: Object.keys(updates),
     });
   } catch (error) {
-    console.error(`[blocked/${params.id}/update] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/update] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to update dossier', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }

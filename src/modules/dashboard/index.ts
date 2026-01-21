@@ -9,6 +9,9 @@ export * from './components';
 // Navigation
 export * from './navigation';
 
+// Registry
+export * from './registry';
+
 // Types
 export * from './types/dashboardNavigationTypes';
 

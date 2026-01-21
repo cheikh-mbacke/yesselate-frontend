@@ -109,7 +109,11 @@ export function DashboardKPIBar({
 }: DashboardKPIBarProps) {
   const { kpiConfig, setKPIConfig, openModal } = useDashboardCommandCenterStore();
 
-  if (!kpiConfig.visible) return null;
+  // Protection : s'assurer que kpiConfig existe
+  if (!kpiConfig || !kpiConfig.visible) return null;
+
+  // Protection : s'assurer que kpis est un tableau
+  const safeKPIs = Array.isArray(kpis) ? kpis : defaultKPIs;
 
   const handleKPIClick = (kpi: KPIItem) => {
     openModal('kpi-drilldown', { kpi });
@@ -154,7 +158,7 @@ export function DashboardKPIBar({
       {/* KPIs Grid */}
       {!kpiConfig.collapsed && (
         <div className="grid grid-cols-4 lg:grid-cols-8 gap-px bg-slate-800/30 p-px">
-          {kpis.map((kpi) => (
+          {safeKPIs.map((kpi) => (
             <KPICard key={kpi.id} kpi={kpi} onClick={() => handleKPIClick(kpi)} />
           ))}
         </div>

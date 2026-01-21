@@ -175,24 +175,24 @@ export async function GET(req: Request) {
 
   const items = await prisma.delegation.findMany({
     where: Object.keys(where).length > 0 ? where : undefined,
-    orderBy: { endDate: 'asc' },
+    orderBy: { endsAt: 'asc' },
     take: 2000,
   });
 
   const payload: DelegationExport[] = items.map(d => ({
     id: d.id,
-    type: d.type,
+    type: d.object,
     bureau: d.bureau,
-    agentName: d.agentName,
-    agentRole: d.agentRole,
+    agentName: d.delegateName,
+    agentRole: d.delegateRole,
     status: d.status,
-    startDate: d.startDate.toISOString(),
-    endDate: d.endDate.toISOString(),
+    startDate: d.startsAt.toISOString(),
+    endDate: d.endsAt.toISOString(),
     maxAmount: d.maxAmount,
     usageCount: d.usageCount,
-    delegatorName: d.delegatorName,
-    hash: d.hash,
-    scope: d.scope,
+    delegatorName: d.grantorName,
+    hash: d.headHash || d.decisionHash || null,
+    scope: 'all',
   }));
 
   if (format === 'json') {

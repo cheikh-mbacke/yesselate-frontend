@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import {
   useAuditCommandCenterStore,
-  type AuditMainCategory,
 } from '@/lib/stores/auditCommandCenterStore';
 import {
   AuditKPIBar,

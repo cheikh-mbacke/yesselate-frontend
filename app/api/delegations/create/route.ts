@@ -140,17 +140,19 @@ export async function POST(req: Request) {
 
     // Créer le hash de décision initial
     const decisionPayload = {
-      type: 'CREATED',
-      delegationId: id,
-      code,
-      title,
-      category,
-      grantor: { id: grantorId, name: grantorName },
-      delegate: { id: delegateId, name: delegateName },
-      startsAt: startDate.toISOString(),
-      endsAt: endDate.toISOString(),
-      createdBy: { id: createdById, name: createdByName },
-      timestamp: new Date().toISOString(),
+      eventType: 'CREATED',
+      actorId: createdById,
+      details: JSON.stringify({
+        delegationId: id,
+        code,
+        title,
+        category,
+        grantor: { id: grantorId, name: grantorName },
+        delegate: { id: delegateId, name: delegateName },
+        startsAt: startDate.toISOString(),
+        endsAt: endDate.toISOString(),
+      }),
+      createdAt: new Date().toISOString(),
     };
     const decisionHash = computeEventHash(decisionPayload, null);
 

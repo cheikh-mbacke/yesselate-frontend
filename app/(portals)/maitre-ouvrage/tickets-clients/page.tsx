@@ -75,7 +75,6 @@ import {
 import { FluentModal } from '@/components/ui/fluent-modal';
 import { ticketsApi } from '@/lib/services/ticketsApiService';
 import { useRealtimeTickets } from '@/lib/hooks/useRealtimeTickets';
-import type { TicketData } from '@/lib/types/bmo.types';
 
 // ================================
 // Types
@@ -303,7 +302,7 @@ function TicketsClientsPageContent() {
   const loadStats = useCallback(async (signal?: AbortSignal) => {
     try {
       setStatsLoading(true);
-      const apiStats = await ticketsApi.getStats(signal);
+      const apiStats = await ticketsApi.getStats();
       
       setStats({
         total: apiStats.total,
@@ -545,9 +544,9 @@ function TicketsClientsPageContent() {
         collapsed={sidebarCollapsed}
         stats={{
           open: stats.open,
+          inProgress: 0,
           pending: stats.open - stats.critical,
           resolved: stats.resolvedToday,
-          closed: stats.total - stats.open,
         }}
         onCategoryChange={handleCategoryChange}
         onToggleCollapse={toggleSidebar}
@@ -724,7 +723,7 @@ function TicketsClientsPageContent() {
             </Button>
 
             {/* Actions Menu */}
-            <DropdownMenu open={actionsOpen} onOpenChange={setActionsOpen}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
@@ -800,9 +799,9 @@ function TicketsClientsPageContent() {
           onSubSubCategoryChange={currentFilters.length > 0 ? handleSubSubCategoryChange : undefined}
           stats={{
             open: stats.open,
+            inProgress: 0,
             pending: stats.open - stats.critical,
             resolved: stats.resolvedToday,
-            closed: stats.total - stats.open,
           }}
         />
 

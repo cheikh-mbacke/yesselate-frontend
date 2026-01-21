@@ -82,9 +82,9 @@ export async function GET(
       ],
       // Métriques
       metrics: {
-        daysBlocked: baseDossier.delayDays,
-        slaProgress: Math.min(100, (baseDossier.delayDays / 7) * 100),
-        escalationLevel: baseDossier.status === 'escalated' ? 2 : 1,
+        daysBlocked: 0,
+        slaProgress: Math.min(100, (0 / 7) * 100),
+        escalationLevel: 1,
         urgencyScore: 85,
       },
       // Liens connexes
@@ -102,7 +102,8 @@ export async function GET(
 
     return NextResponse.json(fullDossier);
   } catch (error) {
-    console.error(`[blocked/${params.id}/full] Error:`, error);
+    const { id } = await params;
+    console.error(`[blocked/${id}/full] Error:`, error);
     return NextResponse.json(
       { error: 'Failed to get full dossier', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }

@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import {
   useIACommandCenterStore,
-  type IAMainCategory,
 } from '@/lib/stores/iaCommandCenterStore';
 import {
   IAKPIBar,
@@ -178,7 +177,7 @@ function IAPageContent() {
     navigate(activeCategory, subCategory, null);
   }, [activeCategory, navigate]);
 
-  const handleRunAnalysis = useCallback((module: AIModule) => {
+  const handleRunAnalysis = useCallback((module: any) => {
     addActionLog({
       userId: 'USR-001',
       userName: 'A. DIALLO',
@@ -186,13 +185,13 @@ function IAPageContent() {
       module: 'ia',
       action: 'audit',
       targetId: module.id,
-      targetType: 'AIModule',
+      targetType: 'any',
       details: `Lancement analyse ${module.name}`,
     });
     addToast(`Analyse ${module.name} lancée`, 'info');
   }, [addActionLog, addToast]);
 
-  const handleRetrain = useCallback((module: AIModule) => {
+  const handleRetrain = useCallback((module: any) => {
     addActionLog({
       userId: 'USR-001',
       userName: 'A. DIALLO',
@@ -200,13 +199,13 @@ function IAPageContent() {
       module: 'ia',
       action: 'modification',
       targetId: module.id,
-      targetType: 'AIModule',
+      targetType: 'any',
       details: `Ré-entraînement ${module.name}`,
     });
     addToast('Ré-entraînement programmé', 'warning');
   }, [addActionLog, addToast]);
 
-  const handleToggleStatus = useCallback((module: AIModule) => {
+  const handleToggleStatus = useCallback((module: any) => {
     addActionLog({
       userId: 'USR-001',
       userName: 'A. DIALLO',
@@ -214,7 +213,7 @@ function IAPageContent() {
       module: 'ia',
       action: 'modification',
       targetId: module.id,
-      targetType: 'AIModule',
+      targetType: 'any',
       details: `${module.status === 'active' ? 'Désactivation' : 'Activation'} ${module.name}`,
     });
     addToast(`${module.status === 'active' ? 'Désactivation' : 'Activation'} programmée`, 'info');
@@ -454,13 +453,9 @@ function IAPageContent() {
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <IAContentRouter
-              category={activeCategory}
-              searchQuery={globalSearch}
-              selectedModuleId={selectedModuleId}
-              onModuleSelect={handleOpenModuleDetail}
-              onRunAnalysis={handleRunAnalysis}
-              onRetrain={handleRetrain}
-              onVerifyHash={verifyAIHash}
+              mainCategory={activeCategory as any}
+              subCategory={navigation.subCategory || undefined}
+              subSubCategory={navigation.filter || undefined}
             />
           </div>
         </main>

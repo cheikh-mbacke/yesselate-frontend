@@ -43,7 +43,7 @@ export const navMaitreOuvrage: NavDomain[] = [
     icon: BarChart3,
     defaultOpen: true,
     items: [
-      { id: 'dashboard', label: 'Tableau de bord', href: '/maitre-ouvrage' },
+      { id: 'dashboard', label: 'Tableau de bord', href: '/maitre-ouvrage/dashboard' },
       { id: 'governance', label: 'Gouvernance', href: '/maitre-ouvrage/governance', badge: 7, badgeType: 'warning' },
       { id: 'calendrier', label: 'Calendrier', href: '/maitre-ouvrage/calendrier' },
       { id: 'analytics', label: 'Analytics & Rapports', href: '/maitre-ouvrage/analytics' },

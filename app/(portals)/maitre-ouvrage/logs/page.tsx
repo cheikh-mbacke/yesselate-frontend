@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import {
   useLogsCommandCenterStore,
-  type LogsMainCategory,
 } from '@/lib/stores/logsCommandCenterStore';
 import {
   LogsKPIBar,

@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         id: true,
         code: true,
         title: true,
-        type: true,
+        object: true,
         delegateName: true,
         bureau: true,
         endsAt: true,
@@ -76,8 +76,7 @@ export async function GET(req: NextRequest) {
         title: true,
         delegateName: true,
         suspendedAt: true,
-        suspendedReason: true,
-        expectedReactivation: true,
+        suspendReason: true,
       },
     });
 
@@ -213,7 +212,7 @@ export async function GET(req: NextRequest) {
           priority: 'medium',
           type: 'suspended_long',
           title: `Délégation ${d.code} suspendue depuis ${daysSuspended}j`,
-          description: d.suspendedReason || 'Raison non spécifiée',
+          description: d.suspendReason || 'Raison non spécifiée',
           action: 'Décider: réactiver ou révoquer',
           delegationId: d.id,
         });

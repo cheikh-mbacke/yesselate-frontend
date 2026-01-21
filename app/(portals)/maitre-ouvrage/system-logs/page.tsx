@@ -663,6 +663,7 @@ export default function SystemLogsPage() {
   const [activeSubCategory, setActiveSubCategory] = useState<string>('all');
   const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Quick filters
   const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
@@ -1237,7 +1238,7 @@ export default function SystemLogsPage() {
 
       if (isMod && e.key === 'b') {
         e.preventDefault();
-        setSidebarCollapsed((v) => !v);
+        toggleSidebar();
         return;
       }
 
@@ -1271,7 +1272,7 @@ export default function SystemLogsPage() {
         collapsed={sidebarCollapsed}
         stats={{}}
         onCategoryChange={handleCategoryChange}
-        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        onToggleCollapse={toggleSidebar}
         onOpenCommandPalette={() => setCommandPaletteOpen((v) => !v)}
       />
 
@@ -1347,10 +1348,8 @@ export default function SystemLogsPage() {
 
         {/* Sub Navigation */}
         <SystemLogsSubNavigation
-          mainCategory={activeCategory}
-          mainCategoryLabel={currentCategoryLabel}
+          mainCategory={activeCategory as SystemLogsMainCategory}
           subCategory={activeSubCategory}
-          subCategories={currentSubCategories}
           onSubCategoryChange={handleSubCategoryChange}
         />
 

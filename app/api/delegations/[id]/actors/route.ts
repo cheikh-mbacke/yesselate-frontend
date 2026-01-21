@@ -81,11 +81,13 @@ export async function POST(
     // Créer l'acteur et enregistrer l'événement
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'ACTOR_ADDED',
+      eventType: 'ACTOR_ADDED',
       actorId: addedById || 'SYSTEM',
-      actorName: addedByName || 'Système',
-      addedUser: { userId, userName, userRole, roleType },
-      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      details: {
+        actorName: addedByName || 'Système',
+        addedUser: { userId, userName, userRole, roleType },
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 
@@ -186,9 +188,12 @@ export async function DELETE(
 
     const previousHash = delegation.events[0]?.eventHash || delegation.headHash || delegation.decisionHash;
     const eventPayload = {
-      type: 'ACTOR_REMOVED',
-      removedUser: { userId: actor.userId, userName: actor.userName, roleType: actor.roleType },
-      timestamp: new Date().toISOString(),
+      eventType: 'ACTOR_REMOVED',
+      actorId: 'SYSTEM',
+      createdAt: new Date().toISOString(),
+      details: {
+        removedUser: { userId: actor.userId, userName: actor.userName, roleType: actor.roleType },
+      },
     };
     const eventHash = computeEventHash(eventPayload, previousHash || null);
 

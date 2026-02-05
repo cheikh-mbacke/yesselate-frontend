@@ -1,679 +1,529 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Demandes RH - Version 2.0
+ * Architecture cohérente avec la page Analytics
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { demandesRH, plannedAbsences, employees, bureaux, criticalSkills } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  Users,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import { useDemandesRHCommandCenterStore } from '@/lib/stores/demandesRHCommandCenterStore';
+import {
+  DemandesRHKPIBar,
+  ActionsMenu,
+  DemandesRHDetailModal,
+  DemandesRHFiltersPanel,
+  demandesRHCategories,
+} from '@/components/features/bmo/demandes-rh/command-center';
+// New 3-level navigation module
+import {
+  DemandesRhSidebar,
+  DemandesRhSubNavigation,
+  DemandesRhContentRouter,
+  type DemandesRhMainCategory,
+} from '@/modules/demandes-rh';
 
-type RHFilter = 'all' | 'Congé' | 'Dépense' | 'Maladie' | 'Déplacement' | 'Paie';
-type StatusFilter = 'all' | 'pending' | 'validated' | 'rejected';
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
 
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  conges: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'pending', label: 'En attente', badge: 12, badgeType: 'warning' },
+    { id: 'approved', label: 'Approuvées', badge: 67 },
+    { id: 'rejected', label: 'Rejetées', badge: 10 },
+  ],
+  depenses: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'pending', label: 'En attente', badge: 8, badgeType: 'warning' },
+    { id: 'validated', label: 'Validées', badge: 52 },
+    { id: 'rejected', label: 'Rejetées', badge: 7 },
+  ],
+  deplacements: [
+    { id: 'all', label: 'Tous' },
+    { id: 'pending', label: 'En attente', badge: 5, badgeType: 'warning' },
+    { id: 'approved', label: 'Approuvés', badge: 35 },
+    { id: 'rejected', label: 'Rejetés', badge: 5 },
+  ],
+  avances: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'pending', label: 'En attente', badge: 2, badgeType: 'warning' },
+    { id: 'validated', label: 'Validées', badge: 7 },
+    { id: 'rejected', label: 'Rejetées', badge: 1 },
+  ],
+  urgent: [
+    { id: 'all', label: 'Toutes', badge: 5 },
+    { id: 'conges', label: 'Congés', badge: 2, badgeType: 'critical' },
+    { id: 'depenses', label: 'Dépenses', badge: 1, badgeType: 'critical' },
+    { id: 'deplacements', label: 'Déplacements', badge: 2, badgeType: 'critical' },
+  ],
+  pending: [
+    { id: 'all', label: 'Toutes', badge: 23 },
+    { id: 'conges', label: 'Congés', badge: 12, badgeType: 'warning' },
+    { id: 'depenses', label: 'Dépenses', badge: 8, badgeType: 'warning' },
+    { id: 'deplacements', label: 'Déplacements', badge: 3 },
+  ],
+  validated: [
+    { id: 'all', label: 'Toutes', badge: 178 },
+    { id: 'conges', label: 'Congés', badge: 67 },
+    { id: 'depenses', label: 'Dépenses', badge: 52 },
+    { id: 'deplacements', label: 'Déplacements', badge: 35 },
+    { id: 'avances', label: 'Avances', badge: 7 },
+  ],
+  analytics: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'performance', label: 'Performance' },
+    { id: 'trends', label: 'Tendances' },
+    { id: 'reports', label: 'Rapports' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function DemandesRHPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [typeFilter, setTypeFilter] = useState<RHFilter>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [selectedDemande, setSelectedDemande] = useState<string | null>(null);
+  return <DemandesRHPageContent />;
+}
 
-  const filteredDemandes = demandesRH.filter((d) => {
-    const matchType = typeFilter === 'all' || d.type === typeFilter;
-    const matchStatus = statusFilter === 'all' || d.status === statusFilter;
-    return matchType && matchStatus;
-  });
+function DemandesRHPageContent() {
+  // Store Zustand
+  const {
+    navigation,
+    navigationHistory,
+    sidebarCollapsed,
+    fullscreen,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    detailModalOpen,
+    selectedDemandeId,
+    isRefreshing,
+    modal,
+    navigate,
+    goBack,
+    toggleSidebar,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    setKPIConfig,
+    openDetailModal,
+    closeDetailModal,
+    openModal,
+    closeModal,
+    startRefresh,
+    endRefresh,
+  } = useDemandesRHCommandCenterStore();
 
-  const stats = useMemo(() => {
-    const congesDemandes = demandesRH.filter(d => d.type === 'Congé' || d.type === 'Maladie');
-    return {
-      total: demandesRH.length,
-      pending: demandesRH.filter((d) => d.status === 'pending').length,
-      validated: demandesRH.filter((d) => d.status === 'validated').length,
-      rejected: demandesRH.filter((d) => d.status === 'rejected').length,
-      conges: demandesRH.filter((d) => d.type === 'Congé').length,
-      depenses: demandesRH.filter((d) => d.type === 'Dépense').length,
-      maladies: demandesRH.filter((d) => d.type === 'Maladie').length,
-      deplacements: demandesRH.filter((d) => d.type === 'Déplacement').length,
-      paie: demandesRH.filter((d) => d.type === 'Paie').length,
-      urgent: demandesRH.filter((d) => d.priority === 'urgent' && d.status === 'pending').length,
-      // Stats spécifiques congés
-      congesAnnuels: congesDemandes.filter(d => d.subtype === 'Annuel').length,
-      maternite: congesDemandes.filter(d => d.subtype === 'Maternité').length,
-      joursTotal: congesDemandes.filter(d => d.days).reduce((acc, d) => acc + (d.days || 0), 0),
-    };
-  }, []);
+  // Navigation state (from store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
 
-  // Zones de rupture : croiser absences planifiées avec bureaux et compétences critiques
-  const zonesRupture = useMemo(() => {
-    const ruptures: { bureau: string; employee: string; dates: string; skill: string; impact: string }[] = [];
-    
-    plannedAbsences.forEach(absence => {
-      const employee = employees.find(e => e.id === absence.employeeId);
-      if (employee?.isSinglePointOfFailure) {
-        const skills = criticalSkills.filter(s => s.holders.includes(absence.employeeId));
-        skills.forEach(skill => {
-          if (skill.isAtRisk) {
-            ruptures.push({
-              bureau: absence.bureau,
-              employee: absence.employeeName,
-              dates: `${absence.startDate} → ${absence.endDate}`,
-              skill: skill.name,
-              impact: absence.impact,
-            });
-          }
-        });
+  // UI state local
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return demandesRHCategories.find((c) => c.id === activeCategory)?.label || 'Demandes RH';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    startRefresh();
+    setTimeout(() => {
+      endRefresh();
+      setLastUpdate(new Date());
+    }, 1500);
+  }, [startRefresh, endRefresh]);
+
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as any, subCategory || 'all');
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory);
+  }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
+
+  const handleGoBack = useCallback(() => {
+    goBack();
+  }, [goBack]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
       }
-    });
 
-    return ruptures;
-  }, []);
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
 
-  // Absences à venir (prochains 30 jours)
-  const absencesAVenir = useMemo(() => {
-    return plannedAbsences.filter(a => {
-      const startDate = new Date(a.startDate.split('/').reverse().join('-'));
-      const now = new Date();
-      const diff = (startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 30;
-    });
-  }, []);
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
 
-  const selectedD = selectedDemande ? demandesRH.find(d => d.id === selectedDemande) : null;
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+    };
 
-  const typeIcons: Record<string, string> = {
-    Congé: '🏖️',
-    Dépense: '💸',
-    Maladie: '🏥',
-    Déplacement: '✈️',
-    Paie: '💰',
-  };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, handleGoBack]);
 
-  const typeColors: Record<string, string> = {
-    Congé: 'bg-emerald-500/20 border-emerald-500/50',
-    Dépense: 'bg-amber-500/20 border-amber-500/50',
-    Maladie: 'bg-red-500/20 border-red-500/50',
-    Déplacement: 'bg-blue-500/20 border-blue-500/50',
-    Paie: 'bg-purple-500/20 border-purple-500/50',
-  };
-
-  // Actions
-  const handleApprove = (demande: typeof selectedD) => {
-    if (!demande) return;
-    addActionLog({
-      module: 'demandes-rh',
-      action: 'approve',
-      targetId: demande.id,
-      targetType: 'HRRequest',
-      details: `Demande ${demande.type} approuvée pour ${demande.agent}`,
-      status: 'success',
-    });
-    addToast(`${demande.id} approuvée ✓`, 'success');
-  };
-
-  const handleReject = (demande: typeof selectedD, reason: string = 'Motif à préciser') => {
-    if (!demande) return;
-    addActionLog({
-      module: 'demandes-rh',
-      action: 'reject',
-      targetId: demande.id,
-      targetType: 'HRRequest',
-      details: `Demande refusée: ${reason}`,
-      status: 'warning',
-    });
-    addToast(`${demande.id} refusée`, 'error');
-  };
-
-  const handleRequestInfo = (demande: typeof selectedD) => {
-    if (!demande) return;
-    addActionLog({
-      module: 'demandes-rh',
-      action: 'request_info',
-      targetId: demande.id,
-      targetType: 'HRRequest',
-      details: 'Informations complémentaires demandées',
-      status: 'info',
-    });
-    addToast(`Demande d'informations envoyée`, 'warning');
-  };
-
-  const handleCreateSubstitution = (demande: typeof selectedD) => {
-    if (!demande) return;
-    addActionLog({
-      module: 'demandes-rh',
-      action: 'create_substitution',
-      targetId: demande.id,
-      targetType: 'HRRequest',
-      details: `Substitution créée pour ${demande.agent}`,
-      status: 'success',
-    });
-    addToast('Substitution créée', 'success');
-  };
-
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📝 Demandes RH
-            <Badge variant="warning">{stats.pending} en attente</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Congés, dépenses, déplacements et avances - Traçabilité audit
-          </p>
-        </div>
-        <Button onClick={() => addToast('Nouvelle demande RH créée', 'success')}>
-          + Nouvelle demande
-        </Button>
-      </div>
-
-      {/* Alertes urgentes */}
-      {stats.urgent > 0 && (
-        <Card className="border-red-500/50 bg-red-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🚨</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-red-400">{stats.urgent} demande(s) urgente(s) en attente</h3>
-                <p className="text-sm text-slate-400">Action immédiate requise</p>
-              </div>
-              <Button size="sm" variant="urgent" onClick={() => setStatusFilter('pending')}>
-                Voir urgences
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <DemandesRhSidebar
+        activeCategory={activeCategory as DemandesRhMainCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          pending: 23,
+          inProgress: 12,
+          approved: 178,
+          rejected: 0,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-      {/* Alerte zones de rupture */}
-      {zonesRupture.length > 0 && (
-        <Card className="border-red-500/50 bg-red-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <span className="text-2xl">🚨</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-red-400">
-                  {zonesRupture.length} Zone(s) de rupture détectée(s)
-                </h3>
-                <p className="text-sm text-slate-400 mb-3">
-                  Des absences planifiées créent un risque sur des compétences critiques sans backup
-                </p>
-                <div className="space-y-2">
-                  {zonesRupture.map((r, i) => (
-                    <div key={i} className={cn(
-                      "p-2 rounded flex flex-wrap items-center justify-between gap-2",
-                      darkMode ? "bg-red-500/20" : "bg-red-50"
-                    )}>
-                      <div className="flex items-center gap-2">
-                        <BureauTag bureau={r.bureau} />
-                        <span className="font-medium">{r.employee}</span>
-                        <span className="text-xs text-slate-400">{r.dates}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="urgent">🔒 {r.skill}</Badge>
-                        <Badge variant={r.impact === 'high' ? 'urgent' : 'warning'}>
-                          Impact {r.impact}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <Button size="sm" variant="warning">
-                📋 Plan substitution
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats par type */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-        <Card 
-          className={cn("cursor-pointer transition-all", typeFilter === 'all' && 'ring-2 ring-orange-500')}
-          onClick={() => setTypeFilter('all')}
-        >
-          <CardContent className="p-3 text-center">
-            <span className="text-xl">📋</span>
-            <p className="text-lg font-bold">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        {[
-          { id: 'Congé', label: 'Congés', count: stats.conges, icon: '🏖️' },
-          { id: 'Dépense', label: 'Dépenses', count: stats.depenses, icon: '💸' },
-          { id: 'Maladie', label: 'Maladies', count: stats.maladies, icon: '🏥' },
-          { id: 'Déplacement', label: 'Déplacements', count: stats.deplacements, icon: '✈️' },
-          { id: 'Paie', label: 'Paie/Avances', count: stats.paie, icon: '💰' },
-        ].map((s) => (
-          <Card
-            key={s.id}
-            className={cn(
-              'cursor-pointer transition-all',
-              typeFilter === s.id && 'ring-2 ring-orange-500',
-              typeColors[s.id]
-            )}
-            onClick={() => setTypeFilter(s.id as RHFilter)}
-          >
-            <CardContent className="p-3 text-center">
-              <span className="text-xl">{s.icon}</span>
-              <p className="text-lg font-bold">{s.count}</p>
-              <p className="text-[10px] text-slate-400">{s.label}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Stats spécifiques congés (si filtre congés actif) */}
-      {(typeFilter === 'Congé' || typeFilter === 'all') && (
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-          <Card className="bg-amber-500/10 border-amber-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-amber-400">{stats.pending}</p>
-              <p className="text-[10px] text-slate-400">En attente</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-emerald-500/10 border-emerald-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-emerald-400">{stats.validated}</p>
-              <p className="text-[10px] text-slate-400">Validés</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-blue-500/10 border-blue-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-blue-400">{stats.congesAnnuels}</p>
-              <p className="text-[10px] text-slate-400">Annuels</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-pink-500/10 border-pink-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-pink-400">{stats.maternite}</p>
-              <p className="text-[10px] text-slate-400">Maternité</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-red-500/10 border-red-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-red-400">{stats.maladie}</p>
-              <p className="text-[10px] text-slate-400">Maladie</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-purple-500/10 border-purple-500/30">
-            <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold text-purple-400">{stats.joursTotal}</p>
-              <p className="text-[10px] text-slate-400">Jours total</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Absences à venir */}
-      {absencesAVenir.length > 0 && (typeFilter === 'Congé' || typeFilter === 'all') && (
-        <Card>
-          <CardContent className="p-4">
-            <h3 className="font-bold text-sm mb-3">📅 Absences planifiées (30 prochains jours)</h3>
-            <div className="flex flex-wrap gap-2">
-              {absencesAVenir.map(a => (
-                <div 
-                  key={a.id}
-                  className={cn(
-                    "p-2 rounded border",
-                    a.impact === 'high' ? "border-red-500/50 bg-red-500/10" : "border-amber-500/50 bg-amber-500/10"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <BureauTag bureau={a.bureau} />
-                    <span className="font-medium text-sm">{a.employeeName}</span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {a.startDate} → {a.endDate}
-                  </p>
-                  <Badge variant={a.type === 'congé' ? 'info' : 'warning'} className="mt-1">
-                    {a.type}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filtres statut */}
-      <div className="flex gap-2 flex-wrap">
-        {[
-          { id: 'all', label: 'Tous', count: stats.total },
-          { id: 'pending', label: '⏳ En attente', count: stats.pending },
-          { id: 'validated', label: '✅ Validées', count: stats.validated },
-          { id: 'rejected', label: '❌ Refusées', count: stats.rejected },
-        ].map((f) => (
-          <Button
-            key={f.id}
-            size="sm"
-            variant={statusFilter === f.id ? 'default' : 'secondary'}
-            onClick={() => setStatusFilter(f.id as StatusFilter)}
-          >
-            {f.label} ({f.count})
-          </Button>
-        ))}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Liste des demandes */}
-        <div className="lg:col-span-2 space-y-3">
-          {filteredDemandes.map((demande) => {
-            const isSelected = selectedDemande === demande.id;
-            const hasRuptureRisk = (demande.type === 'Congé' || demande.type === 'Maladie') && 
-              employees.find(e => e.name === demande.agent)?.isSinglePointOfFailure;
-            return (
-              <Card
-                key={demande.id}
-                className={cn(
-                  'cursor-pointer transition-all',
-                  isSelected ? 'ring-2 ring-orange-500' : 'hover:border-orange-500/50',
-                  demande.priority === 'urgent' && demande.status === 'pending' && 'border-l-4 border-l-red-500',
-                  demande.status === 'validated' && 'border-l-4 border-l-emerald-500',
-                  demande.status === 'rejected' && 'border-l-4 border-l-slate-500 opacity-60',
-                  hasRuptureRisk && demande.status === 'pending' && 'border-l-4 border-l-red-500',
-                )}
-                onClick={() => setSelectedDemande(demande.id)}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
               >
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                    <div className="flex items-start gap-3">
-                      {/* Avatar */}
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center font-bold text-white text-sm">
-                        {demande.initials}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="font-mono text-[10px] text-orange-400">{demande.id}</span>
-                          <Badge variant="info" className={typeColors[demande.type]}>
-                            {typeIcons[demande.type]} {demande.type}
-                          </Badge>
-                          <Badge variant="default">{demande.subtype}</Badge>
-                          <BureauTag bureau={demande.bureau} />
-                          {hasRuptureRisk && (
-                            <Badge variant="urgent">⚠️ SPOF</Badge>
-                          )}
-                        </div>
-                        <h3 className="font-bold text-sm">{demande.agent}</h3>
-                        <p className="text-xs text-slate-400">{demande.reason}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge
-                        variant={
-                          demande.status === 'validated' ? 'success' :
-                          demande.status === 'rejected' ? 'default' :
-                          demande.priority === 'urgent' ? 'urgent' :
-                          demande.priority === 'high' ? 'warning' : 'info'
-                        }
-                        pulse={demande.priority === 'urgent' && demande.status === 'pending'}
-                      >
-                        {demande.status === 'validated' ? '✅ Validée' :
-                         demande.status === 'rejected' ? '❌ Refusée' :
-                         demande.priority}
-                      </Badge>
-                      <p className="text-[10px] text-slate-500 mt-1">{demande.date}</p>
-                    </div>
-                  </div>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
 
-                  {/* Détails spécifiques */}
-                  <div className={cn(
-                    'grid grid-cols-2 sm:grid-cols-4 gap-2 p-2 rounded-lg text-xs',
-                    darkMode ? 'bg-slate-700/30' : 'bg-gray-100'
-                  )}>
-                    {demande.startDate && (
-                      <div>
-                        <span className="text-slate-400">Début: </span>
-                        {demande.startDate}
-                      </div>
-                    )}
-                    {demande.endDate && (
-                      <div>
-                        <span className="text-slate-400">Fin: </span>
-                        {demande.endDate}
-                      </div>
-                    )}
-                    {demande.days && (
-                      <div>
-                        <span className="text-slate-400">Durée: </span>
-                        {demande.days} jours
-                      </div>
-                    )}
-                    {demande.amount && (
-                      <div>
-                        <span className="text-slate-400">Montant: </span>
-                        <span className="font-mono text-amber-400">{demande.amount} FCFA</span>
-                      </div>
-                    )}
-                    {demande.destination && (
-                      <div>
-                        <span className="text-slate-400">Destination: </span>
-                        {demande.destination}
-                      </div>
-                    )}
-                  </div>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-400" />
+              <h1 className="text-base font-semibold text-slate-200">Demandes RH</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
 
-                  {/* Traçabilité validation/refus */}
-                  {(demande.validatedBy || demande.rejectedBy) && (
-                    <div className={cn(
-                      "mt-2 p-2 rounded text-xs",
-                      demande.validatedBy ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"
-                    )}>
-                      {demande.validatedBy && (
-                        <>
-                          <p className="text-emerald-400">✅ Validée par {demande.validatedBy}</p>
-                          <p className="text-slate-400">{demande.validatedAt}</p>
-                          {demande.validationComment && (
-                            <p className="text-slate-300 mt-1">"{demande.validationComment}"</p>
-                          )}
-                        </>
-                      )}
-                      {demande.rejectedBy && (
-                        <>
-                          <p className="text-red-400">❌ Refusée par {demande.rejectedBy}</p>
-                          <p className="text-slate-400">{demande.rejectedAt}</p>
-                          {demande.rejectionReason && (
-                            <p className="text-slate-300 mt-1">Motif: {demande.rejectionReason}</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-                  {/* Documents joints */}
-                  {demande.documents && demande.documents.length > 0 && (
-                    <div className="flex gap-1 mt-2">
-                      {demande.documents.map(doc => (
-                        <Badge key={doc.id} variant="default" className="text-[9px]">
-                          📎 {doc.type}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-                  {/* Actions si pending */}
-                  {demande.status === 'pending' && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                      <Button
-                        size="sm"
-                        variant="success"
-                        onClick={(e) => { e.stopPropagation(); handleApprove(demande); }}
-                      >
-                        ✓ Approuver
-                      </Button>
-                      {hasRuptureRisk && (demande.type === 'Congé' || demande.type === 'Maladie') && (
-                        <Button
-                          size="sm"
-                          variant="warning"
-                          onClick={(e) => { e.stopPropagation(); handleCreateSubstitution(demande); }}
-                        >
-                          🔄 Créer substitution
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="warning"
-                        onClick={(e) => { e.stopPropagation(); handleRequestInfo(demande); }}
-                      >
-                        ⏳ Infos requises
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={(e) => { e.stopPropagation(); handleReject(demande); }}
-                      >
-                        ✕ Refuser
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
 
-        {/* Panel détail */}
-        <div className="lg:col-span-1">
-          {selectedD ? (
-            <Card className="sticky top-4">
-              <CardContent className="p-4">
-                {/* Header */}
-                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-700/50">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-lg font-bold text-white">
-                    {selectedD.initials}
-                  </div>
-                  <div>
-                    <h3 className="font-bold">{selectedD.agent}</h3>
-                    <p className="text-xs text-slate-400">{selectedD.id}</p>
-                    <div className="flex gap-1 mt-1">
-                      <Badge variant="info" className={typeColors[selectedD.type]}>
-                        {typeIcons[selectedD.type]} {selectedD.type}
-                      </Badge>
-                      <BureauTag bureau={selectedD.bureau} />
-                    </div>
-                  </div>
-                </div>
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              onFullscreen={toggleFullscreen}
+              fullscreen={fullscreen}
+              onCommandPalette={toggleCommandPalette}
+              onToggleKPI={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+              kpiVisible={!kpiConfig.collapsed}
+              onFilters={() => openModal('filters')}
+            />
+          </div>
+        </header>
 
-                {/* Détails complets */}
-                <div className="space-y-3 text-sm">
-                  <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                    <p className="text-xs text-slate-400 mb-1">Motif</p>
-                    <p>{selectedD.reason}</p>
-                  </div>
+        {/* Sub Navigation - Level 2 & 3 */}
+        <DemandesRhSubNavigation
+          mainCategory={activeCategory as DemandesRhMainCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={navigation.filter ?? undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            pending: 23,
+            inProgress: 12,
+            approved: 178,
+            rejected: 0,
+          }}
+        />
 
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedD.startDate && (
-                      <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-[10px] text-slate-400">Début</p>
-                        <p className="font-medium">{selectedD.startDate}</p>
-                      </div>
-                    )}
-                    {selectedD.endDate && (
-                      <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-[10px] text-slate-400">Fin</p>
-                        <p className="font-medium">{selectedD.endDate}</p>
-                      </div>
-                    )}
-                    {selectedD.days && (
-                      <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-[10px] text-slate-400">Durée</p>
-                        <p className="font-medium">{selectedD.days} jours</p>
-                      </div>
-                    )}
-                    {selectedD.amount && (
-                      <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-[10px] text-slate-400">Montant</p>
-                        <p className="font-mono font-bold text-amber-400">{selectedD.amount} FCFA</p>
-                      </div>
-                    )}
-                    {selectedD.destination && (
-                      <div className={cn("p-2 rounded col-span-2", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-[10px] text-slate-400">Destination</p>
-                        <p className="font-medium">{selectedD.destination}</p>
-                      </div>
-                    )}
-                  </div>
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <DemandesRHKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
 
-                  {/* Documents */}
-                  {selectedD.documents && selectedD.documents.length > 0 && (
-                    <div>
-                      <h4 className="font-bold text-xs mb-2">📎 Documents joints</h4>
-                      <div className="space-y-1">
-                        {selectedD.documents.map(doc => (
-                          <div key={doc.id} className={cn(
-                            "p-2 rounded flex items-center justify-between",
-                            darkMode ? "bg-slate-700/30" : "bg-gray-100"
-                          )}>
-                            <div>
-                              <p className="text-xs font-medium">{doc.name}</p>
-                              <p className="text-[10px] text-slate-400">{doc.date}</p>
-                            </div>
-                            <Badge variant="default">{doc.type}</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <DemandesRhContentRouter
+              mainCategory={activeCategory as DemandesRhMainCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
+            />
+          </div>
+        </main>
 
-                  {/* Impact substitution */}
-                  {selectedD.impactSubstitution && (
-                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                      <p className="text-xs text-amber-400">🔄 Substitution liée</p>
-                      <p className="font-mono text-xs">{selectedD.impactSubstitution}</p>
-                    </div>
-                  )}
-
-                  {/* Impact finance */}
-                  {selectedD.impactFinance && (
-                    <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/30">
-                      <p className="text-xs text-emerald-400">💰 Trace finance</p>
-                      <p className="font-mono text-xs">{selectedD.impactFinance}</p>
-                    </div>
-                  )}
-
-                  {/* Hash traçabilité */}
-                  {selectedD.hash && (
-                    <div className="p-2 rounded bg-slate-700/30">
-                      <p className="text-[10px] text-slate-400">🔐 Hash traçabilité</p>
-                      <p className="font-mono text-[10px] text-slate-500 truncate">{selectedD.hash}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                {selectedD.status === 'pending' && (
-                  <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                    <Button size="sm" variant="success" className="flex-1" onClick={() => handleApprove(selectedD)}>
-                      ✓ Approuver
-                    </Button>
-                    {(selectedD.type === 'Congé' || selectedD.type === 'Maladie') && 
-                     employees.find(e => e.name === selectedD.agent)?.isSinglePointOfFailure && (
-                      <Button size="sm" variant="warning" className="flex-1" onClick={() => handleCreateSubstitution(selectedD)}>
-                        🔄 Substitution
-                      </Button>
-                    )}
-                    <Button size="sm" variant="destructive" className="flex-1" onClick={() => handleReject(selectedD)}>
-                      ✕ Refuser
-                    </Button>
-                  </div>
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              234 demandes • 23 en attente • 178 validées
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
                 )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="sticky top-4">
-              <CardContent className="p-8 text-center">
-                <span className="text-4xl mb-4 block">📝</span>
-                <p className="text-slate-400">
-                  Sélectionnez une demande pour voir ses détails
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
       </div>
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Detail Modal (Pattern Overlay) */}
+      {detailModalOpen && selectedDemandeId && (
+        <DemandesRHDetailModal
+          demandeId={selectedDemandeId}
+          onClose={closeDetailModal}
+          // TODO: Implémenter navigation précédent/suivant
+          hasPrevious={false}
+          hasNext={false}
+        />
+      )}
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <DemandesRHFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+        />
+      )}
     </div>
   );
 }
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Demande urgente nécessite attention',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: '5 demandes en attente de validation',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Nouvelle demande de congés',
+      time: 'il y a 3h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+

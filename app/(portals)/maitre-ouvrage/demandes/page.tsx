@@ -1,522 +1,537 @@
+/**
+ * Demandes - Command Center v3.0
+ * Architecture identique à Governance/Dashboard
+ * Gestion des demandes de validation BMO
+ */
+
 'use client';
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
+import { Badge } from '@/components/ui/badge';
 import {
-  demands,
-  bureaux,
-  decisions,
-  echangesBureaux,
-  employees,
-} from '@/lib/data';
-import type { Priority, Demand } from '@/lib/types/bmo.types';
-
-// Utilitaire pour générer un hash SHA3-256 simulé
-const generateHash = (data: string): string => {
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return `SHA3:${Math.abs(hash).toString(16).padStart(12, '0')}...`;
-};
-
-// Calculer le délai en jours depuis une date DD/MM/YYYY
-const calculateDelay = (dateStr: string): number => {
-  const [day, month, year] = dateStr.split('/').map(Number);
-  const demandDate = new Date(year, month - 1, day);
-  const today = new Date();
-  const diffTime = today.getTime() - demandDate.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
-
-type ViewMode = 'list' | 'bureau';
+  ChevronLeft,
+  Bell,
+  Search,
+  FileCheck,
+  MoreVertical,
+  RefreshCw,
+  Download,
+  Settings,
+  Maximize2,
+  Keyboard,
+} from 'lucide-react';
+import { useDemandesCommandCenterStore } from '@/lib/stores/demandesCommandCenterStore';
+import {
+  DemandesKPIBar,
+  DemandesSubNavigation,
+  DemandesCommandPalette,
+  DemandesModals,
+  demandesSubCategoriesMap,
+  demandesCategories,
+} from '@/components/features/bmo/demandes/command-center';
+// Nouveau module modulaire
+import {
+  DemandesSidebar as DemandesSidebarModule,
+  DemandesSubNavigation as DemandesSubNavigationModule,
+  DemandesContentRouter,
+  useDemandesStats,
+} from '@/modules/demandes';
 
 export default function DemandesPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [filter, setFilter] = useState<'all' | Priority>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [selectedDemand, setSelectedDemand] = useState<Demand | null>(null);
-  const [showProofPanel, setShowProofPanel] = useState(false);
+  const {
+    fullscreen,
+    notificationsPanelOpen,
+    liveStats,
+    navigation,
+    navigate,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    goBack,
+    navigationHistory,
+    openModal,
+    startRefresh,
+    endRefresh,
+    setLiveStats,
+    sidebarCollapsed,
+    toggleSidebar,
+  } = useDemandesCommandCenterStore();
 
-  // Enrichir les demandes avec le délai calculé
-  const enrichedDemands = useMemo(() => {
-    return demands.map((d) => ({
-      ...d,
-      delayDays: calculateDelay(d.date),
-    }));
-  }, []);
+  // Utiliser les stats du nouveau module
+  const { data: stats } = useDemandesStats();
 
-  // Filtrer les demandes
-  const filteredDemands = useMemo(() => {
-    return enrichedDemands.filter((d) => {
-      const matchesFilter = filter === 'all' || d.priority === filter;
-      const matchesSearch =
-        searchQuery === '' ||
-        d.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.id.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesFilter && matchesSearch;
-    });
-  }, [enrichedDemands, filter, searchQuery]);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
-  // Stats par bureau
-  const statsByBureau = useMemo(() => {
-    const stats: Record<string, { total: number; urgent: number; avgDelay: number }> = {};
-    bureaux.forEach((b) => {
-      const bureauDemands = enrichedDemands.filter((d) => d.bureau === b.code);
-      stats[b.code] = {
-        total: bureauDemands.length,
-        urgent: bureauDemands.filter((d) => d.priority === 'urgent').length,
-        avgDelay: bureauDemands.length > 0
-          ? Math.round(bureauDemands.reduce((a, d) => a + d.delayDays, 0) / bureauDemands.length)
-          : 0,
-      };
-    });
-    return stats;
-  }, [enrichedDemands]);
-
-  // Stats globales
-  const globalStats = useMemo(() => ({
-    total: demands.length,
-    urgent: demands.filter((d) => d.priority === 'urgent').length,
-    high: demands.filter((d) => d.priority === 'high').length,
-    normal: demands.filter((d) => d.priority === 'normal').length,
-    avgDelay: Math.round(enrichedDemands.reduce((a, d) => a + d.delayDays, 0) / enrichedDemands.length),
-  }), [enrichedDemands]);
-
-  // Preuves liées à une demande (décisions + échanges)
-  const getProofsForDemand = (demandId: string) => {
-    const relatedDecisions = decisions.filter((d) => 
-      d.subject.includes(demandId) || d.subject.includes(demandId.replace('DEM-', ''))
-    );
-    const relatedExchanges = echangesBureaux.filter((e) =>
-      e.subject.toLowerCase().includes(demandId.toLowerCase())
-    );
-    return { decisions: relatedDecisions, exchanges: relatedExchanges };
-  };
-
-  // Actions sur demande
-  const handleValidate = (demand: Demand) => {
-    const hash = generateHash(`${demand.id}-${Date.now()}-validate`);
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'validation',
-      module: 'demandes',
-      targetId: demand.id,
-      targetType: 'Demande',
-      targetLabel: demand.subject,
-      details: `Demande validée - Hash: ${hash}`,
-      bureau: demand.bureau,
-    });
-    addToast(`${demand.id} validée ✓ - Hash: ${hash.slice(0, 20)}...`, 'success');
-  };
-
-  const handleReject = (demand: Demand) => {
-    const hash = generateHash(`${demand.id}-${Date.now()}-reject`);
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'rejet',
-      module: 'demandes',
-      targetId: demand.id,
-      targetType: 'Demande',
-      targetLabel: demand.subject,
-      details: `Demande rejetée - Hash: ${hash}`,
-      bureau: demand.bureau,
-    });
-    addToast(`${demand.id} rejetée`, 'warning');
-  };
-
-  const handleRequestComplement = (demand: Demand) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'complement',
-      module: 'demandes',
-      targetId: demand.id,
-      targetType: 'Demande',
-      targetLabel: demand.subject,
-      details: 'Demande de complément envoyée',
-      bureau: demand.bureau,
-    });
-    addToast(`Complément demandé pour ${demand.id}`, 'info');
-  };
-
-  const handleAssign = (demand: Demand, employeeId: string) => {
-    const employee = employees.find((e) => e.id === employeeId);
-    if (employee) {
-      addActionLog({
-        userId: 'USR-001',
-        userName: 'A. DIALLO',
-        userRole: 'Directeur Général',
-        action: 'assignation',
-        module: 'demandes',
-        targetId: demand.id,
-        targetType: 'Demande',
-        targetLabel: demand.subject,
-        details: `Assignée à ${employee.name}`,
-        bureau: demand.bureau,
+  // Load initial stats (utiliser les stats du nouveau module si disponibles)
+  useEffect(() => {
+    if (stats) {
+      setLiveStats({
+        total: stats.total || 453,
+        pending: stats.pending || 45,
+        urgent: stats.urgent || 12,
+        validated: stats.validated || 378,
+        rejected: stats.rejected || 15,
+        overdue: stats.overdue || 8,
+        avgDelay: stats.avgResponseTime || 2.3,
+        totalMontant: 125000000000,
       });
-      addToast(`${demand.id} assignée à ${employee.name}`, 'success');
+    } else {
+      // Fallback si stats non disponibles
+      setLiveStats({
+        total: 453,
+        pending: 45,
+        urgent: 12,
+        validated: 378,
+        rejected: 15,
+        overdue: 8,
+        avgDelay: 2.3,
+        totalMontant: 125000000000,
+      });
     }
+  }, [stats, setLiveStats]);
+
+  // Gérer la navigation vers le nouveau module
+  const handleCategoryChange = (category: string, subCategory?: string, subSubCategory?: string) => {
+    // Mapper les catégories du nouveau module vers le store existant
+    navigate(category as any, subCategory as any, subSubCategory || null);
+  };
+
+  // Gérer le changement de sub-category (niveau 2)
+  const handleSubCategoryChange = (subCategory: string) => {
+    navigate(navigation.mainCategory, subCategory as any, null);
+  };
+
+  // Gérer le changement de sub-sub-category (niveau 3)
+  const handleSubSubCategoryChange = (subSubCategory: string) => {
+    navigate(navigation.mainCategory, navigation.subCategory, subSubCategory);
+  };
+
+  const handleRefresh = () => {
+    startRefresh();
+    setTimeout(() => {
+      endRefresh();
+      setLastUpdate(new Date());
+    }, 1500);
+  };
+
+  // Raccourcis clavier globaux
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + K : Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl/Cmd + E : Export
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt + Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // ? : Help (when not in input)
+      if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          openModal('shortcuts');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, goBack, openModal]);
+
+  const formatLastUpdate = () => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📋 Demandes à traiter
-            <Badge variant="warning">{globalStats.total}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Volume par bureau, délai moyen: <span className="text-amber-400 font-bold">{globalStats.avgDelay}j</span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={viewMode === 'list' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('list')}
-          >
-            📋 Liste
-          </Button>
-          <Button
-            size="sm"
-            variant={viewMode === 'bureau' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('bureau')}
-          >
-            🏢 Par bureau
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats par priorité */}
-      <div className="grid grid-cols-5 gap-3">
-        <Card
-          className={cn('cursor-pointer transition-all', filter === 'all' && 'ring-2 ring-orange-500')}
-          onClick={() => setFilter('all')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{globalStats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-red-500/30', filter === 'urgent' && 'ring-2 ring-red-500')}
-          onClick={() => setFilter('urgent')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{globalStats.urgent}</p>
-            <p className="text-[10px] text-slate-400">Urgentes</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-amber-500/30', filter === 'high' && 'ring-2 ring-amber-500')}
-          onClick={() => setFilter('high')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{globalStats.high}</p>
-            <p className="text-[10px] text-slate-400">Prioritaires</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-blue-500/30', filter === 'normal' && 'ring-2 ring-blue-500')}
-          onClick={() => setFilter('normal')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{globalStats.normal}</p>
-            <p className="text-[10px] text-slate-400">Normales</p>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-orange-400">{globalStats.avgDelay}j</p>
-            <p className="text-[10px] text-slate-400">Délai moyen</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recherche */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="🔍 Rechercher (ID, sujet)..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={cn(
-            'flex-1 px-4 py-2 rounded-lg text-sm',
-            darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-          )}
-        />
-        <Button variant="secondary" onClick={() => { setFilter('all'); setSearchQuery(''); }}>
-          Réinitialiser
-        </Button>
-      </div>
-
-      {/* Vue par bureau */}
-      {viewMode === 'bureau' && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {bureaux.filter((b) => statsByBureau[b.code]?.total > 0).map((bureau) => (
-            <Card key={bureau.code} className="hover:border-orange-500/50 transition-all">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <span>{bureau.icon}</span>
-                  <span style={{ color: bureau.color }}>{bureau.code}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Total:</span>
-                  <span className="font-bold">{statsByBureau[bureau.code]?.total || 0}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Urgentes:</span>
-                  <span className="font-bold text-red-400">{statsByBureau[bureau.code]?.urgent || 0}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Délai moy:</span>
-                  <span className="font-bold text-amber-400">{statsByBureau[bureau.code]?.avgDelay || 0}j</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation - Nouveau module */}
+      <DemandesSidebarModule
+        activeCategory={navigation.mainCategory}
+        activeSubCategory={navigation.subCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          pending: liveStats.pending || 45,
+          urgent: liveStats.urgent || 12,
+          overdue: liveStats.overdue || 8,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-      {/* Liste des demandes */}
-      <div className="space-y-3">
-        {filteredDemands.map((demand, i) => {
-          const proofs = getProofsForDemand(demand.id);
-          const hasProofs = proofs.decisions.length > 0 || proofs.exchanges.length > 0;
-
-          return (
-            <Card
-              key={i}
-              className={cn(
-                'hover:border-orange-500/50 transition-all',
-                demand.priority === 'urgent' && 'border-l-4 border-l-red-500',
-                demand.priority === 'high' && 'border-l-4 border-l-amber-500'
-              )}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={cn(
-                        'w-10 h-10 rounded-lg flex items-center justify-center text-xl',
-                        darkMode ? 'bg-slate-700' : 'bg-gray-100'
-                      )}
-                    >
-                      {demand.icon}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="font-mono text-[10px] text-orange-400">{demand.id}</span>
-                        <BureauTag bureau={demand.bureau} />
-                        <Badge
-                          variant={
-                            demand.priority === 'urgent' ? 'urgent' :
-                            demand.priority === 'high' ? 'warning' : 'default'
-                          }
-                          pulse={demand.priority === 'urgent'}
-                        >
-                          {demand.priority}
-                        </Badge>
-                        <Badge variant="info">J+{demand.delayDays}</Badge>
-                        {hasProofs && (
-                          <Badge
-                            variant="gold"
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setSelectedDemand(demand);
-                              setShowProofPanel(true);
-                            }}
-                          >
-                            🔗 {proofs.decisions.length + proofs.exchanges.length} preuves
-                          </Badge>
-                        )}
-                      </div>
-                      <h3 className="font-semibold text-sm">{demand.subject}</h3>
-                      <p className="text-xs text-slate-400">Type: {demand.type}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono font-bold text-amber-400">{demand.amount}</p>
-                    <p className="text-[10px] text-slate-500">{demand.date}</p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                  <Button size="xs" variant="success" onClick={() => handleValidate(demand)}>
-                    ✓ Valider
-                  </Button>
-                  <Button size="xs" variant="info" onClick={() => {
-                    setSelectedDemand(demand);
-                    setShowProofPanel(true);
-                  }}>
-                    👁 Ouvrir
-                  </Button>
-                  <Button size="xs" variant="warning" onClick={() => handleRequestComplement(demand)}>
-                    📎 Demander complément
-                  </Button>
-                  <div className="relative group">
-                    <Button size="xs" variant="secondary">
-                      👤 Assigner ▾
-                    </Button>
-                    <div className={cn(
-                      'absolute top-full left-0 mt-1 w-48 rounded-lg shadow-lg z-50 hidden group-hover:block',
-                      darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'
-                    )}>
-                      {employees.filter((e) => e.bureau === demand.bureau || e.bureau === 'BMO').slice(0, 5).map((emp) => (
-                        <button
-                          key={emp.id}
-                          className={cn(
-                            'w-full px-3 py-2 text-left text-xs hover:bg-orange-500/10 flex items-center gap-2',
-                            darkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-50'
-                          )}
-                          onClick={() => handleAssign(demand, emp.id)}
-                        >
-                          <span className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center text-[10px] font-bold">
-                            {emp.initials}
-                          </span>
-                          {emp.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <Button size="xs" variant="destructive" onClick={() => handleReject(demand)}>
-                    ✕ Rejeter
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {filteredDemands.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-slate-400">Aucune demande trouvée</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Panel Fil de preuves (traçabilité) */}
-      {showProofPanel && selectedDemand && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
-                🔗 Fil de preuves - {selectedDemand.id}
-              </CardTitle>
-              <Button size="xs" variant="ghost" onClick={() => setShowProofPanel(false)}>
-                ✕
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Détails demande */}
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <h4 className="font-bold text-sm mb-2">{selectedDemand.subject}</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-slate-400">Bureau:</span> <BureauTag bureau={selectedDemand.bureau} /></div>
-                  <div><span className="text-slate-400">Type:</span> {selectedDemand.type}</div>
-                  <div><span className="text-slate-400">Montant:</span> <span className="text-amber-400">{selectedDemand.amount}</span></div>
-                  <div><span className="text-slate-400">Date:</span> {selectedDemand.date}</div>
-                </div>
-              </div>
+            )}
 
-              {/* Décisions liées */}
-              <div>
-                <h4 className="font-bold text-xs mb-2 flex items-center gap-2">
-                  ⚖️ Décisions liées
-                  <Badge variant="info">{getProofsForDemand(selectedDemand.id).decisions.length}</Badge>
-                </h4>
-                {getProofsForDemand(selectedDemand.id).decisions.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucune décision liée</p>
-                ) : (
-                  <div className="space-y-2">
-                    {getProofsForDemand(selectedDemand.id).decisions.map((dec) => (
-                      <div key={dec.id} className={cn('p-2 rounded border-l-2 border-l-emerald-500', darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] text-emerald-400">{dec.id}</span>
-                          <Badge variant="success">{dec.status}</Badge>
-                        </div>
-                        <p className="text-xs">{dec.type}: {dec.subject}</p>
-                        <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                          <span>Par: {dec.author}</span>
-                          <span>{dec.date}</span>
-                        </div>
-                        <div className={cn('mt-1 px-2 py-1 rounded text-[9px] font-mono', darkMode ? 'bg-slate-600' : 'bg-gray-200')}>
-                          🔒 {dec.hash}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-orange-400" />
+              <h1 className="text-base font-semibold text-slate-200">
+                Demandes
+              </h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+              >
+                v3.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-orange-400 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {liveStats.urgent > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {liveStats.urgent}
+                </span>
+              )}
+            </Button>
+
+            {/* Actions Menu */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={liveStats.isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation - Nouveau module (niveaux 2 et 3) */}
+        <DemandesSubNavigationModule
+          mainCategory={navigation.mainCategory as any}
+          subCategory={navigation.subCategory || undefined}
+          subSubCategory={navigation.subSubCategory || undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            pending: liveStats.pending || 45,
+            urgent: liveStats.urgent || 12,
+            overdue: liveStats.overdue || 8,
+          }}
+        />
+
+        {/* KPI Bar */}
+        <DemandesKPIBar
+          data={{
+            totalDemandes: liveStats.total || 0,
+            newToday: 0, // TODO: Calculate from liveStats or API
+            pendingCount: liveStats.pending || 0,
+            urgentCount: liveStats.urgent || 0,
+            avgResponseTime: liveStats.avgDelay || 0,
+            approvalRate: liveStats.total > 0 ? Math.round((liveStats.validated / liveStats.total) * 100) : 0,
+            completionRate: liveStats.total > 0 ? Math.round(((liveStats.validated + liveStats.rejected) / liveStats.total) * 100) : 0,
+            satisfactionScore: 4.2, // TODO: Get from API
+            trends: {
+              total: 'stable',
+              pending: 'stable',
+              urgent: 'stable',
+              satisfaction: 'stable',
+            },
+          }}
+        />
+
+        {/* Main Content - Nouveau module */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <DemandesContentRouter
+              mainCategory={navigation.mainCategory as any}
+              subCategory={navigation.subCategory}
+              subSubCategory={navigation.subSubCategory || undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {liveStats.total} demandes • {liveStats.pending} en attente • {liveStats.urgent} urgentes
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
                 )}
-              </div>
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
 
-              {/* Échanges liés */}
-              <div>
-                <h4 className="font-bold text-xs mb-2 flex items-center gap-2">
-                  💬 Échanges inter-bureaux
-                  <Badge variant="info">{getProofsForDemand(selectedDemand.id).exchanges.length}</Badge>
-                </h4>
-                {getProofsForDemand(selectedDemand.id).exchanges.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucun échange lié</p>
-                ) : (
-                  <div className="space-y-2">
-                    {getProofsForDemand(selectedDemand.id).exchanges.map((exch) => (
-                      <div key={exch.id} className={cn('p-2 rounded border-l-2 border-l-blue-500', darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] text-blue-400">{exch.id}</span>
-                          <BureauTag bureau={exch.from} />
-                          <span>→</span>
-                          <BureauTag bureau={exch.to} />
-                        </div>
-                        <p className="text-xs font-semibold">{exch.subject}</p>
-                        <p className="text-[10px] text-slate-400 mt-1">{exch.message.slice(0, 100)}...</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {/* Modals */}
+      <DemandesModals />
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button className="flex-1" variant="success" onClick={() => {
-                  handleValidate(selectedDemand);
-                  setShowProofPanel(false);
-                }}>
-                  ✓ Valider cette demande
-                </Button>
-                <Button variant="destructive" onClick={() => {
-                  handleReject(selectedDemand);
-                  setShowProofPanel(false);
-                }}>
-                  ✕ Rejeter
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Command Palette */}
+      <DemandesCommandPalette />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
       )}
     </div>
+  );
+}
+
+// Actions Menu Component
+function ActionsMenu({
+  onRefresh,
+  isRefreshing,
+}: {
+  onRefresh: () => void;
+  isRefreshing: boolean;
+}) {
+  const { toggleFullscreen, openModal } = useDemandesCommandCenterStore();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-48 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+            <button
+              onClick={() => {
+                onRefresh();
+                setOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+              Rafraîchir
+            </button>
+            <button
+              onClick={() => {
+                openModal('export');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Download className="w-4 h-4" />
+              Exporter
+            </button>
+            <div className="border-t border-slate-700/50 my-1" />
+            <button
+              onClick={() => {
+                toggleFullscreen();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Maximize2 className="w-4 h-4" />
+              Plein écran
+            </button>
+            <button
+              onClick={() => {
+                openModal('shortcuts');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Keyboard className="w-4 h-4" />
+              Raccourcis
+            </button>
+            <button
+              onClick={() => {
+                openModal('settings');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Settings className="w-4 h-4" />
+              Paramètres
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Notifications Panel
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'BC-2024-0892 en retard critique',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Nouvelle demande urgente',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'BC-2024-0845 validé',
+      time: 'il y a 2h',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-80 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-orange-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

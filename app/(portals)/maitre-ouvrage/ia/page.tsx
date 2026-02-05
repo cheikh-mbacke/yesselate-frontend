@@ -1,304 +1,512 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement IA - Version 2.0
+ * Plateforme de gestion des modules d'intelligence artificielle
+ * Architecture cohérente avec Analytics et Gouvernance
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Brain,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  useIACommandCenterStore,
+} from '@/lib/stores/iaCommandCenterStore';
+import {
+  IAKPIBar,
+  IAModuleDetailModal,
+  IAModals,
+  IABatchActionsBar,
+  IAActionsMenu,
+  IACommandPalette,
+  iaCategories,
+} from '@/components/features/bmo/ia/command-center';
+// New 3-level navigation module
+import {
+  IASidebar,
+  IASubNavigation,
+  IAContentRouter,
+  type IAMainCategory,
+} from '@/modules/ia';
+import { useBMOStore } from '@/lib/stores';
 import { aiModules, aiHistory } from '@/lib/data';
 
-export default function IAPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [viewTab, setViewTab] = useState<'modules' | 'history'>('modules');
-  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
 
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  modules: [
+    { id: 'all', label: 'Tous' },
+    { id: 'recent', label: 'Récents' },
+    { id: 'favorites', label: 'Favoris' },
+  ],
+  active: [],
+  training: [],
+  disabled: [],
+  error: [],
+  history: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'completed', label: 'Complétées' },
+    { id: 'processing', label: 'En traitement' },
+    { id: 'failed', label: 'Échouées' },
+  ],
+  analysis: [],
+  prediction: [],
+  anomaly: [],
+  reports: [],
+  recommendations: [],
+  settings: [],
+};
+
+// ================================
+// Main Component
+// ================================
+export default function IAPage() {
+  return <IAPageContent />;
+}
+
+function IAPageContent() {
+  const { addToast, addActionLog } = useBMOStore();
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    kpiConfig,
+    navigationHistory,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleSidebar,
+    goBack,
+    navigate,
+    setKPIConfig,
+    globalSearch,
+    setGlobalSearch,
+    openModal,
+  } = useIACommandCenterStore();
+
+  // État local
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [moduleDetailModalOpen, setModuleDetailModalOpen] = useState(false);
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // Calcul des stats pour les KPIs
   const stats = useMemo(() => {
     const active = aiModules.filter(m => m.status === 'active').length;
     const training = aiModules.filter(m => m.status === 'training').length;
-    const avgAccuracy = Math.round(aiModules.filter(m => m.accuracy).reduce((acc, m) => acc + (m.accuracy || 0), 0) / aiModules.filter(m => m.accuracy).length);
+    const disabled = aiModules.filter(m => m.status === 'disabled').length;
+    const error = aiModules.filter(m => m.status === 'error').length;
+    const avgAccuracy = Math.round(
+      aiModules
+        .filter(m => m.accuracy)
+        .reduce((acc, m) => acc + (m.accuracy || 0), 0) /
+        (aiModules.filter(m => m.accuracy).length || 1)
+    );
     const analysesCompleted = aiHistory.filter(h => h.status === 'completed').length;
-    return { total: aiModules.length, active, training, avgAccuracy, analysesCompleted };
+    const analysesProcessing = aiHistory.filter(h => h.status === 'processing').length;
+    return {
+      total: aiModules.length,
+      active,
+      training,
+      disabled,
+      error,
+      avgAccuracy,
+      analysesCompleted,
+      analysesProcessing,
+    };
   }, []);
 
-  const selectedM = selectedModule ? aiModules.find(m => m.id === selectedModule) : null;
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return iaCategories.find((c) => c.id === activeCategory)?.label || 'Intelligence IA';
+  }, [activeCategory]);
 
-  const handleRunAnalysis = (module: typeof selectedM) => {
-    if (!module) return;
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      addToast('✅ Données rafraîchies', 'success');
+    }, 1500);
+  }, [addToast]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as IAMainCategory, 'all', null);
+    setSelectedModuleId(null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleRunAnalysis = useCallback((module: any) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'ia',
-      action: 'run_analysis',
+      action: 'audit',
       targetId: module.id,
-      targetType: 'AIModule',
+      targetType: 'any',
       details: `Lancement analyse ${module.name}`,
-      status: 'info',
     });
     addToast(`Analyse ${module.name} lancée`, 'info');
-  };
+  }, [addActionLog, addToast]);
 
-  const handleRetrain = (module: typeof selectedM) => {
-    if (!module) return;
+  const handleRetrain = useCallback((module: any) => {
     addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
       module: 'ia',
-      action: 'retrain',
+      action: 'modification',
       targetId: module.id,
-      targetType: 'AIModule',
+      targetType: 'any',
       details: `Ré-entraînement ${module.name}`,
-      status: 'warning',
     });
     addToast('Ré-entraînement programmé', 'warning');
+  }, [addActionLog, addToast]);
+
+  const handleToggleStatus = useCallback((module: any) => {
+    addActionLog({
+      userId: 'USR-001',
+      userName: 'A. DIALLO',
+      userRole: 'Directeur Général',
+      module: 'ia',
+      action: 'modification',
+      targetId: module.id,
+      targetType: 'any',
+      details: `${module.status === 'active' ? 'Désactivation' : 'Activation'} ${module.name}`,
+    });
+    addToast(`${module.status === 'active' ? 'Désactivation' : 'Activation'} programmée`, 'info');
+  }, [addActionLog, addToast]);
+
+  // Navigation prev/next pour modal
+  const filteredModulesForNav = useMemo(() => {
+    // Filtrer selon la catégorie active
+    let result = [...aiModules];
+    if (activeCategory === 'active') result = result.filter(m => m.status === 'active');
+    else if (activeCategory === 'training') result = result.filter(m => m.status === 'training');
+    else if (activeCategory === 'disabled') result = result.filter(m => m.status === 'disabled');
+    else if (activeCategory === 'error') result = result.filter(m => m.status === 'error');
+    else if (activeCategory === 'analysis') result = result.filter(m => m.type === 'analysis');
+    else if (activeCategory === 'prediction') result = result.filter(m => m.type === 'prediction');
+    else if (activeCategory === 'anomaly') result = result.filter(m => m.type === 'anomaly');
+    else if (activeCategory === 'reports') result = result.filter(m => m.type === 'report');
+    else if (activeCategory === 'recommendations') result = result.filter(m => m.type === 'recommendation');
+    return result;
+  }, [activeCategory]);
+
+  const handleOpenModuleDetail = useCallback((moduleId: string) => {
+    setSelectedModuleId(moduleId);
+    setModuleDetailModalOpen(true);
+  }, []);
+
+  const handleCloseModuleDetail = useCallback(() => {
+    setModuleDetailModalOpen(false);
+    // Keep selectedModuleId for potential reopening
+  }, []);
+
+  const handleNavigatePrev = useCallback(() => {
+    const currentIndex = filteredModulesForNav.findIndex(m => m.id === selectedModuleId);
+    if (currentIndex > 0) {
+      setSelectedModuleId(filteredModulesForNav[currentIndex - 1].id);
+    }
+  }, [selectedModuleId, filteredModulesForNav]);
+
+  const handleNavigateNext = useCallback(() => {
+    const currentIndex = filteredModulesForNav.findIndex(m => m.id === selectedModuleId);
+    if (currentIndex < filteredModulesForNav.length - 1) {
+      setSelectedModuleId(filteredModulesForNav[currentIndex + 1].id);
+    }
+  }, [selectedModuleId, filteredModulesForNav]);
+
+  const hasPrevious = useMemo(() => {
+    if (!selectedModuleId) return false;
+    const currentIndex = filteredModulesForNav.findIndex(m => m.id === selectedModuleId);
+    return currentIndex > 0;
+  }, [selectedModuleId, filteredModulesForNav]);
+
+  const hasNext = useMemo(() => {
+    if (!selectedModuleId) return false;
+    const currentIndex = filteredModulesForNav.findIndex(m => m.id === selectedModuleId);
+    return currentIndex < filteredModulesForNav.length - 1;
+  }, [selectedModuleId, filteredModulesForNav]);
+
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'view':
+        if (ids.length > 0) {
+          handleOpenModuleDetail(ids[0]);
+        }
+        break;
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'activate':
+      case 'deactivate':
+      case 'retrain':
+      case 'delete':
+        // TODO: Implémenter actions batch
+        addToast(`${actionId} - ${ids.length} module(s)`, 'info');
+        break;
+      default:
+        break;
+    }
+  }, [handleOpenModuleDetail, openModal, addToast]);
+
+  const verifyAIHash = async (id: string, hash: string): Promise<boolean> => {
+    // TODO: Implémenter avec backend ou Web Crypto
+    return hash.startsWith('SHA3-256:');
   };
 
-  const getTypeIcon = (type: string) => {
-    const icons: Record<string, string> = { analysis: '📊', prediction: '🔮', anomaly: '🚨', report: '📝', recommendation: '💡' };
-    return icons[type] || '🤖';
-  };
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = { active: 'emerald', training: 'amber', disabled: 'slate', error: 'red' };
-    return colors[status] || 'slate';
-  };
+      const isMod = e.metaKey || e.ctrlKey;
 
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🤖 Intelligence IA
-            <Badge variant="success">{stats.active} modules actifs</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">Modules d'analyse, prédiction et recommandations avec traçabilité</p>
-        </div>
-      </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <IASidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={stats}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-      <Card className="bg-purple-500/10 border-purple-500/30">
-        <CardContent className="p-4">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🔐</span>
-            <div className="flex-1">
-              <h3 className="font-bold text-purple-400">Traçabilité IA</h3>
-              <p className="text-sm text-slate-400">Chaque analyse conserve ses inputs comme preuve + hash du résultat</p>
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-purple-400" />
+              <h1 className="text-base font-semibold text-slate-200">Intelligence IA</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Modules</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.active}</p>
-            <p className="text-[10px] text-slate-400">Actifs</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.training}</p>
-            <p className="text-[10px] text-slate-400">En formation</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-500/10 border-purple-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{stats.avgAccuracy}%</p>
-            <p className="text-[10px] text-slate-400">Précision moy.</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-pink-500/10 border-pink-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-pink-400">{stats.analysesCompleted}</p>
-            <p className="text-[10px] text-slate-400">Analyses</p>
-          </CardContent>
-        </Card>
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+
+            {/* Actions Menu */}
+            <IAActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        {currentSubCategories.length > 0 && (
+          <IASubNavigation
+            mainCategory={activeCategory}
+            subCategory={activeSubCategory}
+            subSubCategory={navigation.filter || undefined}
+            onSubCategoryChange={handleSubCategoryChange}
+            onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+            stats={stats}
+          />
+        )}
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <IAKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+            stats={stats}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <IAContentRouter
+              mainCategory={activeCategory as any}
+              subCategory={navigation.subCategory || undefined}
+              subSubCategory={navigation.filter || undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats.total} modules • {stats.active} actifs • {stats.analysesCompleted} analyses
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
       </div>
 
-      {/* Onglets */}
-      <div className="flex gap-2">
-        <Button size="sm" variant={viewTab === 'modules' ? 'default' : 'secondary'} onClick={() => setViewTab('modules')}>🧠 Modules ({aiModules.length})</Button>
-        <Button size="sm" variant={viewTab === 'history' ? 'default' : 'secondary'} onClick={() => setViewTab('history')}>📜 Historique ({aiHistory.length})</Button>
-      </div>
+      {/* Command Palette */}
+      {commandPaletteOpen && <IACommandPalette />}
 
-      {viewTab === 'modules' ? (
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-3">
-            {aiModules.map((module) => {
-              const isSelected = selectedModule === module.id;
-              const statusColor = getStatusColor(module.status);
-              
-              return (
-                <Card
-                  key={module.id}
-                  className={cn(
-                    'cursor-pointer transition-all',
-                    isSelected ? 'ring-2 ring-purple-500' : 'hover:border-purple-500/50',
-                    `border-l-4 border-l-${statusColor}-500`,
-                  )}
-                  onClick={() => setSelectedModule(module.id)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{getTypeIcon(module.type)}</span>
-                          <Badge variant={module.status === 'active' ? 'success' : module.status === 'training' ? 'warning' : 'default'}>{module.status}</Badge>
-                          <Badge variant="default">{module.type}</Badge>
-                        </div>
-                        <h3 className="font-bold mt-1">{module.name}</h3>
-                        <p className="text-sm text-slate-400">{module.description}</p>
-                      </div>
-                      {module.accuracy && (
-                        <div className="text-right">
-                          <p className={cn("text-3xl font-bold", module.accuracy >= 90 ? "text-emerald-400" : module.accuracy >= 75 ? "text-amber-400" : "text-red-400")}>
-                            {module.accuracy}%
-                          </p>
-                          <p className="text-xs text-slate-400">Précision</p>
-                        </div>
-                      )}
-                    </div>
+      {/* Module Detail Modal */}
+      <IAModuleDetailModal
+        isOpen={moduleDetailModalOpen}
+        onClose={handleCloseModuleDetail}
+        moduleId={selectedModuleId}
+        onRunAnalysis={handleRunAnalysis}
+        onRetrain={handleRetrain}
+        onToggleStatus={handleToggleStatus}
+        onPrevious={handleNavigatePrev}
+        onNext={handleNavigateNext}
+        hasPrevious={hasPrevious}
+        hasNext={hasNext}
+      />
 
-                    {module.accuracy && (
-                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
-                        <div className={cn("h-full transition-all", module.accuracy >= 90 ? "bg-emerald-500" : module.accuracy >= 75 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${module.accuracy}%` }} />
-                      </div>
-                    )}
+      {/* Modals */}
+      <IAModals />
 
-                    <div className="flex flex-wrap gap-4 text-xs text-slate-400">
-                      <span>Sources: {module.dataSourcesCount}</span>
-                      <span>Version: {module.version}</span>
-                      <span>Dernière exécution: {module.lastRun}</span>
-                    </div>
-
-                    {module.status === 'active' && (
-                      <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                        <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); handleRunAnalysis(module); }}>▶️ Exécuter</Button>
-                        <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); handleRetrain(module); }}>🔄 Ré-entraîner</Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          <div className="lg:col-span-1">
-            {selectedM ? (
-              <Card className="sticky top-4">
-                <CardContent className="p-4">
-                  <div className="mb-4 pb-4 border-b border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-2xl">{getTypeIcon(selectedM.type)}</span>
-                      <Badge variant={selectedM.status === 'active' ? 'success' : 'warning'}>{selectedM.status}</Badge>
-                    </div>
-                    <h3 className="font-bold">{selectedM.name}</h3>
-                    <p className="text-sm text-slate-400">{selectedM.description}</p>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    {selectedM.accuracy && (
-                      <div className={cn("p-3 rounded text-center", selectedM.accuracy >= 90 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-amber-500/10 border border-amber-500/30")}>
-                        <p className={cn("text-4xl font-bold", selectedM.accuracy >= 90 ? "text-emerald-400" : "text-amber-400")}>{selectedM.accuracy}%</p>
-                        <p className="text-xs text-slate-400">Précision</p>
-                      </div>
-                    )}
-
-                    <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-xs text-slate-400">Type</p>
-                          <p className="capitalize">{selectedM.type}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Version</p>
-                          <p>{selectedM.version}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Sources</p>
-                          <p>{selectedM.dataSourcesCount}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400">Dernière exéc.</p>
-                          <p className="text-xs">{selectedM.lastRun}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedM.status === 'active' && (
-                    <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                      <Button size="sm" variant="default" onClick={() => handleRunAnalysis(selectedM)}>▶️ Lancer analyse</Button>
-                      <Button size="sm" variant="info" onClick={() => handleRetrain(selectedM)}>🔄 Ré-entraîner</Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="sticky top-4"><CardContent className="p-8 text-center"><span className="text-4xl mb-4 block">🧠</span><p className="text-slate-400">Sélectionnez un module</p></CardContent></Card>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {aiHistory.map((analysis) => (
-            <Card key={analysis.id} className={cn("border-l-4", analysis.status === 'completed' ? "border-l-emerald-500" : analysis.status === 'running' ? "border-l-blue-500" : "border-l-red-500")}>
-              <CardContent className="p-4">
-                <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-purple-400">{analysis.id}</span>
-                      <Badge variant={analysis.status === 'completed' ? 'success' : analysis.status === 'running' ? 'info' : 'urgent'}>{analysis.status}</Badge>
-                      <Badge variant="default">{analysis.target}</Badge>
-                    </div>
-                    <h3 className="font-bold mt-1">{analysis.moduleId}</h3>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">{analysis.requestedAt}</p>
-                    <p className="text-xs text-slate-400">Par: {analysis.requestedBy}</p>
-                  </div>
-                </div>
-
-                {analysis.result && (
-                  <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/30 mb-3">
-                    <p className="text-xs text-emerald-400 mb-1">Résultat</p>
-                    <p className="text-sm">{analysis.result.summary}</p>
-                    {analysis.result.findings && analysis.result.findings.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {analysis.result.findings.slice(0, 3).map((f, idx) => (
-                          <Badge key={idx} variant="default">{f}</Badge>
-                        ))}
-                        {analysis.result.findings.length > 3 && <Badge variant="info">+{analysis.result.findings.length - 3}</Badge>}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {analysis.inputs && analysis.inputs.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-400 mb-1">📥 Inputs ({analysis.inputs.length} sources)</p>
-                    <div className="flex flex-wrap gap-1">
-                      {analysis.inputs.map((input, idx) => (
-                        <Badge key={idx} variant="default">{input.source}: {input.recordsCount}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {analysis.hash && (
-                  <div className="p-2 rounded bg-slate-700/30">
-                    <p className="text-[10px] text-slate-400">🔐 Hash résultat</p>
-                    <p className="font-mono text-[10px] truncate">{analysis.hash}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* Batch Actions Bar */}
+      <IABatchActionsBar onAction={handleBatchAction} />
     </div>
   );
 }

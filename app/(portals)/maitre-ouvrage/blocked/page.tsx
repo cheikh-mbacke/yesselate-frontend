@@ -1,583 +1,901 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
+/**
+ * ====================================================================
+ * PAGE: Dossiers Bloqués - Command Center v2.0
+ * ====================================================================
+ * 
+ * Interface de gestion des blocages pour le Bureau Maître d'Ouvrage (BMO).
+ * Architecture harmonisée avec Analytics Command Center.
+ * Instance suprême avec pouvoir de substitution et d'arbitrage.
+ * 
+ * ====================================================================
+ */
+
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { blockedDossiers, employees, projects, decisions } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  ChevronLeft,
+  Bell,
+  AlertCircle,
+  MoreHorizontal,
+  RefreshCw,
+  Download,
+  Search,
+  Zap,
+  BarChart3,
+  Settings,
+  Filter,
+  HelpCircle,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+import { useBlockedCommandCenterStore, type BlockedSubCategory } from '@/lib/stores/blockedCommandCenterStore';
+import {
+  BlockedKPIBar,
+  BlockedModals,
+  BlockedFiltersPanel,
+  countActiveFiltersUtil,
+  blockedCategories,
+  type BlockedActiveFilters,
+} from '@/components/features/bmo/workspace/blocked/command-center';
+// New 3-level navigation module
+import {
+  BlockedSidebar,
+  BlockedSubNavigation,
+  BlockedContentRouter,
+  type BlockedMainCategory,
+} from '@/modules/blocked';
+import { BlockedCommandPalette } from '@/components/features/bmo/workspace/blocked/BlockedCommandPalette';
+import { BlockedToastProvider, useBlockedToast } from '@/components/features/bmo/workspace/blocked/BlockedToast';
+import { BlockedHelpModal } from '@/components/features/bmo/workspace/blocked/modals/BlockedHelpModal';
+import { blockedApi, type BlockedFilter } from '@/lib/services/blockedApiService';
 import type { BlockedDossier } from '@/lib/types/bmo.types';
+import { useRealtimeBlocked } from '@/lib/hooks/useRealtimeBlocked';
 
-// Utilitaire pour générer un hash SHA3-256 simulé
-const generateSHA3Hash = (data: string): string => {
-  let hash = 0;
-  const timestamp = Date.now();
-  const combined = `${data}-${timestamp}`;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+// ================================
+// Utility: Convert UI Filters to API Filters
+// ================================
+function convertToApiFilter(filters: BlockedActiveFilters): BlockedFilter {
+  const apiFilter: BlockedFilter = {};
+
+  // Impact - prend le premier si plusieurs (API ne supporte qu'un seul)
+  if (filters.impact.length === 1) {
+    apiFilter.impact = filters.impact[0];
   }
-  const hexHash = Math.abs(hash).toString(16).padStart(16, '0');
-  return `SHA3-256:${hexHash}${Math.random().toString(16).slice(2, 10)}`;
-};
 
-type ViewMode = 'all' | 'type' | 'impact' | 'bureau';
-type ImpactFilter = 'all' | 'critical' | 'high' | 'medium' | 'low';
+  // Bureau - prend le premier si plusieurs
+  if (filters.bureaux.length === 1) {
+    apiFilter.bureau = filters.bureaux[0];
+  }
 
-export default function BlockedPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog, openSubstitutionModal } = useBMOStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('impact');
-  const [impactFilter, setImpactFilter] = useState<ImpactFilter>('all');
-  const [selectedDossier, setSelectedDossier] = useState<BlockedDossier | null>(null);
-  const [showResolutionModal, setShowResolutionModal] = useState(false);
-  const [resolutionNote, setResolutionNote] = useState('');
+  // Status - prend le premier si plusieurs
+  if (filters.status.length === 1) {
+    apiFilter.status = filters.status[0];
+  }
 
-  // Utilisateur actuel (simulé)
-  const currentUser = {
-    id: 'USR-001',
-    name: 'A. DIALLO',
-    role: 'Directeur Général',
-    bureau: 'BMO',
-  };
+  // Delay range
+  if (filters.delayRange.min !== undefined) {
+    apiFilter.minDelay = filters.delayRange.min;
+  }
+  if (filters.delayRange.max !== undefined) {
+    apiFilter.maxDelay = filters.delayRange.max;
+  }
 
-  // Filtrer par impact
-  const filteredDossiers = useMemo(() => {
-    if (impactFilter === 'all') return blockedDossiers;
-    return blockedDossiers.filter((d) => d.impact === impactFilter);
-  }, [impactFilter]);
+  // Date range
+  if (filters.dateRange?.start) {
+    apiFilter.dateFrom = filters.dateRange.start;
+  }
+  if (filters.dateRange?.end) {
+    apiFilter.dateTo = filters.dateRange.end;
+  }
 
-  // Grouper par type
-  const dossiersByType = useMemo(() => {
-    const grouped: Record<string, BlockedDossier[]> = {};
-    blockedDossiers.forEach((d) => {
-      if (!grouped[d.type]) grouped[d.type] = [];
-      grouped[d.type].push(d);
-    });
-    return grouped;
+  return apiFilter;
+}
+
+// ================================
+// Helpers
+// ================================
+const IMPACT_WEIGHT: Record<string, number> = { critical: 100, high: 50, medium: 20, low: 5 };
+
+function parseAmountFCFA(amount: unknown): number {
+  const s = String(amount ?? '').replace(/[^\d]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function computePriority(d: BlockedDossier): number {
+  const w = IMPACT_WEIGHT[d.impact] ?? 1;
+  const delay = Math.max(0, d.delay ?? 0) + 1;
+  const amount = parseAmountFCFA(d.amount);
+  const factor = 1 + amount / 1_000_000;
+  return Math.round(w * delay * factor);
+}
+
+// Mapping des catégories vers labels
+const mainCategoryLabels = {
+  overview: 'Vue d\'ensemble',
+  queue: 'Files d\'attente',
+  critical: 'Critiques',
+  matrix: 'Matrice urgence',
+  bureaux: 'Par bureau',
+  timeline: 'Timeline',
+  decisions: 'Décisions',
+  audit: 'Audit',
+} as const;
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap = {
+  overview: [
+    { id: 'summary', label: 'Synthèse' },
+    { id: 'kpis', label: 'KPIs' },
+    { id: 'trends', label: 'Tendances' },
+    { id: 'alerts', label: 'Alertes' },
+  ],
+  queue: [
+    { id: 'all', label: 'Tous' },
+    { id: 'critical', label: 'Critiques' },
+    { id: 'high', label: 'Priorité haute' },
+    { id: 'medium', label: 'Priorité moyenne' },
+    { id: 'low', label: 'Priorité basse' },
+  ],
+  critical: [
+    { id: 'urgent', label: 'Urgents' },
+    { id: 'sla', label: 'SLA dépassés' },
+    { id: 'escalated', label: 'Escaladés' },
+  ],
+  matrix: [
+    { id: 'impact', label: 'Par impact' },
+    { id: 'delay', label: 'Par délai' },
+    { id: 'amount', label: 'Par montant' },
+    { id: 'combined', label: 'Combiné' },
+  ],
+  bureaux: [
+    { id: 'all', label: 'Tous les bureaux' },
+    { id: 'most', label: 'Plus impactés' },
+    { id: 'comparison', label: 'Comparaison' },
+  ],
+  timeline: [
+    { id: 'recent', label: 'Récents' },
+    { id: 'week', label: 'Cette semaine' },
+    { id: 'month', label: 'Ce mois' },
+    { id: 'history', label: 'Historique' },
+  ],
+  decisions: [
+    { id: 'pending', label: 'En attente' },
+    { id: 'resolved', label: 'Résolus' },
+    { id: 'escalated', label: 'Escaladés' },
+    { id: 'substituted', label: 'Substitués' },
+  ],
+  audit: [
+    { id: 'trail', label: 'Trace audit' },
+    { id: 'chain', label: 'Chaîne de hash' },
+    { id: 'reports', label: 'Rapports' },
+    { id: 'export', label: 'Export' },
+  ],
+} as const;
+
+// ================================
+// Inner Content Component
+// ================================
+function BlockedPageContent() {
+  const {
+    navigation,
+    fullscreen,
+    notificationsPanelOpen,
+    liveStats,
+    stats,
+    commandPaletteOpen,
+    sidebarCollapsed,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    navigationHistory,
+    openModal,
+    setStats,
+    setStatsLoading,
+    startRefresh,
+    endRefresh,
+    navigate,
+  } = useBlockedCommandCenterStore();
+
+  const toast = useBlockedToast();
+  const abortRef = useRef<AbortController | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // WebSocket temps réel
+  const { isConnected: wsConnected, subscriptionsCount } = useRealtimeBlocked({
+    autoConnect: true,
+    showToasts: true,
+    autoInvalidateQueries: true,
+  });
+
+  // Navigation state - 3-level navigation
+  const [activeCategory, setActiveCategory] = useState(navigation.mainCategory);
+  const [activeSubCategory, setActiveSubCategory] = useState(navigation.subCategory);
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Filters state
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<BlockedActiveFilters>({
+    impact: [],
+    bureaux: [],
+    types: [],
+    status: [],
+    delayRange: {},
+    amountRange: {},
+  });
+
+  // Computed values
+  const currentCategoryLabel = useMemo(() => {
+    return blockedCategories.find((c) => c.id === activeCategory)?.label || 'Blocages';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return (subCategoriesMap as any)[activeCategory] || [];
+  }, [activeCategory]);
+
+  // Load stats from API
+  const loadStats = useCallback(async (showToast = false) => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    startRefresh();
+    setStatsLoading(true);
+    setIsRefreshing(true);
+
+    try {
+      // Fetch stats from API
+      const apiStats = await blockedApi.getStats();
+      
+      if (ac.signal.aborted) return;
+
+      setStats(apiStats);
+      setLastUpdate(new Date());
+
+      if (showToast) {
+        toast.success('Données actualisées', `${apiStats.total} dossiers bloqués`);
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+      if (showToast) {
+        toast.error('Erreur', 'Impossible de charger les statistiques');
+      }
+    } finally {
+      setStatsLoading(false);
+      endRefresh();
+      setIsRefreshing(false);
+    }
+  }, [setStats, setStatsLoading, startRefresh, endRefresh, toast]);
+
+  // Initial load + auto-refresh polling
+  useEffect(() => {
+    loadStats(false);
+    
+    // Setup polling for auto-refresh (every 30 seconds)
+    const setupPolling = () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+      pollingRef.current = setInterval(() => {
+        loadStats(false);
+      }, 30000);
+    };
+    
+    setupPolling();
+    
+    return () => { 
+      abortRef.current?.abort();
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [loadStats]);
+
+  // Handle category change - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    const cat = category as typeof activeCategory;
+    setActiveCategory(cat);
+    navigate(cat);
+    const defaultSub = subCategory || (subCategoriesMap as any)[cat]?.[0]?.id || null;
+    setActiveSubCategory(defaultSub);
+    setActiveSubSubCategory(undefined); // Reset level 3
+  }, [navigate]);
+
+  // Handle sub-category change
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    const typedSubCategory = subCategory as BlockedSubCategory | null;
+    setActiveSubCategory(typedSubCategory);
+    navigate(activeCategory, typedSubCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
+  }, [activeCategory, navigate]);
+
+  // Handle sub-sub-category change
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
   }, []);
 
-  // Grouper par impact
-  const dossiersByImpact = useMemo(() => ({
-    critical: blockedDossiers.filter((d) => d.impact === 'critical'),
-    high: blockedDossiers.filter((d) => d.impact === 'high'),
-    medium: blockedDossiers.filter((d) => d.impact === 'medium'),
-    low: blockedDossiers.filter((d) => d.impact === 'low'),
-  }), []);
+  // Handle refresh
+  const handleRefresh = useCallback(async () => {
+    await loadStats(true);
+  }, [loadStats]);
 
-  // Grouper par bureau
-  const dossiersByBureau = useMemo(() => {
-    const grouped: Record<string, BlockedDossier[]> = {};
-    blockedDossiers.forEach((d) => {
-      if (!grouped[d.bureau]) grouped[d.bureau] = [];
-      grouped[d.bureau].push(d);
-    });
-    return grouped;
-  }, []);
+  // Récupérer les setters de filtres du store
+  const { resetFilters: resetStoreFilters } = useBlockedCommandCenterStore();
 
-  // Stats
-  const stats = useMemo(() => ({
-    total: blockedDossiers.length,
-    critical: dossiersByImpact.critical.length,
-    high: dossiersByImpact.high.length,
-    medium: dossiersByImpact.medium.length,
-    avgDelay: Math.round(blockedDossiers.reduce((acc, d) => acc + d.delay, 0) / blockedDossiers.length),
-  }), [dossiersByImpact]);
-
-  // Actions
-  const handleSubstitute = (dossier: BlockedDossier) => {
-    openSubstitutionModal(dossier);
-  };
-
-  const handleEscalate = (dossier: BlockedDossier) => {
-    const hash = generateSHA3Hash(`${dossier.id}-escalate-${Date.now()}`);
-
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'escalade',
-      module: 'blocked',
-      targetId: dossier.id,
-      targetType: dossier.type,
-      targetLabel: dossier.subject,
-      details: `Dossier escaladé - Impact: ${dossier.impact} - Délai: ${dossier.delay}j - Hash: ${hash}`,
-      bureau: dossier.bureau,
-    });
-
-    addToast(`⬆️ ${dossier.id} escaladé vers comité de direction`, 'warning');
-  };
-
-  const handleRequestDocument = (dossier: BlockedDossier) => {
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'complement',
-      module: 'blocked',
-      targetId: dossier.id,
-      targetType: dossier.type,
-      targetLabel: dossier.subject,
-      details: 'Demande de pièce complémentaire',
-      bureau: dossier.bureau,
-    });
-
-    addToast(`📎 Pièce demandée pour ${dossier.id}`, 'info');
-  };
-
-  const handleResolve = (dossier: BlockedDossier, justification: string) => {
-    const hash = generateSHA3Hash(`${dossier.id}-resolve-${Date.now()}`);
-
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'resolution',
-      module: 'blocked',
-      targetId: dossier.id,
-      targetType: dossier.type,
-      targetLabel: dossier.subject,
-      details: `Dossier résolu - Justification: ${justification} - Hash: ${hash}`,
-      bureau: dossier.bureau,
-    });
-
-    addToast(`✓ ${dossier.id} résolu - Decision enregistrée`, 'success');
-    setShowResolutionModal(false);
-    setResolutionNote('');
-  };
-
-  // Couleur selon impact
-  const getImpactColor = (impact: string) => {
-    switch (impact) {
-      case 'critical': return 'text-red-400 bg-red-500/20';
-      case 'high': return 'text-amber-400 bg-amber-500/20';
-      case 'medium': return 'text-blue-400 bg-blue-500/20';
-      case 'low': return 'text-slate-400 bg-slate-500/20';
-      default: return 'text-slate-400 bg-slate-500/20';
+  // Handle apply filters - sync with local state AND store
+  const handleApplyFilters = useCallback(async (filters: BlockedActiveFilters) => {
+    setActiveFilters(filters);
+    
+    // Mettre à jour le store pour que BlockedContentRouter récupère les filtres
+    const store = useBlockedCommandCenterStore.getState();
+    
+    // Mettre à jour chaque filtre dans le store
+    store.setFilter('impact', filters.impact);
+    store.setFilter('bureaux', filters.bureaux);
+    store.setFilter('types', filters.types);
+    store.setFilter('status', filters.status);
+    store.setFilter('delayRange', filters.delayRange);
+    store.setFilter('amountRange', filters.amountRange || { min: undefined, max: undefined });
+    if (filters.dateRange) {
+      store.setFilter('dateRange', filters.dateRange);
     }
-  };
 
-  const getImpactBorder = (impact: string) => {
-    switch (impact) {
-      case 'critical': return 'border-l-red-500';
-      case 'high': return 'border-l-amber-500';
-      case 'medium': return 'border-l-blue-500';
-      case 'low': return 'border-l-slate-500';
-      default: return 'border-l-slate-500';
-    }
-  };
+    // Appliquer les filtres aux données
+    try {
+      const hasActiveFilters = countActiveFiltersUtil(filters) > 0;
+      
+      if (hasActiveFilters) {
+        // Utiliser la nouvelle méthode avec filtres avancés
+        const result = await blockedApi.getAllWithAdvancedFilters(filters);
+        console.log(`Filtres appliqués: ${result.total} résultats trouvés`);
+      }
+      
+      // Recharger les stats
+      await loadStats(false);
+      
+      toast.success('Filtres appliqués', `${countActiveFiltersUtil(filters)} filtre(s) actif(s)`);
+    } catch (error) {
+      console.error('Erreur lors de l\'application des filtres:', error);
+      toast.error('Erreur', 'Impossible d\'appliquer les filtres');
+    };
+  }, [loadStats, toast]);
+
+  // Helper pour compter les filtres
+  // Removed: countFilters - now using countActiveFiltersUtil from command-center
+
+  // Count active filters
+  const activeFiltersCount = useMemo(() => {
+    return countActiveFiltersUtil(activeFilters);
+  }, [activeFilters]);
+
+  // Handle go back
+  const handleGoBack = useCallback(() => {
+    goBack();
+    setActiveCategory(navigation.mainCategory);
+    setActiveSubCategory(navigation.subCategory);
+  }, [goBack, navigation]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (['input', 'textarea', 'select'].includes(target?.tagName?.toLowerCase() || '')) return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // ⌘K - Command palette
+      if (isMod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // ⌘B - Toggle sidebar
+      if (isMod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // ⌘D - Decision center
+      if (isMod && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        openModal('decision-center');
+        return;
+      }
+
+      // ⌘I - Stats
+      if (isMod && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // F1 - Help
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+        return;
+      }
+
+      // ⌘E - Export
+      if (isMod && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // ⌘F - Filters
+      if (isMod && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFiltersPanelOpen((prev) => !prev);
+        return;
+      }
+
+      // F11 - Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt + Left - Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
+
+      // ? - Help
+      if (e.key === '?' && !isMod) {
+        e.preventDefault();
+        openModal('shortcuts');
+      }
+
+      // Escape
+      if (e.key === 'Escape') {
+        if (commandPaletteOpen) toggleCommandPalette();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, handleGoBack, openModal, commandPaletteOpen, toggleSidebar]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🚧 Dossiers bloqués
-            <Badge variant="urgent">{stats.total}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Résumé par type et impact • Délai moyen: <span className="text-amber-400 font-bold">{stats.avgDelay}j</span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant={viewMode === 'impact' ? 'default' : 'secondary'} onClick={() => setViewMode('impact')}>
-            Par impact
-          </Button>
-          <Button size="sm" variant={viewMode === 'type' ? 'default' : 'secondary'} onClick={() => setViewMode('type')}>
-            Par type
-          </Button>
-          <Button size="sm" variant={viewMode === 'bureau' ? 'default' : 'secondary'} onClick={() => setViewMode('bureau')}>
-            Par bureau
-          </Button>
-          <Button size="sm" variant={viewMode === 'all' ? 'default' : 'secondary'} onClick={() => setViewMode('all')}>
-            Liste
-          </Button>
-        </div>
-      </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <BlockedSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
+        collapsed={sidebarCollapsed}
+        stats={stats ? {
+          total: stats.total,
+          critical: stats.critical,
+          high: stats.high,
+          medium: stats.medium,
+          low: stats.low,
+        } : undefined}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
 
-      {/* Alerte critique */}
-      {stats.critical > 0 && (
-        <div className={cn(
-          'rounded-xl p-3 flex items-center gap-3 border animate-pulse',
-          darkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
-        )}>
-          <span className="text-2xl">🚨</span>
-          <div className="flex-1">
-            <p className="font-bold text-sm text-red-400">
-              {stats.critical} dossier(s) critique(s) - Action immédiate requise
-            </p>
-            <p className="text-xs text-slate-400">
-              Impact majeur sur les opérations en cours
-            </p>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+              <h1 className="text-base font-semibold text-slate-200">Dossiers bloqués</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
           </div>
-          <Link href="/maitre-ouvrage/substitution">
-            <Button size="sm" variant="destructive">
-              ⚡ Substitution en masse
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 gap-1.5 text-slate-400 hover:text-slate-200"
+              title="Rechercher (⌘K)"
+            >
+              <Search className="h-4 w-4" />
             </Button>
-          </Link>
-        </div>
-      )}
 
-      {/* Stats par impact */}
-      <div className="grid grid-cols-5 gap-3">
-        <Card
-          className={cn('cursor-pointer transition-all', impactFilter === 'all' && 'ring-2 ring-orange-500')}
-          onClick={() => setImpactFilter('all')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-red-500/30', impactFilter === 'critical' && 'ring-2 ring-red-500')}
-          onClick={() => setImpactFilter('critical')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.critical}</p>
-            <p className="text-[10px] text-slate-400">Critiques</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-amber-500/30', impactFilter === 'high' && 'ring-2 ring-amber-500')}
-          onClick={() => setImpactFilter('high')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.high}</p>
-            <p className="text-[10px] text-slate-400">Élevé</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-blue-500/30', impactFilter === 'medium' && 'ring-2 ring-blue-500')}
-          onClick={() => setImpactFilter('medium')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.medium}</p>
-            <p className="text-[10px] text-slate-400">Moyen</p>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-orange-400">{stats.avgDelay}j</p>
-            <p className="text-[10px] text-slate-400">Délai moyen</p>
-          </CardContent>
-        </Card>
-      </div>
+            {/* Filters */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFiltersPanelOpen(true)}
+              className={cn(
+                'h-8 gap-1.5 text-slate-400 hover:text-slate-200',
+                activeFiltersCount > 0 && 'text-blue-400 hover:text-blue-300'
+              )}
+              title="Filtres avancés (⌘F)"
+            >
+              <Filter className="h-4 w-4" />
+              {activeFiltersCount > 0 && (
+                <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </Button>
 
-      {/* Vue par impact */}
-      {viewMode === 'impact' && (
-        <div className="space-y-4">
-          {Object.entries(dossiersByImpact).map(([impact, dossiers]) => dossiers.length > 0 && (
-            <Card key={impact} className={cn('border-l-4', getImpactBorder(impact))}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  {impact === 'critical' && '🚨 Impact Critique'}
-                  {impact === 'high' && '⚠️ Impact Élevé'}
-                  {impact === 'medium' && '📊 Impact Moyen'}
-                  {impact === 'low' && '📋 Impact Faible'}
-                  <Badge variant={impact === 'critical' ? 'urgent' : impact === 'high' ? 'warning' : 'info'}>
-                    {dossiers.length}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {dossiers.map((dossier) => (
-                  <DossierCard
-                    key={dossier.id}
-                    dossier={dossier}
-                    darkMode={darkMode}
-                    onSubstitute={() => handleSubstitute(dossier)}
-                    onEscalate={() => handleEscalate(dossier)}
-                    onRequest={() => handleRequestDocument(dossier)}
-                    onResolve={() => { setSelectedDossier(dossier); setShowResolutionModal(true); }}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+            {/* Decision Center */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openModal('decision-center')}
+              className={cn(
+                'h-8 gap-1.5 text-slate-400 hover:text-slate-200',
+                stats?.critical && stats.critical > 0 && 'text-orange-400 hover:text-orange-300'
+              )}
+              title="Centre de décision (⌘D)"
+            >
+              <Zap className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">Décider</span>
+            </Button>
 
-      {/* Vue par type */}
-      {viewMode === 'type' && (
-        <div className="space-y-4">
-          {Object.entries(dossiersByType).map(([type, dossiers]) => (
-            <Card key={type}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  {type === 'Paiement' && '💳'}
-                  {type === 'Validation' && '✅'}
-                  {type === 'Contrat' && '📜'}
-                  {type}
-                  <Badge variant="info">{dossiers.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {dossiers.map((dossier) => (
-                  <DossierCard
-                    key={dossier.id}
-                    dossier={dossier}
-                    darkMode={darkMode}
-                    onSubstitute={() => handleSubstitute(dossier)}
-                    onEscalate={() => handleEscalate(dossier)}
-                    onRequest={() => handleRequestDocument(dossier)}
-                    onResolve={() => { setSelectedDossier(dossier); setShowResolutionModal(true); }}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-blue-400 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {stats?.overdueSLA && stats.overdueSLA > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {stats.overdueSLA}
+                </span>
+              )}
+            </Button>
 
-      {/* Vue par bureau */}
-      {viewMode === 'bureau' && (
-        <div className="grid md:grid-cols-2 gap-4">
-          {Object.entries(dossiersByBureau).map(([bureau, dossiers]) => (
-            <Card key={bureau}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BureauTag bureau={bureau} />
-                  <Badge variant="warning">{dossiers.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {dossiers.map((dossier) => (
-                  <div key={dossier.id} className={cn('p-2 rounded-lg border-l-4', getImpactBorder(dossier.impact), darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-mono text-[10px] text-orange-400">{dossier.id}</span>
-                        <p className="text-xs font-semibold">{dossier.subject}</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Badge variant="urgent">J+{dossier.delay}</Badge>
-                        <Button size="xs" variant="warning" onClick={() => handleSubstitute(dossier)}>⚡</Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Vue liste */}
-      {viewMode === 'all' && (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">ID</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Type</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Sujet</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Raison</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Projet</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Impact</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Délai</th>
-                    <th className="px-3 py-2.5 text-left font-bold text-amber-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDossiers.map((dossier) => (
-                    <tr key={dossier.id} className={cn('border-t hover:bg-orange-500/5', darkMode ? 'border-slate-700/50' : 'border-gray-100')}>
-                      <td className="px-3 py-2.5">
-                        <span className="font-mono px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold">{dossier.id}</span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant="info">{dossier.type}</Badge>
-                      </td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate">{dossier.subject}</td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate text-slate-400">{dossier.reason}</td>
-                      <td className="px-3 py-2.5 text-orange-400">{dossier.project}</td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant={dossier.impact === 'critical' ? 'urgent' : dossier.impact === 'high' ? 'warning' : 'default'} pulse={dossier.impact === 'critical'}>
-                          {dossier.impact}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant="urgent">J+{dossier.delay}</Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex gap-1">
-                          <Button size="xs" variant="warning" onClick={() => handleSubstitute(dossier)}>⚡</Button>
-                          <Button size="xs" variant="info" onClick={() => handleEscalate(dossier)}>⬆️</Button>
-                          <Button size="xs" variant="secondary" onClick={() => handleRequestDocument(dossier)}>📎</Button>
-                          <Link href={`/maitre-ouvrage/projets-en-cours?id=${dossier.project}`}>
-                            <Button size="xs" variant="ghost">📂</Button>
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Modal résolution */}
-      {showResolutionModal && selectedDossier && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                ✅ Résolution dossier
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <span className="font-mono text-xs text-red-400">{selectedDossier.id}</span>
-                <p className="font-bold text-sm mt-1">{selectedDossier.subject}</p>
-                <p className="text-xs text-slate-400">{selectedDossier.reason}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <BureauTag bureau={selectedDossier.bureau} />
-                  <Badge variant={selectedDossier.impact === 'critical' ? 'urgent' : 'warning'}>
-                    Impact {selectedDossier.impact}
-                  </Badge>
-                  <Badge variant="urgent">J+{selectedDossier.delay}</Badge>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-bold mb-2">Justification de la résolution *</p>
-                <textarea
-                  placeholder="Décrivez comment le blocage a été résolu..."
-                  value={resolutionNote}
-                  onChange={(e) => setResolutionNote(e.target.value)}
-                  rows={3}
-                  className={cn(
-                    'w-full px-3 py-2 rounded text-xs',
-                    darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-                  )}
-                />
-              </div>
-
-              <div className={cn('p-2 rounded text-[10px]', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                <p className="text-slate-400">
-                  ⚠️ Cette action créera une entrée dans le registre des décisions avec hash cryptographique et lien vers la preuve.
-                </p>
-              </div>
-
-              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
-                  className="flex-1"
-                  disabled={!resolutionNote.trim()}
-                  onClick={() => handleResolve(selectedDossier, resolutionNote)}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                  title="Actions"
                 >
-                  ✓ Marquer comme résolu
+                  <MoreHorizontal className="h-4 w-4" />
                 </Button>
-                <Button variant="secondary" onClick={() => { setShowResolutionModal(false); setResolutionNote(''); }}>
-                  Annuler
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleRefresh} disabled={isRefreshing}>
+                  <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('export')}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Exporter
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘E
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setFiltersPanelOpen(true)}>
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filtres avancés
+                  {activeFiltersCount > 0 && (
+                    <span className="ml-1 text-xs text-blue-400">({activeFiltersCount})</span>
+                  )}
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘F
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('stats')}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Statistiques
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ⌘I
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHelpModalOpen(true)}>
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  Aide
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    F1
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleFullscreen}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Plein écran
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    F11
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openModal('shortcuts')}>
+                  <span className="mr-2">⌨️</span>
+                  Raccourcis
+                  <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                    ?
+                  </kbd>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
 
-      {/* Info traçabilité */}
-      <Card className="border-orange-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">🔐</span>
-            <div>
-              <h3 className="font-bold text-sm text-orange-400">Traçabilité des résolutions</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Chaque action sur un dossier bloqué génère une entrée traçable :
-              </p>
-              <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-amber-400 font-bold">⚡ Substitution</span>
-                  <p className="text-slate-400">→ Décision + Délégation</p>
-                </div>
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-blue-400 font-bold">⬆️ Escalade</span>
-                  <p className="text-slate-400">→ Décision + Notification</p>
-                </div>
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-purple-400 font-bold">📎 Demande pièce</span>
-                  <p className="text-slate-400">→ Échange inter-bureaux</p>
-                </div>
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-emerald-400 font-bold">✅ Résolution</span>
-                  <p className="text-slate-400">→ Décision + Justification + Hash</p>
-                </div>
-              </div>
+        {/* Sub Navigation - 3-level */}
+        <BlockedSubNavigation
+          mainCategory={activeCategory as BlockedMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            total: stats.total,
+            critical: stats.critical,
+            high: stats.high,
+            medium: stats.medium,
+            low: stats.low,
+          } : undefined}
+        />
+
+        {/* KPI Bar */}
+        <BlockedKPIBar 
+          onRefresh={handleRefresh} 
+          isRefreshing={isRefreshing} 
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <BlockedContentRouter
+              mainCategory={activeCategory as BlockedMainCategory}
+              subCategory={activeSubCategory || undefined}
+              subSubCategory={activeSubSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats?.total ?? 0} blocages • {stats?.critical ?? 0} critiques • {stats?.resolvedToday ?? 0} résolus
+            </span>
+            {wsConnected && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  🔴 Temps réel ({subscriptionsCount} abonnements)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  liveStats.isRefreshing 
+                    ? 'bg-amber-500 animate-pulse' 
+                    : wsConnected 
+                    ? 'bg-emerald-500 animate-pulse' 
+                    : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {liveStats.isRefreshing 
+                  ? 'Synchronisation...' 
+                  : wsConnected 
+                  ? 'Temps réel' 
+                  : 'Connecté'}
+              </span>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </footer>
+      </div>
+
+      {/* Modals */}
+      <BlockedModals />
+
+      {/* Command Palette */}
+      <BlockedCommandPalette
+        open={commandPaletteOpen}
+        onClose={toggleCommandPalette}
+        onOpenStats={() => openModal('stats')}
+        onOpenDecisionCenter={() => openModal('decision-center')}
+        onOpenMatrix={() => {}}
+        onRefresh={handleRefresh}
+      />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Filters Panel */}
+      <BlockedFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        currentFilters={activeFilters}
+      />
+
+      {/* Help Modal */}
+      <BlockedHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
   );
 }
 
-// Composant carte dossier
-function DossierCard({
-  dossier,
-  darkMode,
-  onSubstitute,
-  onEscalate,
-  onRequest,
-  onResolve,
-}: {
-  dossier: BlockedDossier;
-  darkMode: boolean;
-  onSubstitute: () => void;
-  onEscalate: () => void;
-  onRequest: () => void;
-  onResolve: () => void;
-}) {
-  const getImpactBorder = (impact: string) => {
-    switch (impact) {
-      case 'critical': return 'border-l-red-500';
-      case 'high': return 'border-l-amber-500';
-      case 'medium': return 'border-l-blue-500';
-      default: return 'border-l-slate-500';
-    }
-  };
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const { stats } = useBlockedCommandCenterStore();
+
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: `${stats?.critical ?? 0} blocages critiques en attente`,
+      time: 'maintenant',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: `${stats?.overdueSLA ?? 0} SLA dépassés`,
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Statistiques actualisées',
+      time: 'il y a 1h',
+      read: true,
+    },
+  ];
 
   return (
-    <div className={cn('p-3 rounded-lg border-l-4', getImpactBorder(dossier.impact), darkMode ? 'bg-slate-700/30' : 'bg-gray-50')}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">{dossier.id}</span>
-            <Badge variant="info">{dossier.type}</Badge>
-            <BureauTag bureau={dossier.bureau} />
-            <Badge variant="urgent">J+{dossier.delay}</Badge>
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-80 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
           </div>
-          <p className="font-semibold text-sm">{dossier.subject}</p>
-          <p className="text-[10px] text-slate-400 mt-1">{dossier.reason}</p>
-          <div className="flex items-center gap-2 mt-1 text-[10px]">
-            <span className="text-slate-400">Projet:</span>
-            <Link href={`/maitre-ouvrage/projets-en-cours?id=${dossier.project}`} className="text-orange-400 hover:underline">
-              {dossier.project}
-            </Link>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-400">Responsable:</span>
-            <span>{dossier.responsible}</span>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
         </div>
-        <span className="font-mono font-bold text-amber-400">{dossier.amount}</span>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
       </div>
-      <div className="flex gap-1 mt-2">
-        <Button size="xs" variant="warning" onClick={onSubstitute}>⚡ Substituer</Button>
-        <Button size="xs" variant="info" onClick={onEscalate}>⬆️ Escalader</Button>
-        <Button size="xs" variant="secondary" onClick={onRequest}>📎 Demander pièce</Button>
-        <Link href={`/maitre-ouvrage/projets-en-cours?id=${dossier.project}`}>
-          <Button size="xs" variant="ghost">📂 Ouvrir projet</Button>
-        </Link>
-        <Button size="xs" variant="success" onClick={onResolve}>✓</Button>
-      </div>
-    </div>
+    </>
+  );
+}
+
+// ================================
+// Main Component (with Provider)
+// ================================
+export default function BlockedPage() {
+  return (
+    <BlockedToastProvider>
+      <BlockedPageContent />
+    </BlockedToastProvider>
   );
 }

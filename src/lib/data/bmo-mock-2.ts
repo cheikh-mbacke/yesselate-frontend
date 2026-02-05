@@ -271,13 +271,8 @@ export const demandesRH: HRRequest[] = [
 ];
 
 // --- Échanges inter-bureaux ---
-export const echangesBureaux: BureauExchange[] = [
-  { id: 'ECH-2025-0156', from: 'BCT', to: 'BA', fromAgent: 'C. GUEYE', toAgent: 'A. SECK', subject: 'Demande urgente ciment Portland', message: 'Besoin 50T ciment pour coulage dalle RDC Villa Diamniadio. Stock épuisé sur site.', date: '22/12/2025 14:30', status: 'pending', priority: 'urgent', project: 'PRJ-0018' },
-  { id: 'ECH-2025-0155', from: 'BJ', to: 'BM', fromAgent: 'N. FAYE', toAgent: 'M. BA', subject: 'Clause litigieuse contrat SOGEA', message: 'La clause 12.3 sur les pénalités de retard doit être renégociée. Proposition de modification jointe.', date: '22/12/2025 11:15', status: 'pending', priority: 'high', attachments: 1 },
-  { id: 'ECH-2025-0154', from: 'BF', to: 'BMO', fromAgent: 'F. DIOP', toAgent: 'I. FALL', subject: 'Alerte dépassement budget INFRA', message: 'Le projet INFRA-2025-0012 a dépassé le budget prévu de 12%. Demande arbitrage DG.', date: '22/12/2025 10:00', status: 'escalated', priority: 'urgent', project: 'PRJ-INFRA' },
-  { id: 'ECH-2025-0153', from: 'BA', to: 'BCT', fromAgent: 'A. SECK', toAgent: 'C. GUEYE', subject: 'Livraison fer à béton confirmée', message: 'Livraison prévue le 24/12 à 8h. Merci de prévoir équipe réception sur site.', date: '21/12/2025 16:45', status: 'resolved', priority: 'normal', project: 'PRJ-0018' },
-  { id: 'ECH-2025-0152', from: 'BQC', to: 'BCT', fromAgent: 'S. MBAYE', toAgent: 'C. GUEYE', subject: 'Résultats tests béton Lot 3', message: 'Tests de compression OK. Résistance: 32 MPa (norme: 25 MPa). Feu vert pour poursuite.', date: '21/12/2025 14:20', status: 'resolved', priority: 'normal', project: 'PRJ-0018', attachments: 2 },
-];
+// Supprimé : migré vers echanges-structures
+// export const echangesBureaux: BureauExchange[] = [...]
 
 // --- Arbitrages ---
 export const arbitrages: Arbitration[] = [

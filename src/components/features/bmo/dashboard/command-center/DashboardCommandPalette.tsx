@@ -1,0 +1,339 @@
+/**
+ * Palette de commandes du Dashboard (⌘K)
+ */
+
+'use client';
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Search,
+  LayoutDashboard,
+  TrendingUp,
+  Zap,
+  AlertTriangle,
+  Scale,
+  Activity,
+  FileCheck,
+  Wallet,
+  FileText,
+  Users,
+  Settings,
+  Download,
+  HelpCircle,
+  ArrowRight,
+  Command,
+} from 'lucide-react';
+import { useDashboardCommandCenterStore, type DashboardMainCategory } from '@/lib/stores/dashboardCommandCenterStore';
+
+interface CommandItem {
+  id: string;
+  type: 'navigation' | 'action' | 'recent';
+  label: string;
+  hint?: string;
+  icon: React.ElementType;
+  shortcut?: string;
+  action: () => void;
+}
+
+export function DashboardCommandPalette() {
+  const router = useRouter();
+  const { commandPaletteOpen, toggleCommandPalette, navigate, openModal } =
+    useDashboardCommandCenterStore();
+
+  const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Commandes disponibles
+  const commands: CommandItem[] = useMemo(
+    () => [
+      // Navigation Dashboard
+      {
+        id: 'nav-overview',
+        type: 'navigation',
+        label: 'Vue d\'ensemble',
+        hint: 'Dashboard principal',
+        icon: LayoutDashboard,
+        action: () => navigate('overview'),
+      },
+      {
+        id: 'nav-performance',
+        type: 'navigation',
+        label: 'Performance',
+        hint: 'KPIs et métriques',
+        icon: TrendingUp,
+        action: () => navigate('performance'),
+      },
+      {
+        id: 'nav-actions',
+        type: 'navigation',
+        label: 'Actions prioritaires',
+        hint: 'Work Inbox',
+        icon: Zap,
+        action: () => navigate('actions'),
+      },
+      {
+        id: 'nav-risks',
+        type: 'navigation',
+        label: 'Risques',
+        hint: 'Risk Radar',
+        icon: AlertTriangle,
+        action: () => navigate('risks'),
+      },
+      {
+        id: 'nav-decisions',
+        type: 'navigation',
+        label: 'Décisions',
+        hint: 'Timeline & suivi',
+        icon: Scale,
+        action: () => navigate('decisions'),
+      },
+      {
+        id: 'nav-realtime',
+        type: 'navigation',
+        label: 'Temps réel',
+        hint: 'Monitoring live',
+        icon: Activity,
+        action: () => navigate('realtime'),
+      },
+      // Navigation externe
+      {
+        id: 'nav-substitution',
+        type: 'navigation',
+        label: 'Substitutions',
+        hint: 'Blocages & délégations',
+        icon: Users,
+        action: () => router.push('/maitre-ouvrage/substitution'),
+      },
+      {
+        id: 'nav-validation-bc',
+        type: 'navigation',
+        label: 'Validation BC',
+        hint: 'Bons de commande',
+        icon: FileCheck,
+        action: () => router.push('/maitre-ouvrage/validation-bc'),
+      },
+      {
+        id: 'nav-paiements',
+        type: 'navigation',
+        label: 'Paiements',
+        hint: 'Validation paiements',
+        icon: Wallet,
+        action: () => router.push('/maitre-ouvrage/validation-paiements'),
+      },
+      {
+        id: 'nav-contrats',
+        type: 'navigation',
+        label: 'Contrats',
+        hint: 'Validation contrats',
+        icon: FileText,
+        action: () => router.push('/maitre-ouvrage/validation-contrats'),
+      },
+      {
+        id: 'nav-governance',
+        type: 'navigation',
+        label: 'Gouvernance',
+        hint: 'Centre de commandement',
+        icon: Scale,
+        action: () => router.push('/maitre-ouvrage/governance'),
+      },
+      // Actions
+      {
+        id: 'action-export',
+        type: 'action',
+        label: 'Exporter',
+        hint: 'Export données',
+        icon: Download,
+        shortcut: '⌘E',
+        action: () => openModal('export'),
+      },
+      {
+        id: 'action-settings',
+        type: 'action',
+        label: 'Paramètres',
+        hint: 'Configuration dashboard',
+        icon: Settings,
+        action: () => openModal('settings'),
+      },
+      {
+        id: 'action-help',
+        type: 'action',
+        label: 'Aide',
+        hint: 'Raccourcis & documentation',
+        icon: HelpCircle,
+        shortcut: '?',
+        action: () => openModal('shortcuts'),
+      },
+    ],
+    [navigate, router, openModal]
+  );
+
+  // Filtrer les commandes
+  const filteredCommands = useMemo(() => {
+    if (!query) return commands;
+    const q = query.toLowerCase();
+    return commands.filter(
+      (cmd) =>
+        cmd.label.toLowerCase().includes(q) ||
+        cmd.hint?.toLowerCase().includes(q)
+    );
+  }, [commands, query]);
+
+  // Reset selection on query change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  // Reset on close
+  useEffect(() => {
+    if (!commandPaletteOpen) {
+      setQuery('');
+      setSelectedIndex(0);
+    }
+  }, [commandPaletteOpen]);
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedIndex((i) => Math.min(i + 1, filteredCommands.length - 1));
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedIndex((i) => Math.max(i - 1, 0));
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (filteredCommands[selectedIndex]) {
+            filteredCommands[selectedIndex].action();
+            toggleCommandPalette();
+          }
+          break;
+        case 'Escape':
+          e.preventDefault();
+          toggleCommandPalette();
+          break;
+      }
+    },
+    [filteredCommands, selectedIndex, toggleCommandPalette]
+  );
+
+  if (!commandPaletteOpen) return null;
+
+  return (
+    <>
+      {/* Overlay */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+        onClick={toggleCommandPalette}
+      />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4">
+        <div
+          className="w-full max-w-xl bg-slate-900 rounded-xl border border-slate-700/50 shadow-2xl overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800/50">
+            <Command className="w-5 h-5 text-slate-500" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Rechercher une commande..."
+              className="flex-1 bg-transparent border-0 text-slate-200 placeholder:text-slate-500 focus-visible:ring-0"
+            />
+            <kbd className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-500 font-mono">
+              ESC
+            </kbd>
+          </div>
+
+          {/* Liste des commandes */}
+          <div className="max-h-80 overflow-y-auto">
+            {filteredCommands.length === 0 ? (
+              <div className="px-4 py-8 text-center text-slate-500">
+                Aucune commande trouvée
+              </div>
+            ) : (
+              <div className="py-2">
+                {filteredCommands.map((cmd, index) => {
+                  const Icon = cmd.icon;
+                  const isSelected = index === selectedIndex;
+
+                  return (
+                    <button
+                      key={cmd.id}
+                      onClick={() => {
+                        cmd.action();
+                        toggleCommandPalette();
+                      }}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                        isSelected ? 'bg-slate-800/80' : 'hover:bg-slate-800/40'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'p-1.5 rounded-lg',
+                          isSelected ? 'bg-blue-500/20' : 'bg-slate-800/50'
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            'w-4 h-4',
+                            isSelected ? 'text-blue-400' : 'text-slate-500'
+                          )}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={cn(
+                            'text-sm font-medium',
+                            isSelected ? 'text-slate-200' : 'text-slate-300'
+                          )}
+                        >
+                          {cmd.label}
+                        </p>
+                        {cmd.hint && (
+                          <p className="text-xs text-slate-500 truncate">{cmd.hint}</p>
+                        )}
+                      </div>
+                      {cmd.shortcut && (
+                        <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-xs text-slate-500 font-mono">
+                          {cmd.shortcut}
+                        </kbd>
+                      )}
+                      {isSelected && <ArrowRight className="w-4 h-4 text-slate-500" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-4 py-2 border-t border-slate-800/50 flex items-center justify-between text-xs text-slate-600">
+            <div className="flex items-center gap-4">
+              <span>
+                <kbd className="px-1 py-0.5 rounded bg-slate-800">↑↓</kbd> naviguer
+              </span>
+              <span>
+                <kbd className="px-1 py-0.5 rounded bg-slate-800">↵</kbd> sélectionner
+              </span>
+            </div>
+            <span>⌘K pour ouvrir/fermer</span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+

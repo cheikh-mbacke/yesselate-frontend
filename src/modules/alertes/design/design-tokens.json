@@ -1,0 +1,191 @@
+{
+  "name": "Alertes & Risques Design System",
+  "version": "1.0.0",
+  "description": "Design tokens pour le module Alertes & Risques - YESSALATE BMO V1.0 BETA",
+  
+  "colors": {
+    "primary": {
+      "50": "#EFF6FF",
+      "100": "#DBEAFE",
+      "200": "#BFDBFE",
+      "300": "#93C5FD",
+      "400": "#60A5FA",
+      "500": "#2563EB",
+      "600": "#1D4ED8",
+      "700": "#1E40AF",
+      "800": "#1E3A8A",
+      "900": "#1E3A8A",
+      "DEFAULT": "#2563EB",
+      "dark": "#1D4ED8"
+    },
+    "background": {
+      "base": "#0B1120",
+      "surface": "#020617",
+      "surface-elevated": "#111827",
+      "surface-hover": "#1F2937"
+    },
+    "border": {
+      "default": "#1F2937",
+      "light": "#374151",
+      "dark": "#111827"
+    },
+    "semantic": {
+      "success": {
+        "50": "#F0FDF4",
+        "100": "#DCFCE7",
+        "500": "#22C55E",
+        "600": "#16A34A",
+        "DEFAULT": "#22C55E"
+      },
+      "warning": {
+        "50": "#FEFCE8",
+        "100": "#FEF9C3",
+        "500": "#FACC15",
+        "600": "#EAB308",
+        "DEFAULT": "#FACC15"
+      },
+      "critical": {
+        "50": "#FEF2F2",
+        "100": "#FEE2E2",
+        "500": "#EF4444",
+        "600": "#DC2626",
+        "700": "#B91C1C",
+        "DEFAULT": "#EF4444"
+      },
+      "info": {
+        "50": "#F0F9FF",
+        "100": "#E0F2FE",
+        "500": "#0EA5E9",
+        "600": "#0284C7",
+        "DEFAULT": "#0EA5E9"
+      },
+      "muted": {
+        "50": "#F9FAFB",
+        "100": "#F3F4F6",
+        "500": "#6B7280",
+        "600": "#4B5563",
+        "DEFAULT": "#6B7280"
+      }
+    },
+    "text": {
+      "primary": "#F9FAFB",
+      "secondary": "#D1D5DB",
+      "tertiary": "#9CA3AF",
+      "disabled": "#6B7280",
+      "inverse": "#111827"
+    }
+  },
+  
+  "typography": {
+    "fontFamily": {
+      "sans": ["Inter", "system-ui", "-apple-system", "sans-serif"],
+      "mono": ["JetBrains Mono", "monospace"]
+    },
+    "fontSize": {
+      "xs": "12px",
+      "sm": "13px",
+      "base": "14px",
+      "md": "16px",
+      "lg": "18px",
+      "xl": "20px",
+      "2xl": "24px",
+      "3xl": "30px"
+    },
+    "fontWeight": {
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    },
+    "lineHeight": {
+      "tight": 1.2,
+      "normal": 1.5,
+      "relaxed": 1.75
+    }
+  },
+  
+  "spacing": {
+    "scale": [0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96],
+    "unit": "px",
+    "gutter": {
+      "mobile": 16,
+      "desktop": 24
+    },
+    "padding": {
+      "card": 16,
+      "panel": 20,
+      "modal": 24
+    }
+  },
+  
+  "borderRadius": {
+    "none": "0px",
+    "sm": "4px",
+    "md": "6px",
+    "lg": "8px",
+    "xl": "12px",
+    "full": "9999px"
+  },
+  
+  "shadows": {
+    "sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+    "xl": "0 10px 30px rgba(0, 0, 0, 0.35)",
+    "2xl": "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+  },
+  
+  "components": {
+    "sidebar": {
+      "width": {
+        "expanded": 256,
+        "collapsed": 64
+      },
+      "itemHeight": 40,
+      "nestedIndent": 16
+    },
+    "badge": {
+      "height": {
+        "sm": 20,
+        "md": 24
+      },
+      "padding": {
+        "sm": "4px 8px",
+        "md": "6px 12px"
+      }
+    },
+    "card": {
+      "padding": 16,
+      "borderRadius": 8,
+      "borderWidth": 1
+    },
+    "kpi": {
+      "minHeight": 120,
+      "padding": 20
+    },
+    "table": {
+      "rowHeight": 56,
+      "headerHeight": 48
+    }
+  },
+  
+  "breakpoints": {
+    "sm": 640,
+    "md": 768,
+    "lg": 1024,
+    "xl": 1280,
+    "2xl": 1536
+  },
+  
+  "zIndex": {
+    "base": 0,
+    "dropdown": 1000,
+    "sticky": 1020,
+    "fixed": 1030,
+    "modalBackdrop": 1040,
+    "modal": 1050,
+    "popover": 1060,
+    "tooltip": 1070
+  }
+}
+

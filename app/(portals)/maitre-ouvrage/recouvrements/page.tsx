@@ -1,513 +1,663 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Recouvrements - Version 2.0
+ * Architecture cohérente avec Analytics et Gouvernance
+ * Navigation à 3 niveaux: Sidebar + SubNavigation + KPIBar
+ */
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { recouvrements } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  DollarSign,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  MoreVertical,
+  Download,
+  Settings,
+  Maximize2,
+  Minimize2,
+  BarChart3,
+  Plus,
+  Filter,
+} from 'lucide-react';
+import { useRecouvrementsWorkspaceStore } from '@/lib/stores/recouvrementsWorkspaceStore';
+import { recouvrementsApiService, type RecouvrementsStats } from '@/lib/services/recouvrementsApiService';
+import { useBMOStore } from '@/lib/stores';
 
+// Command Center Components
+import {
+  RecouvrementsKPIBar,
+  RecouvrementsModals,
+  RecouvrementsNotificationsPanel,
+  recouvrementsCategories,
+  type RecouvrementsModalType,
+} from '@/components/features/bmo/workspace/recouvrements/command-center';
+// New 3-level navigation module
+import {
+  RecouvrementsSidebar,
+  RecouvrementsSubNavigation,
+  RecouvrementsContentRouter,
+  type RecouvrementsMainCategory,
+} from '@/modules/recouvrements';
+
+// Workspace Components
+import {
+  RecouvrementsCommandPalette,
+} from '@/components/features/bmo/workspace/recouvrements';
+
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  pending: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'urgent', label: 'Urgentes', badgeType: 'critical' },
+  ],
+  in_progress: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'active', label: 'Actives' },
+    { id: 'contacted', label: 'Contactées' },
+  ],
+  paid: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'today', label: "Aujourd'hui" },
+    { id: 'this_month', label: 'Ce mois' },
+  ],
+  litige: [
+    { id: 'all', label: 'Tous' },
+    { id: 'open', label: 'Ouverts', badgeType: 'critical' },
+    { id: 'resolved', label: 'Résolus' },
+  ],
+  overdue: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'critical', label: 'Critiques', badgeType: 'critical' },
+    { id: 'high', label: 'Élevées', badgeType: 'warning' },
+  ],
+  irrecoverable: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'archived', label: 'Archivées' },
+  ],
+  relances: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'scheduled', label: 'Planifiées' },
+    { id: 'sent', label: 'Envoyées' },
+  ],
+  contentieux: [
+    { id: 'all', label: 'Tous' },
+    { id: 'active', label: 'Actifs', badgeType: 'critical' },
+    { id: 'closed', label: 'Clôturés' },
+  ],
+  statistiques: [
+    { id: 'all', label: 'Vue globale' },
+    { id: 'by_client', label: 'Par client' },
+    { id: 'by_period', label: 'Par période' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function RecouvrementsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [selectedRecouvrement, setSelectedRecouvrement] = useState<string | null>(null);
+  return <RecouvrementsPageContent />;
+}
 
-  // Calculs
-  const stats = useMemo(() => {
-    const total = recouvrements.reduce(
-      (a, r) => a + parseFloat(r.montant.replace(/,/g, '')),
-      0
-    );
-    const byStatus = {
-      relance: recouvrements.filter((r) => r.status === 'relance').length,
-      huissier: recouvrements.filter((r) => r.status === 'huissier').length,
-      contentieux: recouvrements.filter((r) => r.status === 'contentieux').length,
-    };
-    const prochainAction = recouvrements
-      .filter((r) => r.nextActionDate)
-      .sort((a, b) => {
-        const dateA = new Date(a.nextActionDate!.split('/').reverse().join('-'));
-        const dateB = new Date(b.nextActionDate!.split('/').reverse().join('-'));
-        return dateA.getTime() - dateB.getTime();
-      })[0];
+function RecouvrementsPageContent() {
+  const { commandPaletteOpen, setCommandPaletteOpen } = useRecouvrementsWorkspaceStore();
+  const { addToast, addActionLog, currentUser } = useBMOStore();
 
-    return { total, byStatus, prochainAction };
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState('all');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // Stats state
+  const [statsData, setStatsData] = useState<RecouvrementsStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  // Navigation history for back button
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
+
+  // Filters state
+  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
+
+  // Modal state
+  const [modal, setModal] = useState<{ isOpen: boolean; type: RecouvrementsModalType }>({
+    isOpen: false,
+    type: null,
+  });
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return recouvrementsCategories.find((c) => c.id === activeCategory)?.label || 'Recouvrements';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  // Calculer les catégories avec badges dynamiques
+  const categoriesWithBadges = useMemo(() => {
+    if (!statsData) return recouvrementsCategories;
+
+    return recouvrementsCategories.map((cat) => {
+      switch (cat.id) {
+        case 'pending':
+          return { ...cat, badge: statsData.pending, badgeType: statsData.pending > 10 ? 'warning' as const : 'default' as const };
+        case 'in_progress':
+          return { ...cat, badge: statsData.in_progress };
+        case 'paid':
+          return { ...cat, badge: statsData.paid };
+        case 'litige':
+          return { ...cat, badge: statsData.litige, badgeType: statsData.litige > 0 ? 'critical' as const : 'default' as const };
+        case 'overdue':
+          return { ...cat, badge: statsData.total - statsData.paid - statsData.litige, badgeType: 'critical' as const };
+        default:
+          return cat;
+      }
+    });
+  }, [statsData]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const stats = await recouvrementsApiService.getStats();
+      setStatsData(stats);
+    } catch (error) {
+      console.error('Erreur chargement stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
   }, []);
 
-  const formatMontant = (montant: string) => {
-    return montant;
-  };
-
-  const statusConfig = {
-    relance: { color: 'amber', label: 'Relance', icon: '📧' },
-    huissier: { color: 'orange', label: 'Huissier', icon: '⚖️' },
-    contentieux: { color: 'red', label: 'Contentieux', icon: '🚨' },
-  };
-
-  const actionTypeConfig: Record<string, { icon: string; color: string }> = {
-    relance_email: { icon: '📧', color: 'text-blue-400' },
-    relance_courrier: { icon: '📮', color: 'text-amber-400' },
-    relance_telephone: { icon: '📞', color: 'text-emerald-400' },
-    mise_en_demeure: { icon: '⚠️', color: 'text-orange-400' },
-    huissier: { icon: '⚖️', color: 'text-red-400' },
-    contentieux: { icon: '🚨', color: 'text-red-500' },
-    echeancier: { icon: '📅', color: 'text-purple-400' },
-    paiement_partiel: { icon: '💰', color: 'text-emerald-500' },
-  };
-
-  const handleRelance = (rec: typeof recouvrements[0]) => {
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadStats();
+    setLastUpdate(new Date());
+    addToast('Données rafraîchies', 'success');
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'creation',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'audit',
       module: 'recouvrements',
-      targetId: rec.id,
-      targetType: 'Recouvrement',
-      targetLabel: `Relance ${rec.debiteur}`,
-      details: `Nouvelle relance envoyée pour créance de ${rec.montant} FCFA`,
-      bureau: 'BF',
+      targetId: 'REFRESH',
+      targetType: 'system',
+      targetLabel: 'Rafraîchissement',
+      details: 'Rafraîchissement manuel des créances',
+      bureau: 'DAF',
     });
-    addToast(`Relance envoyée à ${rec.debiteur}`, 'success');
-  };
+    setTimeout(() => setIsRefreshing(false), 1000);
+  }, [loadStats, addToast, addActionLog, currentUser]);
 
-  const handleEscalade = (rec: typeof recouvrements[0], target: 'huissier' | 'contentieux') => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'modification',
-      module: 'recouvrements',
-      targetId: rec.id,
-      targetType: 'Recouvrement',
-      targetLabel: `Escalade ${rec.debiteur}`,
-      details: `Dossier escaladé vers ${target === 'huissier' ? 'huissier' : 'contentieux'}`,
-      bureau: 'BF',
-    });
-    addToast(`Dossier ${rec.id} escaladé vers ${target}`, 'warning');
-  };
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setNavigationHistory((prev) => [...prev, activeCategory]);
+      setActiveCategory(category);
+      setActiveSubCategory(subCategory || 'all');
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+    }
+  }, [activeCategory]);
 
-  const selectedRecData = selectedRecouvrement
-    ? recouvrements.find((r) => r.id === selectedRecouvrement)
-    : null;
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    // Level 3 navigation - to be implemented if needed
+    console.log('Sub-sub category changed:', subSubCategory);
+  }, []);
+
+  const handleApplyFilters = useCallback((filters: Record<string, string[]>) => {
+    setActiveFilters(filters);
+    // TODO: Apply filters to content
+    console.log('Filters applied:', filters);
+  }, []);
+
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previousCategory = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((prev) => prev.slice(0, -1));
+      setActiveCategory(previousCategory);
+      setActiveSubCategory('all');
+    }
+  }, [navigationHistory]);
+
+  // Load stats on mount
+  useEffect(() => {
+    loadStats();
+    const interval = setInterval(loadStats, 60000);
+    return () => clearInterval(interval);
+  }, [loadStats]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // ⌘K - Command Palette
+      if (isMod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      // Escape - Close overlays
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setCommandPaletteOpen(false);
+        setNotificationsPanelOpen(false);
+        return;
+      }
+
+      // ⌘B - Toggle Sidebar
+      if (isMod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
+        return;
+      }
+
+      // F11 - Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullScreen((prev) => !prev);
+        return;
+      }
+
+      // Alt+← - Go Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setCommandPaletteOpen, handleGoBack, modal.isOpen]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullScreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <RecouvrementsSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={statsData ? {
+          pending: statsData.pending,
+          inProgress: statsData.in_progress,
+          resolved: statsData.paid,
+          failed: statsData.total - statsData.paid - statsData.litige,
+        } : undefined}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar - Simplified */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-amber-400" />
+              <h1 className="text-base font-semibold text-slate-200">
+                Recouvrements
+              </h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {statsData && (statsData.litige > 0 || statsData.montantEnRetard > 0) && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {statsData.litige}
+                </span>
+              )}
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              onExport={() => setModal({ isOpen: true, type: 'export' })}
+              onStats={() => setModal({ isOpen: true, type: 'stats' })}
+              onFilters={() => {
+                if (modal.type === 'filters' && modal.isOpen) {
+                  setModal({ isOpen: false, type: null });
+                } else {
+                  setModal({ isOpen: true, type: 'filters' });
+                }
+              }}
+              onFullscreen={() => setIsFullScreen(!isFullScreen)}
+              fullscreen={isFullScreen}
+              onHelp={() => setModal({ isOpen: true, type: 'help' })}
+            />
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        <RecouvrementsSubNavigation
+          mainCategory={activeCategory as RecouvrementsMainCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={statsData ? {
+            pending: statsData.pending,
+            inProgress: statsData.in_progress,
+            resolved: statsData.paid,
+            failed: statsData.total - statsData.paid - statsData.litige,
+          } : undefined}
+        />
+
+        {/* KPI Bar */}
+        <RecouvrementsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+          onRefresh={handleRefresh}
+          stats={statsData}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <RecouvrementsContentRouter
+              mainCategory={activeCategory as RecouvrementsMainCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">
+              Màj: {formatLastUpdate()}
+            </span>
+            {statsData && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  {statsData.total} créances • {statsData.pending} en attente • {recouvrementsApiService.formatMontant(statsData.montantEnRetard)} en retard
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      <RecouvrementsCommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenStats={() => setModal({ isOpen: true, type: 'stats' })}
+        onRefresh={handleRefresh}
+      />
+
+      {/* Modals */}
+      <RecouvrementsModals
+        modal={modal}
+        onClose={() => setModal({ isOpen: false, type: null })}
+        onApplyFilters={handleApplyFilters}
+      />
+
+      {/* Notifications Panel */}
+      <RecouvrementsNotificationsPanel
+        isOpen={notificationsPanelOpen}
+        onClose={() => setNotificationsPanelOpen(false)}
+      />
+    </div>
+  );
+}
+
+// ================================
+// Actions Menu Component
+// ================================
+function ActionsMenu({
+  onRefresh,
+  isRefreshing,
+  onExport,
+  onStats,
+  onFilters,
+  onFullscreen,
+  fullscreen,
+  onHelp,
+}: {
+  onRefresh: () => void;
+  isRefreshing: boolean;
+  onExport: () => void;
+  onStats: () => void;
+  onFilters: () => void;
+  onFullscreen: () => void;
+  fullscreen: boolean;
+  onHelp: () => void;
+}) {
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📜 Recouvrements
-            <Badge variant="warning">{recouvrements.length}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Créances à recouvrer et suivi des actions
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => addToast('Export en cours...', 'info')}
-          >
-            📊 Exporter
-          </Button>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => addToast('Nouveau recouvrement', 'info')}
-          >
-            ➕ Nouveau
-          </Button>
-        </div>
-      </div>
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(!open)}
+        className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+        title="Actions"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
 
-      {/* Stats globales */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card className="border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-amber-400">
-              {(stats.total / 1000000).toFixed(1)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Total à recouvrer</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.byStatus.relance}</p>
-            <p className="text-[10px] text-slate-400">En relance</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-orange-400">{stats.byStatus.huissier}</p>
-            <p className="text-[10px] text-slate-400">Chez huissier</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.byStatus.contentieux}</p>
-            <p className="text-[10px] text-slate-400">En contentieux</p>
-          </CardContent>
-        </Card>
-        <Card className="border-purple-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-purple-400">{recouvrements.length}</p>
-            <p className="text-[10px] text-slate-400">Dossiers actifs</p>
-          </CardContent>
-        </Card>
-      </div>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-56 rounded-lg bg-slate-900 border border-slate-700/50 shadow-xl z-50 py-1">
+            <button
+              onClick={() => {
+                onRefresh();
+                setOpen(false);
+              }}
+              disabled={isRefreshing}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50 disabled:opacity-50"
+            >
+              <RefreshCw className={cn('w-4 h-4', isRefreshing && 'animate-spin')} />
+              Rafraîchir
+            </button>
 
-      {/* Prochaine action */}
-      {stats.prochainAction && (
-        <Card className="border-l-4 border-l-orange-500">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">⏰</span>
-                <div>
-                  <p className="text-xs font-bold">Prochaine action requise</p>
-                  <p className="text-sm text-orange-400">
-                    {stats.prochainAction.nextAction} - {stats.prochainAction.debiteur}
-                  </p>
-                </div>
-              </div>
-              <Badge variant="warning">{stats.prochainAction.nextActionDate}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="border-t border-slate-700/50 my-1" />
 
-      {/* Liste des recouvrements */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            💰 Créances à recouvrer
-            <Badge variant="warning">{recouvrements.length}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">ID</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Débiteur</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Montant</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Retard</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Statut</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Dernière action</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Prochaine action</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recouvrements.map((rec) => {
-                  const status = statusConfig[rec.status as keyof typeof statusConfig];
-                  return (
-                    <tr
-                      key={rec.id}
-                      className={cn(
-                        'border-t cursor-pointer',
-                        darkMode
-                          ? 'border-slate-700/50 hover:bg-orange-500/5'
-                          : 'border-gray-100 hover:bg-gray-50',
-                        selectedRecouvrement === rec.id && 'bg-orange-500/10'
-                      )}
-                      onClick={() => setSelectedRecouvrement(rec.id)}
-                    >
-                      <td className="px-3 py-2.5">
-                        <span className="font-mono text-[10px] text-orange-400">{rec.id}</span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div>
-                          <p className="font-semibold">{rec.debiteur}</p>
-                          <p className="text-[10px] text-slate-400">{rec.type}</p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-mono font-bold text-amber-400">{formatMontant(rec.montant)} FCFA</p>
-                        {rec.montantRecouvre && rec.montantRecouvre !== '0' && (
-                          <p className="text-[10px] text-emerald-400">
-                            Recouvré: {rec.montantRecouvre} FCFA
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge
-                          variant={rec.delay > 60 ? 'urgent' : rec.delay > 30 ? 'warning' : 'default'}
-                        >
-                          J+{rec.delay}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge
-                          variant={
-                            rec.status === 'contentieux'
-                              ? 'urgent'
-                              : rec.status === 'huissier'
-                              ? 'warning'
-                              : 'info'
-                          }
-                        >
-                          {status?.icon} {status?.label}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div>
-                          <p className="text-[10px]">{rec.lastAction}</p>
-                          <p className="text-[9px] text-slate-500">{rec.lastActionDate}</p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {rec.nextAction ? (
-                          <div>
-                            <p className="text-[10px] text-orange-400">{rec.nextAction}</p>
-                            <p className="text-[9px] text-slate-500">{rec.nextActionDate}</p>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex gap-1">
-                          <Button
-                            size="xs"
-                            variant="info"
-                            onClick={() => handleRelance(rec)}
-                            title="Relancer"
-                          >
-                            📧
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="warning"
-                            onClick={() => addToast('Générer échéancier', 'info')}
-                            title="Échéancier"
-                          >
-                            📅
-                          </Button>
-                          {rec.status === 'relance' && (
-                            <Button
-                              size="xs"
-                              variant="urgent"
-                              onClick={() => handleEscalade(rec, 'huissier')}
-                              title="Escalader huissier"
-                            >
-                              ⚖️
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+            <button
+              onClick={() => {
+                onExport();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Download className="w-4 h-4" />
+              Exporter
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                ⌘E
+              </kbd>
+            </button>
 
-      {/* Détail du recouvrement sélectionné */}
-      {selectedRecData && (
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Informations */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>📋 Détails - {selectedRecData.id}</span>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => setSelectedRecouvrement(null)}
-                >
-                  ✕
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-slate-400">Débiteur</p>
-                  <p className="font-semibold">{selectedRecData.debiteur}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Type</p>
-                  <p>{selectedRecData.type}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Contact</p>
-                  <p>{selectedRecData.contact || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Téléphone</p>
-                  <p>{selectedRecData.phone || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Email</p>
-                  <p className="text-blue-400">{selectedRecData.email || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Échéance initiale</p>
-                  <p>{selectedRecData.dateEcheance}</p>
-                </div>
-              </div>
+            <div className="border-t border-slate-700/50 my-1" />
 
-              {selectedRecData.projetName && (
-                <div className="p-2 rounded-lg bg-slate-700/30">
-                  <p className="text-slate-400 text-[10px]">Projet lié</p>
-                  <p className="font-semibold text-orange-400">
-                    {selectedRecData.projet} - {selectedRecData.projetName}
-                  </p>
-                </div>
-              )}
+            <button
+              onClick={() => {
+                onStats();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Statistiques
+            </button>
 
-              {selectedRecData.linkedLitigation && (
-                <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/30">
-                  <p className="text-slate-400 text-[10px]">Litige associé</p>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    className="text-red-400 p-0 h-auto"
-                    onClick={() => addToast(`Voir litige ${selectedRecData.linkedLitigation}`, 'info')}
-                  >
-                    🔗 {selectedRecData.linkedLitigation}
-                  </Button>
-                </div>
-              )}
+            <button
+              onClick={() => {
+                onFilters();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Filter className="w-4 h-4" />
+              Filtres avancés
+            </button>
 
-              {/* Échéancier si présent */}
-              {selectedRecData.echeancier && (
-                <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                  <p className="text-[10px] text-slate-400 mb-2">📅 Échéancier en cours</p>
-                  <div className="space-y-1">
-                    {selectedRecData.echeancier.echeances.map((ech) => (
-                      <div
-                        key={ech.numero}
-                        className="flex items-center justify-between text-[10px]"
-                      >
-                        <span>Échéance {ech.numero}</span>
-                        <span>{ech.montant} FCFA</span>
-                        <span>{ech.dateEcheance}</span>
-                        <Badge
-                          variant={
-                            ech.status === 'paid'
-                              ? 'success'
-                              : ech.status === 'late'
-                              ? 'urgent'
-                              : 'default'
-                          }
-                          className="text-[8px]"
-                        >
-                          {ech.status === 'paid' ? '✓' : ech.status === 'late' ? '!' : '○'}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Historique des actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                📜 Historique des relances
-                <Badge variant="default">{selectedRecData.history.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 max-h-80 overflow-y-auto">
-              {selectedRecData.history.length > 0 ? (
-                selectedRecData.history.map((action, index) => {
-                  const config = actionTypeConfig[action.type] || { icon: '📋', color: 'text-slate-400' };
-                  return (
-                    <div
-                      key={action.id}
-                      className={cn(
-                        'p-2 rounded-lg border-l-2',
-                        index === 0 ? 'border-l-orange-500 bg-orange-500/10' : 'border-l-slate-600 bg-slate-700/20'
-                      )}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className={config.color}>{config.icon}</span>
-                          <div>
-                            <p className="text-[11px] font-semibold">{action.description}</p>
-                            <p className="text-[9px] text-slate-500">
-                              {action.date} • {action.agent}
-                            </p>
-                          </div>
-                        </div>
-                        {action.document && (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            className="text-[9px] text-blue-400"
-                            onClick={() => addToast(`Voir document ${action.document}`, 'info')}
-                          >
-                            📎
-                          </Button>
-                        )}
-                      </div>
-                      {action.result && (
-                        <p className="text-[9px] text-amber-400 mt-1 pl-6">→ {action.result}</p>
-                      )}
-                      {action.montant && (
-                        <p className="text-[9px] text-emerald-400 mt-1 pl-6">💰 {action.montant} FCFA</p>
-                      )}
-                    </div>
-                  );
-                })
+            <button
+              onClick={() => {
+                onFullscreen();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              {fullscreen ? (
+                <>
+                  <Minimize2 className="w-4 h-4" />
+                  Quitter plein écran
+                </>
               ) : (
-                <p className="text-slate-500 text-center py-4">Aucun historique</p>
+                <>
+                  <Maximize2 className="w-4 h-4" />
+                  Plein écran
+                </>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              <kbd className="ml-auto text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                F11
+              </kbd>
+            </button>
 
-      {/* Documents */}
-      {selectedRecData && selectedRecData.documents.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              📁 Documents associés
-              <Badge variant="default">{selectedRecData.documents.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {selectedRecData.documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className={cn(
-                    'p-2 rounded-lg border cursor-pointer hover:border-orange-500/50 transition-colors',
-                    darkMode ? 'bg-slate-700/30 border-slate-600' : 'bg-gray-50 border-gray-200'
-                  )}
-                  onClick={() => addToast(`Ouvrir ${doc.name}`, 'info')}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">
-                      {doc.type === 'courrier' && '📮'}
-                      {doc.type === 'mise_en_demeure' && '⚠️'}
-                      {doc.type === 'huissier' && '⚖️'}
-                      {doc.type === 'echeancier' && '📅'}
-                      {doc.type === 'preuve_paiement' && '💰'}
-                      {doc.type === 'autre' && '📋'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-medium truncate">{doc.name}</p>
-                      <p className="text-[9px] text-slate-500">{doc.date}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+            <div className="border-t border-slate-700/50 my-1" />
+
+            <button
+              onClick={() => {
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            >
+              <Settings className="w-4 h-4" />
+              Paramètres
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
 }
+
+

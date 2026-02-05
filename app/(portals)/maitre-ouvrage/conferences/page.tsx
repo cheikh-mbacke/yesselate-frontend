@@ -1,506 +1,576 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Conférences - Version 2.0
+ * Plateforme de gestion des conférences décisionnelles
+ * Architecture cohérente avec Analytics et Gouvernance
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { conferencesDecisionnelles, coordinationStats } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  Video,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useConferencesCommandCenterStore,
+  type ConferencesMainCategory,
+} from '@/lib/stores/conferencesCommandCenterStore';
+import {
+  ConferencesCommandSidebar,
+  ConferencesSubNavigation,
+  ConferencesKPIBar,
+  ConferencesContentRouter,
+  ConferencesCommandPalette,
+  ConferencesModals,
+  ConferencesDetailPanel,
+  ConferencesBatchActionsBar,
+  ConferencesFiltersPanel,
+  ActionsMenu,
+  conferencesCategories,
+} from '@/components/features/bmo/conferences/command-center';
+import { coordinationStats, conferencesDecisionnelles } from '@/lib/data';
 
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  planned: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'soon', label: 'Bientôt', badge: 0, badgeType: 'warning' },
+    { id: 'today', label: "Aujourd'hui" },
+    { id: 'week', label: 'Cette semaine' },
+  ],
+  ongoing: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'active', label: 'Actives' },
+    { id: 'starting', label: 'En début' },
+  ],
+  completed: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'with-summary', label: 'Avec CR', badge: 0 },
+  ],
+  crisis: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'active', label: 'Actives', badge: 0, badgeType: 'critical' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  arbitrage: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'pending', label: 'En attente' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+  revue_projet: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'weekly', label: 'Hebdomadaires' },
+    { id: 'monthly', label: 'Mensuelles' },
+  ],
+  comite_direction: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'strategic', label: 'Stratégiques' },
+    { id: 'operational', label: 'Opérationnelles' },
+  ],
+  resolution_blocage: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'critical', label: 'Critiques', badge: 0, badgeType: 'critical' },
+    { id: 'resolved', label: 'Résolues' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function ConferencesPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [filter, setFilter] = useState<'all' | 'planifiee' | 'terminee'>('all');
-  const [selectedConf, setSelectedConf] = useState<string | null>(null);
-  const [viewTab, setViewTab] = useState<'agenda' | 'participants' | 'summary'>('agenda');
+  return <ConferencesPageContent />;
+}
 
-  const filteredConfs = conferencesDecisionnelles.filter(c => filter === 'all' || c.status === filter);
-  const stats = coordinationStats.conferences;
+function ConferencesPageContent() {
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    navigate,
+    setKPIConfig,
+    filters,
+    detailPanel,
+    openDetailPanel,
+    openModal,
+    closeModal,
+    modal,
+  } = useConferencesCommandCenterStore();
 
-  const selected = selectedConf ? conferencesDecisionnelles.find(c => c.id === selectedConf) : null;
+  // État local pour refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
-  const handleCreateFromDossier = () => {
-    addActionLog({
-      module: 'conferences',
-      action: 'create_from_dossier',
-      targetId: 'NEW',
-      targetType: 'Conference',
-      details: 'Création conférence depuis dossier',
-      status: 'info',
-    });
-    addToast('Sélectionnez un dossier bloqué, arbitrage ou risque critique', 'info');
-  };
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
 
-  const handleJoinConference = (conf: typeof selected) => {
-    if (!conf) return;
-    addActionLog({
-      module: 'conferences',
-      action: 'join',
-      targetId: conf.id,
-      targetType: 'Conference',
-      details: `Connexion conférence ${conf.title}`,
-      status: 'success',
-    });
-    if (conf.visioLink) {
-      addToast('Ouverture du lien visio...', 'success');
+  // Stats pour la sidebar et KPI bar
+  const stats = useMemo(() => {
+    const baseStats = coordinationStats.conferences;
+    const nowMs = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    // Calculer les stats par type
+    const typeStats = {
+      crise: conferencesDecisionnelles.filter((c) => c.type === 'crise' && c.status === 'planifiee').length,
+      arbitrage: conferencesDecisionnelles.filter((c) => c.type === 'arbitrage' && c.status === 'planifiee').length,
+      revue_projet: conferencesDecisionnelles.filter((c) => c.type === 'revue_projet' && c.status === 'planifiee').length,
+      comite_direction: conferencesDecisionnelles.filter((c) => c.type === 'comite_direction' && c.status === 'planifiee').length,
+      resolution_blocage: conferencesDecisionnelles.filter((c) => c.type === 'resolution_blocage' && c.status === 'planifiee').length,
+    };
+
+    // Calculer en cours
+    const enCours = conferencesDecisionnelles.filter((c) => c.status === 'en_cours').length;
+
+    // Calculer critiques
+    const critiques = conferencesDecisionnelles.filter(
+      (c) => c.status === 'planifiee' && c.priority === 'critique'
+    ).length;
+
+    return {
+      ...baseStats,
+      enCours,
+      crise: typeStats.crise,
+      arbitrage: typeStats.arbitrage,
+      revue_projet: typeStats.revue_projet,
+      comite_direction: typeStats.comite_direction,
+      resolution_blocage: typeStats.resolution_blocage,
+      critiques,
+      tauxParticipation: 85, // Placeholder
+      tempsMoyen: 45, // Placeholder
+    };
+  }, []);
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return conferencesCategories.find((c) => c.id === activeCategory)?.label || 'Conférences';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
+  }, []);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as ConferencesMainCategory, 'all', null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleSelectConference = useCallback((id: string) => {
+    openDetailPanel('conference', id, {});
+  }, [openDetailPanel]);
+
+  const handleBatchAction = useCallback((actionId: string, ids: string[]) => {
+    switch (actionId) {
+      case 'export':
+        openModal('export', { selectedIds: ids });
+        break;
+      case 'view':
+        if (ids.length > 0) {
+          openModal('detail', { conferenceId: ids[0] });
+        }
+        break;
+      case 'delete':
+        openModal('confirm', {
+          title: 'Supprimer les conférences',
+          message: `Êtes-vous sûr de vouloir supprimer ${ids.length} conférence(s) ?`,
+          variant: 'danger',
+          onConfirm: async () => {
+            // TODO: Implémenter suppression
+            console.log('Suppression de', ids);
+          },
+        });
+        break;
+      default:
+        break;
     }
-  };
+  }, [openModal]);
 
-  const handleGenerateSummary = (conf: typeof selected) => {
-    if (!conf) return;
-    addActionLog({
-      module: 'conferences',
-      action: 'generate_summary',
-      targetId: conf.id,
-      targetType: 'Conference',
-      details: 'Génération compte-rendu IA',
-      status: 'info',
-      hash: `SHA3-256:sum_${Date.now().toString(16)}`,
-    });
-    addToast('Génération du compte-rendu IA en cours...', 'info');
-  };
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-  const handleValidateSummary = (conf: typeof selected) => {
-    if (!conf || !conf.summary) return;
-    addActionLog({
-      module: 'conferences',
-      action: 'validate_summary',
-      targetId: conf.id,
-      targetType: 'Conference',
-      details: 'Validation compte-rendu par humain',
-      status: 'success',
-      hash: `SHA3-256:val_${Date.now().toString(16)}`,
-    });
-    addToast('Compte-rendu validé - Décisions extraites vers registre', 'success');
-  };
+      const isMod = e.metaKey || e.ctrlKey;
 
-  const handleExtractDecisions = (conf: typeof selected) => {
-    if (!conf) return;
-    addActionLog({
-      module: 'conferences',
-      action: 'extract_decisions',
-      targetId: conf.id,
-      targetType: 'Conference',
-      details: 'Extraction décisions vers registre',
-      status: 'success',
-    });
-    addToast('Décisions extraites et hashées', 'success');
-  };
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
 
-  const getTypeIcon = (type: string) => {
-    const icons: Record<string, string> = { crise: '🚨', arbitrage: '⚖️', revue_projet: '📊', comite_direction: '👔', resolution_blocage: '🔓' };
-    return icons[type] || '📹';
-  };
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
 
-  const getPriorityBadge = (priority: string) => {
-    const variants: Record<string, 'default' | 'info' | 'warning' | 'urgent'> = { normale: 'default', haute: 'info', urgente: 'warning', critique: 'urgent' };
-    return variants[priority] || 'default';
-  };
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation */}
+      <ConferencesCommandSidebar
+        activeCategory={activeCategory}
+        collapsed={sidebarCollapsed}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+        stats={stats}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Video className="h-5 w-5 text-purple-400" />
+              <h1 className="text-base font-semibold text-slate-200">Conférences</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                3
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              fullscreen={fullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              onToggleCommandPalette={toggleCommandPalette}
+            />
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <ConferencesSubNavigation
+          mainCategory={activeCategory}
+          mainCategoryLabel={currentCategoryLabel}
+          subCategory={activeSubCategory}
+          subCategories={currentSubCategories}
+          onSubCategoryChange={handleSubCategoryChange}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <ConferencesKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+            data={{
+              total: stats.total,
+              planifiees: stats.planifiees,
+              enCours: stats.enCours,
+              terminees: stats.terminees,
+              critiques: stats.critiques,
+              decisionsGenerees: stats.decisionsGenerees,
+              tauxParticipation: stats.tauxParticipation,
+              tempsMoyen: stats.tempsMoyen,
+            }}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <ConferencesContentRouter
+              category={activeCategory}
+              subCategory={activeSubCategory}
+              filters={filters}
+              onSelectConference={handleSelectConference}
+              selectedConferenceId={detailPanel.entityId}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats.total} conférences • {stats.planifiees} planifiées • {stats.terminees} terminées
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && <ConferencesCommandPalette />}
+
+      {/* Modals */}
+      <ConferencesModals />
+
+      {/* Detail Panel */}
+      <ConferencesDetailPanel />
+
+      {/* Batch Actions Bar */}
+      <ConferencesBatchActionsBar onAction={handleBatchAction} />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <ConferencesFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+        />
+      )}
+    </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Conférence critique bientôt',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Conférence planifiée sans participants',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Nouveau compte-rendu disponible',
+      time: 'il y a 3h',
+      read: true,
+    },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📹 Conférences Décisionnelles
-            <Badge variant="info">{stats.planifiees} planifiée(s)</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">Visio liées aux dossiers avec compte-rendu IA et extraction de décisions</p>
-        </div>
-        <Button onClick={handleCreateFromDossier}>+ Créer depuis dossier</Button>
-      </div>
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
 
-      {/* Principe clé */}
-      <Card className="bg-purple-500/10 border-purple-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🎯</span>
-            <div className="flex-1">
-              <h3 className="font-bold text-purple-400">Pas un simple appel visio</h3>
-              <p className="text-sm text-slate-400">Chaque conférence est liée à un contexte (dossier bloqué, arbitrage, risque). Ordre du jour auto-généré. Décisions extraites et hashées.</p>
-            </div>
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-purple-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+              2 nouvelles
+            </Badge>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Info visio intégrée */}
-      <Card className="border-blue-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">💡</span>
-            <div className="flex-1">
-              <h3 className="font-bold text-sm text-blue-400">
-                Visioconférence intégrée (Bientôt disponible)
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Le module de visioconférence intégré sera bientôt disponible. En attendant, vous pouvez utiliser les intégrations existantes avec Zoom, Google Meet ou Microsoft Teams via le calendrier BMO. Les liens de réunion sont automatiquement ajoutés aux événements planifiés.
-              </p>
-              <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="secondary">
-                  📅 Voir le calendrier
-                </Button>
-                <Button size="sm" variant="secondary">
-                  🔗 Configurer intégrations
-                </Button>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.planifiees}</p>
-            <p className="text-[10px] text-slate-400">Planifiées</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.terminees}</p>
-            <p className="text-[10px] text-slate-400">Terminées</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-pink-500/10 border-pink-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-pink-400">{stats.decisionsGenerees}</p>
-            <p className="text-[10px] text-slate-400">Décisions générées</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filtres */}
-      <div className="flex gap-2 flex-wrap">
-        {[
-          { id: 'all', label: 'Toutes' },
-          { id: 'planifiee', label: '📅 Planifiées' },
-          { id: 'terminee', label: '✅ Terminées' },
-        ].map((f) => (
-          <Button key={f.id} size="sm" variant={filter === f.id ? 'default' : 'secondary'} onClick={() => setFilter(f.id as typeof filter)}>{f.label}</Button>
-        ))}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Liste conférences */}
-        <div className="lg:col-span-2 space-y-3">
-          {filteredConfs.map((conf) => {
-            const isSelected = selectedConf === conf.id;
-            const isUpcoming = conf.status === 'planifiee' && new Date(conf.scheduledAt) > new Date();
-            const isSoon = conf.status === 'planifiee' && new Date(conf.scheduledAt) <= new Date(Date.now() + 24 * 60 * 60 * 1000);
-            
-            return (
-              <Card
-                key={conf.id}
-                className={cn(
-                  'cursor-pointer transition-all',
-                  isSelected ? 'ring-2 ring-purple-500' : 'hover:border-purple-500/50',
-                  conf.status === 'planifiee' && conf.priority === 'critique' && 'border-l-4 border-l-red-500',
-                  conf.status === 'planifiee' && conf.priority !== 'critique' && 'border-l-4 border-l-amber-500',
-                  conf.status === 'terminee' && 'border-l-4 border-l-emerald-500 opacity-80',
-                )}
-                onClick={() => setSelectedConf(conf.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-lg">{getTypeIcon(conf.type)}</span>
-                        <span className="font-mono text-xs text-purple-400">{conf.id}</span>
-                        <Badge variant={conf.status === 'planifiee' ? 'warning' : conf.status === 'terminee' ? 'success' : 'default'}>{conf.status}</Badge>
-                        <Badge variant={getPriorityBadge(conf.priority)}>{conf.priority}</Badge>
-                        {isSoon && <Badge variant="urgent" pulse>Bientôt</Badge>}
-                      </div>
-                      <h3 className="font-bold mt-1">{conf.title}</h3>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-mono text-sm">{new Date(conf.scheduledAt).toLocaleDateString('fr-FR')}</p>
-                      <p className="text-xs text-slate-400">{new Date(conf.scheduledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} • {conf.duration}min</p>
-                    </div>
-                  </div>
-
-                  {/* Contexte lié */}
-                  <div className="p-2 rounded bg-blue-500/10 border border-blue-500/30 mb-3">
-                    <p className="text-xs text-blue-400">🔗 Contexte: {conf.linkedContext.type}</p>
-                    <p className="text-sm font-medium">{conf.linkedContext.label}</p>
-                  </div>
-
-                  {/* Participants preview */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs text-slate-400">Participants:</span>
-                    <div className="flex -space-x-2">
-                      {conf.participants.slice(0, 4).map((p, idx) => (
-                        <div key={idx} className="w-7 h-7 rounded-full bg-slate-700 border-2 border-slate-800 flex items-center justify-center text-[10px] font-bold" title={p.name}>
-                          {p.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                      ))}
-                      {conf.participants.length > 4 && (
-                        <div className="w-7 h-7 rounded-full bg-slate-600 border-2 border-slate-800 flex items-center justify-center text-[10px]">+{conf.participants.length - 4}</div>
-                      )}
-                    </div>
-                    <Badge variant="default">{conf.location}</Badge>
-                  </div>
-
-                  {/* Décisions extraites */}
-                  {conf.decisionsExtracted.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Badge variant="success">✓ {conf.decisionsExtracted.length} décision(s) extraite(s)</Badge>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  {conf.status === 'planifiee' && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                      <Button size="sm" variant="success" onClick={(e) => { e.stopPropagation(); handleJoinConference(conf); }}>🔗 Rejoindre</Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
         </div>
 
-        {/* Panel détail */}
-        <div className="lg:col-span-1">
-          {selected ? (
-            <Card className="sticky top-4">
-              <CardContent className="p-4">
-                <div className="mb-4 pb-4 border-b border-slate-700/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">{getTypeIcon(selected.type)}</span>
-                    <Badge variant={selected.status === 'planifiee' ? 'warning' : 'success'}>{selected.status}</Badge>
-                    <Badge variant={getPriorityBadge(selected.priority)}>{selected.priority}</Badge>
-                  </div>
-                  <span className="font-mono text-xs text-purple-400">{selected.id}</span>
-                  <h3 className="font-bold">{selected.title}</h3>
-                  <p className="text-sm text-slate-400 mt-1">
-                    {new Date(selected.scheduledAt).toLocaleDateString('fr-FR')} à {new Date(selected.scheduledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
                   </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
                 </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-                {/* Contexte */}
-                <div className="p-3 rounded bg-blue-500/10 border border-blue-500/30 mb-4">
-                  <p className="text-xs text-blue-400">🔗 {selected.linkedContext.type}</p>
-                  <p className="font-medium text-sm">{selected.linkedContext.label}</p>
-                  <p className="text-xs text-slate-400 mt-1">ID: {selected.linkedContext.id}</p>
-                </div>
-
-                {/* Onglets */}
-                <div className="flex gap-1 mb-4">
-                  <Button size="sm" variant={viewTab === 'agenda' ? 'default' : 'secondary'} onClick={() => setViewTab('agenda')}>📋 Agenda</Button>
-                  <Button size="sm" variant={viewTab === 'participants' ? 'default' : 'secondary'} onClick={() => setViewTab('participants')}>👥 ({selected.participants.length})</Button>
-                  {selected.summary && <Button size="sm" variant={viewTab === 'summary' ? 'default' : 'secondary'} onClick={() => setViewTab('summary')}>📝 CR</Button>}
-                </div>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {viewTab === 'agenda' && (
-                    selected.agenda.map((item) => (
-                      <div key={item.order} className={cn("p-2 rounded text-xs", darkMode ? "bg-slate-700/30" : "bg-gray-100", item.decisionRequired && "border-l-2 border-l-amber-500")}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold">{item.order}. {item.title}</span>
-                          <Badge variant={item.status === 'completed' ? 'success' : item.status === 'in_progress' ? 'info' : 'default'}>{item.duration}min</Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="default">{item.type}</Badge>
-                          {item.decisionRequired && <Badge variant="warning">Décision</Badge>}
-                        </div>
-                        {item.outcome && <p className="text-emerald-400 mt-1">→ {item.outcome}</p>}
-                      </div>
-                    ))
-                  )}
-
-                  {viewTab === 'participants' && (
-                    selected.participants.map((p) => (
-                      <div key={p.employeeId} className={cn("p-2 rounded text-xs flex items-center justify-between", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <div>
-                          <p className="font-medium">{p.name}</p>
-                          <p className="text-slate-400">{p.bureau} • {p.role}</p>
-                        </div>
-                        <Badge variant={p.presence === 'confirme' ? 'success' : p.presence === 'decline' ? 'urgent' : 'default'}>{p.presence}</Badge>
-                      </div>
-                    ))
-                  )}
-
-                  {viewTab === 'summary' && selected.summary && (
-                    <div className="space-y-3">
-                      <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <p className="text-xs text-slate-400 mb-1">Généré par: {selected.summary.generatedBy}</p>
-                        {selected.summary.validatedBy && <p className="text-xs text-emerald-400">✓ Validé par {selected.summary.validatedBy}</p>}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold mb-1">Points clés</p>
-                        {selected.summary.keyPoints.map((kp, idx) => (
-                          <p key={idx} className="text-xs text-slate-300">• {kp}</p>
-                        ))}
-                      </div>
-                      {selected.summary.decisionsProposed.length > 0 && (
-                        <div>
-                          <p className="text-xs font-bold mb-1">Décisions</p>
-                          {selected.summary.decisionsProposed.map((d) => (
-                            <div key={d.id} className="text-xs p-1 rounded bg-slate-700/20 mb-1">
-                              <Badge variant={d.status === 'adopted' ? 'success' : d.status === 'rejected' ? 'urgent' : 'default'}>{d.status}</Badge>
-                              <p>{d.description}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Traçabilité */}
-                {selected.agendaGeneratedFrom && (
-                  <div className="mt-3 p-2 rounded bg-slate-700/30 text-xs">
-                    <p className="text-slate-400">📊 Agenda généré depuis:</p>
-                    <p>{selected.agendaGeneratedFrom}</p>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                  {selected.status === 'planifiee' && (
-                    <Button size="sm" variant="success" onClick={() => handleJoinConference(selected)}>🔗 Rejoindre la conférence</Button>
-                  )}
-                  {selected.status === 'terminee' && !selected.summary && (
-                    <Button size="sm" variant="info" onClick={() => handleGenerateSummary(selected)}>🤖 Générer CR (IA)</Button>
-                  )}
-                  {selected.summary && selected.summary.generatedBy === 'ia' && (
-                    <Button size="sm" variant="success" onClick={() => handleValidateSummary(selected)}>✓ Valider le CR</Button>
-                  )}
-                  {selected.summary && selected.summary.validatedBy && selected.decisionsExtracted.length === 0 && (
-                    <Button size="sm" variant="default" onClick={() => handleExtractDecisions(selected)}>📤 Extraire décisions</Button>
-                  )}
-                </div>
-
-                {/* Hash */}
-                <div className="mt-3 p-2 rounded bg-purple-500/10 border border-purple-500/30">
-                  <p className="text-[10px] text-purple-400">🔐 Hash</p>
-                  <p className="font-mono text-[10px] truncate">{selected.hash}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="sticky top-4"><CardContent className="p-8 text-center"><span className="text-4xl mb-4 block">📹</span><p className="text-slate-400">Sélectionnez une conférence</p></CardContent></Card>
-          )}
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
         </div>
       </div>
-
-      {/* Fonctionnalités visio prévues */}
-      <div className="mt-6">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-          🚀 Fonctionnalités visio prévues
-        </h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">🎥</span>
-                <h3 className="font-bold text-sm">Réunions vidéo</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Organisez des réunions vidéo avec vos équipes et partenaires directement depuis l&apos;interface BMO.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• HD jusqu&apos;à 1080p</li>
-                <li>• Jusqu&apos;à 50 participants</li>
-                <li>• Partage d&apos;écran</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">📅</span>
-                <h3 className="font-bold text-sm">Planification</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Planifiez vos réunions et synchronisez-les automatiquement avec le calendrier BMO.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• Invitations automatiques</li>
-                <li>• Rappels par email/push</li>
-                <li>• Récurrence configurable</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">💬</span>
-                <h3 className="font-bold text-sm">Chat intégré</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Communiquez en temps réel pendant les réunions avec le chat intégré.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• Messages texte</li>
-                <li>• Partage de fichiers</li>
-                <li>• Réactions emoji</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">🎙️</span>
-                <h3 className="font-bold text-sm">Enregistrement</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Enregistrez vos réunions pour les revoir ultérieurement ou les partager.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• Enregistrement cloud</li>
-                <li>• Transcription automatique</li>
-                <li>• Résumé IA</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">🔗</span>
-                <h3 className="font-bold text-sm">Intégration projets</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Liez vos réunions aux projets et dossiers BMO pour une traçabilité complète.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• Lien avec projets</li>
-                <li>• Comptes-rendus automatiques</li>
-                <li>• Suivi des décisions</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">🌐</span>
-                <h3 className="font-bold text-sm">Accès externe</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">
-                Invitez des participants externes (clients, fournisseurs) sans compte YESSALATE.
-              </p>
-              <ul className="text-xs space-y-1 text-slate-500">
-                <li>• Lien d&apos;invitation</li>
-                <li>• Salle d&apos;attente</li>
-                <li>• Accès sécurisé</li>
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

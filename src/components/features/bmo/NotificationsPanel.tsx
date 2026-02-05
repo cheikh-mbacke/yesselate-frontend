@@ -21,10 +21,12 @@ export function NotificationsPanel() {
 
   return (
     <>
-      {/* Overlay */}
+      {/* Overlay - Seulement si le panel est ouvert */}
       <div
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
         onClick={() => setShowNotifications(false)}
+        style={{ pointerEvents: 'auto' }}
+        aria-hidden="true"
       />
 
       {/* Panel */}

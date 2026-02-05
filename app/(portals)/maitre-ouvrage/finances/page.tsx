@@ -1,528 +1,707 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Finances - Version 2.0
+ * Plateforme de pilotage financier
+ * Architecture cohérente avec Gouvernance et Analytics
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { financials, recouvrements, litiges } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  Wallet,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  Plus,
+  Download,
+  Settings,
+  MoreHorizontal,
+  BarChart3,
+} from 'lucide-react';
+import { useFinancesWorkspaceStore } from '@/lib/stores/financesWorkspaceStore';
+import {
+  FinancesKPIBar,
+  FinancesFiltersPanel,
+  financesCategories,
+  financesSubCategoriesMap,
+  financesFiltersMap,
+  type FinancesKPIData,
+} from '@/components/features/bmo/finances/command-center';
+// New 3-level navigation module
+import {
+  FinancesSidebar,
+  FinancesSubNavigation,
+  FinancesContentRouter,
+  type FinancesMainCategory,
+} from '@/modules/finances';
+import { FinancesCommandPalette } from '@/components/features/bmo/workspace/finances';
+import {
+  TransactionDetailModal,
+  InvoiceFormModal,
+  ExportModal,
+} from '@/components/features/bmo/finances/modals';
+import { useDeleteTransaction, useUpdateTransaction } from '@/lib/hooks/useFinancesData';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
-type TabType = 'gains' | 'pertes' | 'tresorerie';
-
-export default function FinancesPage() {
-  const { darkMode } = useAppStore();
-  const { addToast } = useBMOStore();
-  const [activeTab, setActiveTab] = useState<TabType>('gains');
-
-  // Calculs dérivés
-  const stats = useMemo(() => {
-    const totalRecouvrement = recouvrements.reduce(
-      (a, r) => a + parseFloat(r.montant.replace(/,/g, '')),
-      0
-    );
-    const totalLitiges = litiges.reduce(
-      (a, l) => a + parseFloat(l.montant.replace(/,/g, '')),
-      0
-    );
-    const expositionLitiges = litiges.reduce(
-      (a, l) => a + parseFloat(l.exposure.replace(/,/g, '')),
-      0
-    );
-
-    return {
-      totalRecouvrement,
-      totalLitiges,
-      expositionLitiges,
-    };
-  }, []);
-
-  // Formatage monétaire
-  const formatMontant = (montant: number) => {
-    return new Intl.NumberFormat('fr-FR').format(montant);
-  };
-
-  const tabs = [
-    { id: 'gains' as TabType, label: 'Gains', icon: '📈', count: financials.gains.length },
-    { id: 'pertes' as TabType, label: 'Pertes', icon: '📉', count: financials.pertes.length },
-    { id: 'tresorerie' as TabType, label: 'Trésorerie', icon: '🏦', count: financials.treasury.length },
+// ================================
+// Notifications Panel Component
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Budget projet dépassé',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Facture impayée depuis 45 jours',
+      time: 'il y a 1h',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Nouveau paiement reçu',
+      time: 'il y a 3h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: '5 factures en attente validation',
+      time: 'il y a 5h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Rapport mensuel disponible',
+      time: 'hier',
+      read: true,
+    },
   ];
 
-  const categoryIcons: Record<string, string> = {
-    paiement_client: '💰',
-    retenue_garantie: '🔓',
-    penalite_recue: '⚠️',
-    remboursement: '↩️',
-    subvention: '🏛️',
-    penalite_retard: '⏰',
-    malfacon: '🔧',
-    sinistre: '🚨',
-    creance_irrecuperable: '❌',
-    frais_contentieux: '⚖️',
-    provision_litige: '📊',
-    autre: '📋',
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            💰 Finances
-            <Badge variant="success">{financials.tauxMarge}% marge</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Suivi des gains, pertes et trésorerie
-          </p>
-        </div>
-        <div className="flex gap-2">
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
           <Button
+            variant="ghost"
             size="sm"
-            variant="secondary"
-            onClick={() => addToast('Export en cours...', 'info')}
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
           >
-            📊 Exporter
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-rose-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-cyan-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
           </Button>
         </div>
       </div>
+    </>
+  );
+}
 
-      {/* Résumé global */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-emerald-400">
-              {formatMontant(financials.totalGains / 1000000)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Total Gains</p>
-          </CardContent>
-        </Card>
-        <Card className="border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-red-400">
-              {formatMontant(financials.totalPertes / 1000000)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Total Pertes</p>
-          </CardContent>
-        </Card>
-        <Card className="border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-amber-400">
-              {formatMontant(financials.resultatNet / 1000000)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Résultat Net</p>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-blue-400">
-              {formatMontant(financials.tresorerieActuelle / 1000000)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Trésorerie</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* KPIs supplémentaires */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Marge nette</span>
-              <Badge variant="success">{financials.kpis.margeNette}%</Badge>
+// ================================
+// Stats Modal Component
+// ================================
+function StatsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl mx-4 rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-slate-700/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/10">
+              <BarChart3 className="w-5 h-5 text-cyan-400" />
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Taux recouvrement</span>
-              <Badge variant="info">{financials.kpis.ratioRecouvrement}%</Badge>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Exposition litiges</span>
-              <Badge variant="warning">{formatMontant(stats.expositionLitiges / 1000000)}M</Badge>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Provisions</span>
-              <Badge variant="default">{formatMontant(financials.kpis.provisionContentieux / 1000000)}M</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Onglets */}
-      <div className="flex gap-1 p-1 rounded-lg bg-slate-800/50">
-        {tabs.map((tab) => (
+            <h2 className="text-lg font-bold text-slate-200">Statistiques Financières</h2>
+          </div>
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all',
-              activeTab === tab.id
-                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-                : 'text-slate-400 hover:bg-slate-700/50'
-            )}
+            onClick={onClose}
+            className="p-2 rounded-lg text-slate-400 hover:bg-slate-800"
           >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-            <Badge variant="default" className="text-[9px] px-1">
-              {tab.count}
-            </Badge>
+            ✕
           </button>
-        ))}
-      </div>
-
-      {/* Contenu des onglets */}
-      {activeTab === 'gains' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                📈 Gains financiers
-                <Badge variant="success">{financials.gains.length}</Badge>
-              </span>
-              <span className="text-emerald-400 font-mono">
-                {formatMontant(financials.gains.reduce((a, g) => a + g.montant, 0))} FCFA
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Date</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Catégorie</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Description</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Projet</th>
-                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase text-amber-500">Montant</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Traçabilité</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {financials.gains.map((gain) => (
-                    <tr
-                      key={gain.id}
-                      className={cn(
-                        'border-t',
-                        darkMode
-                          ? 'border-slate-700/50 hover:bg-emerald-500/5'
-                          : 'border-gray-100 hover:bg-gray-50'
-                      )}
-                    >
-                      <td className="px-3 py-2.5 text-slate-400">{gain.date}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1">
-                          <span>{categoryIcons[gain.category] || '📋'}</span>
-                          <span className="text-[10px]">{gain.categoryLabel}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium">{gain.description}</p>
-                        {gain.clientName && (
-                          <p className="text-[10px] text-slate-400">Client: {gain.clientName}</p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {gain.projetName ? (
-                          <Badge variant="info" className="text-[9px]">{gain.projetName}</Badge>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">
-                        +{formatMontant(gain.montant)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-col gap-0.5">
-                          {gain.reference && (
-                            <span className="text-[9px] text-slate-400">Réf: {gain.reference}</span>
-                          )}
-                          {gain.hash && (
-                            <span className="text-[9px] font-mono text-emerald-500/70">{gain.hash.slice(0, 20)}...</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+              <p className="text-3xl font-bold text-emerald-400">4.55 Md</p>
+              <p className="text-sm text-slate-500 mt-1">Revenus</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'pertes' && (
-        <Card className="border-red-500/20">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                📉 Pertes financières
-                <Badge variant="urgent">{financials.pertes.length}</Badge>
-              </span>
-              <span className="text-red-400 font-mono">
-                -{formatMontant(financials.pertes.reduce((a, p) => a + p.montant, 0))} FCFA
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Date</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Catégorie</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Description</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Lien incident</th>
-                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase text-amber-500">Montant</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Décision</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {financials.pertes.map((perte) => (
-                    <tr
-                      key={perte.id}
-                      className={cn(
-                        'border-t',
-                        darkMode
-                          ? 'border-slate-700/50 hover:bg-red-500/5'
-                          : 'border-gray-100 hover:bg-gray-50'
-                      )}
-                    >
-                      <td className="px-3 py-2.5 text-slate-400">{perte.date}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1">
-                          <span>{categoryIcons[perte.category] || '📋'}</span>
-                          <span className="text-[10px]">{perte.categoryLabel}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium">{perte.description}</p>
-                        {perte.projetName && (
-                          <p className="text-[10px] text-slate-400">Projet: {perte.projetName}</p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {perte.incident ? (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            className="text-[9px] text-orange-400"
-                            onClick={() => addToast(`Voir incident ${perte.incident}`, 'info')}
-                          >
-                            🔗 {perte.incident}
-                          </Button>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono font-bold text-red-400">
-                        -{formatMontant(perte.montant)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {perte.decision ? (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[9px] font-mono text-amber-400">{perte.decision}</span>
-                            <span className="text-[9px] text-slate-500">{perte.decisionDate}</span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-center">
+              <p className="text-3xl font-bold text-rose-400">3.12 Md</p>
+              <p className="text-sm text-slate-500 mt-1">Dépenses</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'tresorerie' && (
-        <div className="space-y-4">
-          {/* Indicateurs trésorerie */}
-          <div className="grid grid-cols-2 gap-3">
-            <Card className="border-blue-500/30">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase">Trésorerie actuelle</p>
-                    <p className="text-xl font-bold text-blue-400">
-                      {formatMontant(financials.tresorerieActuelle)} FCFA
-                    </p>
-                  </div>
-                  <span className="text-3xl">🏦</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-emerald-500/30">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase">Prévision J+30</p>
-                    <p className="text-xl font-bold text-emerald-400">
-                      {formatMontant(financials.tresoreriePrevisionnelle)} FCFA
-                    </p>
-                  </div>
-                  <span className="text-3xl">📊</span>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
+              <p className="text-3xl font-bold text-cyan-400">1.43 Md</p>
+              <p className="text-sm text-slate-500 mt-1">Bénéfice</p>
+            </div>
           </div>
 
-          {/* Journal de trésorerie */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                📜 Mouvements de trésorerie
-                <Badge variant="info">{financials.treasury.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                      <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Date</th>
-                      <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Type</th>
-                      <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Description</th>
-                      <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase text-amber-500">Source</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase text-amber-500">Montant</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase text-amber-500">Solde après</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {financials.treasury.map((entry) => (
-                      <tr
-                        key={entry.id}
-                        className={cn(
-                          'border-t',
-                          darkMode
-                            ? 'border-slate-700/50 hover:bg-blue-500/5'
-                            : 'border-gray-100 hover:bg-gray-50'
-                        )}
-                      >
-                        <td className="px-3 py-2.5 text-slate-400">{entry.date}</td>
-                        <td className="px-3 py-2.5">
-                          <Badge
-                            variant={
-                              entry.type === 'encaissement'
-                                ? 'success'
-                                : entry.type === 'decaissement'
-                                ? 'urgent'
-                                : 'warning'
-                            }
-                            className="text-[9px]"
-                          >
-                            {entry.type === 'encaissement' ? '↑' : entry.type === 'decaissement' ? '↓' : '~'}{' '}
-                            {entry.type}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="font-medium">{entry.description}</p>
-                          {entry.tiers && (
-                            <p className="text-[10px] text-slate-400">{entry.tiers}</p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Badge variant="default" className="text-[9px]">
-                            {entry.source}
-                          </Badge>
-                          {entry.sourceRef && (
-                            <p className="text-[9px] text-orange-400 mt-0.5">{entry.sourceRef}</p>
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            'px-3 py-2.5 text-right font-mono font-bold',
-                            entry.montant >= 0 ? 'text-emerald-400' : 'text-red-400'
-                          )}
-                        >
-                          {entry.montant >= 0 ? '+' : ''}
-                          {formatMontant(entry.montant)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-blue-400">
-                          {formatMontant(entry.soldeApres)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-4 gap-4 mt-6">
+            <div className="p-3 rounded-lg bg-slate-800/50 text-center">
+              <p className="text-lg font-semibold text-slate-200">892M</p>
+              <p className="text-xs text-slate-500">Trésorerie</p>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-800/50 text-center">
+              <p className="text-lg font-semibold text-amber-400">12</p>
+              <p className="text-xs text-slate-500">En attente</p>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-800/50 text-center">
+              <p className="text-lg font-semibold text-rose-400">3</p>
+              <p className="text-xs text-slate-500">Impayés</p>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-800/50 text-center">
+              <p className="text-lg font-semibold text-emerald-400">57%</p>
+              <p className="text-xs text-slate-500">Budget consommé</p>
+            </div>
+          </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================
+// Main Component
+// ================================
+export default function FinancesPage() {
+  const {
+    activeCategory,
+    activeSubCategory,
+    activeFilter,
+    sidebarCollapsed,
+    kpiBarCollapsed,
+    navigationHistory,
+    setActiveCategory,
+    setActiveSubCategory,
+    setActiveFilter,
+    toggleSidebar,
+    toggleKpiBar,
+    goBack,
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+    statsModalOpen,
+    setStatsModalOpen,
+    filtersPanelOpen,
+    setFiltersPanelOpen,
+    notificationsPanelOpen,
+    setNotificationsPanelOpen,
+    isFullScreen,
+    toggleFullScreen,
+  } = useFinancesWorkspaceStore();
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  // Detail Modals (pattern tickets-clients)
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoiceFormOpen, setInvoiceFormOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+
+  // Mutations hooks
+  const { deleteTransaction } = useDeleteTransaction();
+  const { updateTransaction } = useUpdateTransaction();
+
+  // Mock KPI data
+  const kpiData: FinancesKPIData = useMemo(
+    () => ({
+      totalRevenue: 4550000000,
+      totalExpenses: 3120000000,
+      netProfit: 1430000000,
+      pendingAmount: 320000000,
+      overdueAmount: 85000000,
+      cashBalance: 892000000,
+      budgetUtilization: 57,
+      profitMargin: 31.4,
+      trends: {
+        revenue: 'up',
+        expenses: 'up',
+        profit: 'up',
+        cashBalance: 'up',
+      },
+    }),
+    []
+  );
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return (
+      financesCategories.find((c) => c.id === activeCategory)?.label || 'Finances'
+    );
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return financesSubCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const currentFilters = useMemo(() => {
+    const key = `${activeCategory}:${activeSubCategory}`;
+    return financesFiltersMap[key] || [];
+  }, [activeCategory, activeSubCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
+  }, []);
+
+  const handleApplyFilters = useCallback(
+    (filters: Record<string, string[]>) => {
+      console.log('Filtres appliqués:', filters);
+      // Here you would apply the filters to your data fetching logic
+    },
+    []
+  );
+
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setActiveCategory(category);
+      setActiveSubCategory(subCategory || 'all');
+      setActiveFilter(null);
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+      setActiveFilter(null);
+    }
+  }, [activeCategory, setActiveCategory, setActiveSubCategory, setActiveFilter]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveFilter(null);
+  }, [setActiveSubCategory, setActiveFilter]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveFilter(subSubCategory);
+  }, [setActiveFilter]);
+
+  // Handlers pour les modales (pattern tickets-clients)
+  const handleViewTransaction = useCallback((transaction: any) => {
+    setSelectedTransactionId(transaction.id);
+  }, [setSelectedTransactionId]);
+
+  const handleEditTransaction = useCallback((transaction: any) => {
+    // Logique d'édition
+    console.log('Edit transaction:', transaction);
+  }, []);
+
+  const handleDeleteTransaction = useCallback(async (id: string) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cette transaction ?')) {
+      await deleteTransaction(id);
+      setSelectedTransactionId(null);
+    }
+  }, [deleteTransaction, setSelectedTransactionId]);
+
+  const handleExport = useCallback((config: any) => {
+    console.log('Export config:', config);
+    // Logique d'export
+  }, []);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullScreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Escape : Close modals
+      if (e.key === 'Escape') {
+        if (commandPaletteOpen) setCommandPaletteOpen(false);
+        if (notificationsPanelOpen) setNotificationsPanelOpen(false);
+        if (filtersPanelOpen) setFiltersPanelOpen(false);
+        if (statsModalOpen) setStatsModalOpen(false);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    filtersPanelOpen,
+    statsModalOpen,
+    setCommandPaletteOpen,
+    setNotificationsPanelOpen,
+    setFiltersPanelOpen,
+    setStatsModalOpen,
+    toggleSidebar,
+    toggleFullScreen,
+    goBack,
+  ]);
+
+  // Custom events listener
+  useEffect(() => {
+    const handleOpenCommandPalette = () => setCommandPaletteOpen(true);
+    window.addEventListener('finances:open-command-palette', handleOpenCommandPalette);
+    return () => {
+      window.removeEventListener('finances:open-command-palette', handleOpenCommandPalette);
+    };
+  }, [setCommandPaletteOpen]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullScreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <FinancesSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          transactions: 24,
+          invoices: 18,
+          payments: 8,
+          budgets: 12,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory?.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-cyan-400" />
+              <h1 className="text-base font-semibold text-slate-200">Finances</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* New Transaction Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="text-xs hidden sm:inline">Nouveau</span>
+            </Button>
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen(!notificationsPanelOpen)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full text-xs text-white flex items-center justify-center">
+                5
+              </span>
+            </Button>
+
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleRefresh}>
+                  <RefreshCw
+                    className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')}
+                  />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFiltersPanelOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Filtres avancés
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setExportModalOpen(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Statistiques
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        <FinancesSubNavigation
+          mainCategory={activeCategory as FinancesMainCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={activeFilter || undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            transactions: 24,
+            invoices: 18,
+            payments: 8,
+            budgets: 12,
+          }}
+        />
+
+        {/* KPI Bar */}
+        <FinancesKPIBar
+          data={kpiData}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={toggleKpiBar}
+          currency="XOF"
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <FinancesContentRouter
+              mainCategory={activeCategory as FinancesMainCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={activeFilter || undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              156 transactions • 12 en attente • 3 impayés
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      <FinancesCommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenStats={() => setStatsModalOpen(true)}
+        onRefresh={handleRefresh}
+      />
+
+      {/* Modals */}
+      {statsModalOpen && <StatsModal onClose={() => setStatsModalOpen(false)} />}
+
+      {/* Detail Modals - Pattern Tickets Clients */}
+      <TransactionDetailModal
+        transactionId={selectedTransactionId}
+        isOpen={!!selectedTransactionId}
+        onClose={() => setSelectedTransactionId(null)}
+        onEdit={handleEditTransaction}
+        onDelete={handleDeleteTransaction}
+      />
+
+      <InvoiceFormModal
+        isOpen={invoiceFormOpen}
+        onClose={() => setInvoiceFormOpen(false)}
+        onSave={(invoice) => {
+          console.log('Save invoice:', invoice);
+          setInvoiceFormOpen(false);
+        }}
+      />
+
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onExport={handleExport}
+      />
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={() => setNotificationsPanelOpen(false)} />
       )}
 
-      {/* Répartition par catégorie */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              📊 Répartition des gains
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {financials.gainsParCategorie.map((cat) => (
-              <div key={cat.category} className="flex items-center gap-2">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span>{cat.label}</span>
-                    <span className="text-emerald-400">{cat.percentage}%</span>
-                  </div>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full"
-                      style={{ width: `${cat.percentage}%` }}
-                    />
-                  </div>
-                </div>
-                <span className="text-[10px] text-slate-400 w-16 text-right">
-                  {formatMontant(cat.montant / 1000000)}M
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              📊 Répartition des pertes
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {financials.pertesParCategorie.map((cat) => (
-              <div key={cat.category} className="flex items-center gap-2">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span>{cat.label}</span>
-                    <span className="text-red-400">{cat.percentage}%</span>
-                  </div>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-red-500 rounded-full"
-                      style={{ width: `${cat.percentage}%` }}
-                    />
-                  </div>
-                </div>
-                <span className="text-[10px] text-slate-400 w-16 text-right">
-                  {formatMontant(cat.montant / 1000000)}M
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Filters Panel */}
+      <FinancesFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+      />
     </div>
   );
 }

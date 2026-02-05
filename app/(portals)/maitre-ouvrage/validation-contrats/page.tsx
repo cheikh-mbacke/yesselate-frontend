@@ -1,496 +1,788 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Validation Contrats - Version 2.0
+ * Architecture cohérente avec Analytics et Gouvernance
+ * 
+ * ARCHITECTURE:
+ * - Sidebar collapsible avec 9 catégories
+ * - Sub-navigation avec breadcrumb
+ * - KPI Bar temps réel avec 8 indicateurs
+ * - Content Router par catégorie
+ * - Status Bar avec indicateurs
+ * - Command Palette (⌘K)
+ * - Panneau notifications
+ * - Raccourcis clavier
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { contractsToSign, raciMatrix, employees } from '@/lib/data';
-import type { Contract } from '@/lib/types/bmo.types';
+import { Badge } from '@/components/ui/badge';
+import {
+  FileCheck,
+  Search,
+  Bell,
+  ChevronLeft,
+  RefreshCw,
+  Plus,
+  Download,
+  Settings,
+  MoreHorizontal,
+  Filter,
+  HelpCircle,
+} from 'lucide-react';
+import { useContratsWorkspaceStore } from '@/lib/stores/contratsWorkspaceStore';
+import { useNotifications } from '@/hooks/useNotifications';
+import {
+  ValidationContratsKPIBar,
+  ValidationContratsFiltersPanel,
+  validationContratsCategories,
+  type ValidationContratsFilters,
+} from '@/components/features/bmo/validation-contrats/command-center';
+import {
+  ContratsSidebar,
+  ContratsSubNavigation,
+  ContratsContentRouter,
+  getSubCategories,
+  type ContratsMainCategory,
+} from '@/modules/validation-contrats';
+import { useContratsStats } from '@/modules/validation-contrats/hooks';
+import { ContratsCommandPalette } from '@/components/features/bmo/workspace/contrats';
+import { useContratToast } from '@/hooks/useContratToast';
+import { ToastProvider } from '@/components/ui/toast';
+import {
+  ContratHelpModal,
+} from '@/components/features/bmo/validation-contrats/modals';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
-// Utilitaire pour générer un hash SHA3-256 simulé
-const generateSHA3Hash = (data: string): string => {
-  let hash = 0;
-  const timestamp = Date.now();
-  const combined = `${data}-${timestamp}`;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  const hexHash = Math.abs(hash).toString(16).padStart(16, '0');
-  return `SHA3-256:${hexHash}${Math.random().toString(16).slice(2, 10)}`;
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'dashboard', label: 'Tableau de bord' },
+    { id: 'recent', label: 'Récents', badge: 8 },
+  ],
+  pending: [
+    { id: 'all', label: 'Tous', badge: 12 },
+    { id: 'priority', label: 'Prioritaires', badge: 5, badgeType: 'warning' },
+    { id: 'standard', label: 'Standard', badge: 7 },
+  ],
+  urgent: [
+    { id: 'all', label: 'Tous', badge: 3, badgeType: 'critical' },
+    { id: 'overdue', label: 'En retard', badge: 1, badgeType: 'critical' },
+    { id: 'due-today', label: 'Aujourd\'hui', badge: 2, badgeType: 'warning' },
+  ],
+  validated: [
+    { id: 'all', label: 'Tous', badge: 45 },
+    { id: 'today', label: 'Aujourd\'hui', badge: 8 },
+    { id: 'this-week', label: 'Cette semaine', badge: 23 },
+    { id: 'this-month', label: 'Ce mois', badge: 45 },
+  ],
+  rejected: [
+    { id: 'all', label: 'Tous', badge: 8 },
+    { id: 'recent', label: 'Récents', badge: 3 },
+    { id: 'archived', label: 'Archivés' },
+  ],
+  negotiation: [
+    { id: 'all', label: 'Tous', badge: 5 },
+    { id: 'active', label: 'Actifs', badge: 3 },
+    { id: 'pending-response', label: 'En attente', badge: 2 },
+  ],
+  analytics: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'trends', label: 'Tendances' },
+    { id: 'performance', label: 'Performance' },
+  ],
+  financial: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'by-status', label: 'Par statut' },
+    { id: 'by-period', label: 'Par période' },
+  ],
+  documents: [
+    { id: 'all', label: 'Tous' },
+    { id: 'pending', label: 'En attente' },
+    { id: 'validated', label: 'Validés' },
+  ],
 };
 
-// Calculer les jours avant expiration
-const getDaysToExpiry = (expiryStr: string): number | null => {
-  if (expiryStr === '—' || !expiryStr) return null;
-  const [day, month, year] = expiryStr.split('/').map(Number);
-  const expiryDate = new Date(year, month - 1, day);
-  const today = new Date();
-  const diffTime = expiryDate.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
-
-// Vérifier si un bureau a le droit de signer selon RACI
-const checkRACIPermission = (bureau: string): { allowed: boolean; role: string } => {
-  const row = raciMatrix.find((r) => r.activity === 'Signature contrats');
-  if (!row) return { allowed: false, role: 'N/A' };
+// ================================
+// Main Component
+// ================================
+function ValidationContratsPageContent() {
+  const {
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+  } = useContratsWorkspaceStore();
   
-  const bureauKey = bureau as keyof typeof row;
-  const role = row[bureauKey] as string;
+  const toast = useContratToast();
+  const {
+    notifications: allNotifications,
+    unreadCount,
+    isLoading: notificationsLoading,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    deleteAllRead,
+    refresh: refreshNotifications,
+  } = useNotifications();
+
+  // Navigation state
+  const [activeCategory, setActiveCategory] = useState<ContratsMainCategory>('overview');
+  // Initialiser avec la première sous-catégorie de 'overview'
+  const [activeSubCategory, setActiveSubCategory] = useState<string | undefined>('indicateurs');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Stats pour badges dynamiques
+  const { data: stats } = useContratsStats();
+
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // Modals state
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
   
-  // Seul BJ (R) et BMO (A) peuvent signer
-  const allowed = role === 'R' || role === 'A';
-  return { allowed, role };
-};
+  // Filters state
+  const [activeFilters, setActiveFilters] = useState<ValidationContratsFilters>({
+    status: [],
+    urgency: [],
+    type: [],
+    montantRange: { min: 0, max: 0 },
+    dureeRange: { min: 0, max: 0 },
+    dateRange: { start: '', end: '' },
+    bureau: [],
+    fournisseur: '',
+    validations: {},
+    clausesStatus: [],
+  });
 
-type ViewMode = 'all' | 'urgent' | 'type';
+  // Navigation history for back button
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
 
-export default function ValidationContratsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('urgent');
-  const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [showSignModal, setShowSignModal] = useState(false);
-  const [doubleValidationRequired, setDoubleValidationRequired] = useState(false);
-  const [bjValidation, setBjValidation] = useState(false);
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return validationContratsCategories.find((c) => c.id === activeCategory)?.label || 'Validation Contrats';
+  }, [activeCategory]);
 
-  // Utilisateur actuel (simulé)
-  const currentUser = {
-    id: 'USR-001',
-    name: 'A. DIALLO',
-    role: 'Directeur Général',
-    bureau: 'BMO',
-  };
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
 
-  // Enrichir les contrats avec les jours avant expiration
-  const enrichedContracts = useMemo(() => {
-    return contractsToSign.map((c) => ({
-      ...c,
-      daysToExpiry: getDaysToExpiry(c.expiry),
-    }));
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      toast.syncSuccess();
+    }, 1500);
+  }, [toast]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    setNavigationHistory((prev) => [...prev, activeCategory]);
+    const newCategory = category as ContratsMainCategory;
+    setActiveCategory(newCategory);
+    // Initialiser avec la première sous-catégorie
+    const subCats = getSubCategories(newCategory);
+    setActiveSubCategory(subCats.length > 0 ? subCats[0].id : undefined);
+    setActiveSubSubCategory(undefined);
+  }, [activeCategory]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset niveau 3 quand on change niveau 2
   }, []);
 
-  // Trier par urgence (proches d'échéance d'abord)
-  const sortedByUrgency = useMemo(() => {
-    return [...enrichedContracts].sort((a, b) => {
-      if (a.daysToExpiry === null) return 1;
-      if (b.daysToExpiry === null) return -1;
-      return a.daysToExpiry - b.daysToExpiry;
-    });
-  }, [enrichedContracts]);
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
+  }, []);
 
-  // Grouper par type
-  const contractsByType = useMemo(() => ({
-    marche: enrichedContracts.filter((c) => c.type === 'Marché'),
-    avenant: enrichedContracts.filter((c) => c.type === 'Avenant'),
-    soustraitance: enrichedContracts.filter((c) => c.type === 'Sous-traitance'),
-  }), [enrichedContracts]);
-
-  // Stats
-  const stats = {
-    total: contractsToSign.length,
-    urgent: enrichedContracts.filter((c) => c.daysToExpiry !== null && c.daysToExpiry <= 7).length,
-    marche: contractsByType.marche.length,
-    avenant: contractsByType.avenant.length,
-    soustraitance: contractsByType.soustraitance.length,
-  };
-
-  // Juriste responsable (BJ)
-  const bjJurist = employees.find((e) => e.bureau === 'BJ' && e.role.includes('Juriste'));
-
-  // Signer un contrat avec double contrôle
-  const handleSign = (contract: Contract) => {
-    // Vérifier RACI
-    const raciCheck = checkRACIPermission(currentUser.bureau);
-    
-    // Double contrôle obligatoire : BJ doit valider d'abord
-    if (!bjValidation && contract.bureau !== 'BMO') {
-      setSelectedContract(contract);
-      setDoubleValidationRequired(true);
-      setShowSignModal(true);
-      addToast('⚠️ Double contrôle requis: validation BJ nécessaire', 'warning');
-      return;
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length > 0) {
+      const previousCategory = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((prev) => prev.slice(0, -1));
+      setActiveCategory(previousCategory as ContratsMainCategory);
+      setActiveSubCategory('all');
     }
+  }, [navigationHistory]);
 
-    const hash = generateSHA3Hash(`${contract.id}-${currentUser.id}-sign-${Date.now()}`);
-    const timestamp = new Date().toISOString();
+  const handleApplyFilters = useCallback((filters: ValidationContratsFilters) => {
+    setActiveFilters(filters);
+    
+    // Compter le nombre de filtres actifs
+    let count = 0;
+    count += filters.status.length;
+    count += filters.urgency.length;
+    count += filters.type.length;
+    count += filters.bureau.length;
+    count += filters.clausesStatus.length;
+    if (filters.montantRange.min > 0 || filters.montantRange.max > 0) count++;
+    if (filters.dureeRange.min > 0 || filters.dureeRange.max > 0) count++;
+    if (filters.dateRange.start || filters.dateRange.end) count++;
+    if (filters.fournisseur) count++;
+    count += Object.values(filters.validations).filter(Boolean).length;
+    
+    if (count > 0) {
+      toast.filtersApplied(count);
+    } else {
+      toast.filtersCleared();
+    }
+    
+    // TODO: Appliquer les filtres au contenu
+    console.log('Filtres appliqués:', filters);
+  }, [toast]);
 
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'signature',
-      module: 'validation-contrats',
-      targetId: contract.id,
-      targetType: 'Contrat',
-      targetLabel: contract.subject,
-      details: `Contrat signé - Type: ${contract.type} - Partenaire: ${contract.partner} - Hash: ${hash} - Timestamp: ${timestamp}`,
-      bureau: contract.bureau,
-    });
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-    addToast(`✓ ${contract.id} signé - Hash: ${hash.slice(0, 25)}...`, 'success');
-    setShowSignModal(false);
-    setBjValidation(false);
-    setDoubleValidationRequired(false);
-  };
+      const isMod = e.metaKey || e.ctrlKey;
 
-  // Renvoyer au BJ
-  const handleSendToBJ = (contract: Contract) => {
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'renvoi',
-      module: 'validation-contrats',
-      targetId: contract.id,
-      targetType: 'Contrat',
-      targetLabel: contract.subject,
-      details: `Renvoyé au BJ pour révision`,
-      bureau: 'BJ',
-    });
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
 
-    addToast(`📤 ${contract.id} renvoyé au Bureau Juridique`, 'info');
-  };
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        setExportModalOpen(true);
+        return;
+      }
 
-  // Demander arbitrage
-  const handleRequestArbitrage = (contract: Contract) => {
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'arbitrage',
-      module: 'validation-contrats',
-      targetId: contract.id,
-      targetType: 'Contrat',
-      targetLabel: contract.subject,
-      details: `Demande d'arbitrage initiée`,
-      bureau: contract.bureau,
-    });
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullScreen((prev) => !prev);
+        return;
+      }
 
-    addToast(`⚖️ Arbitrage demandé pour ${contract.id}`, 'warning');
-  };
+      // F1 : Help
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+        return;
+      }
 
-  // Validation BJ simulée
-  const handleBJValidation = () => {
-    setBjValidation(true);
-    addToast('✓ Validation BJ confirmée - Vous pouvez maintenant signer', 'success');
-  };
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+        return;
+      }
 
-  // Afficher les contrats selon le mode
-  const displayContracts = viewMode === 'urgent' ? sortedByUrgency : enrichedContracts;
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
+        return;
+      }
 
+      // Ctrl+F : Toggle filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        setFiltersPanelOpen((prev) => !prev);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleGoBack, setCommandPaletteOpen]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            📜 Contrats à signer
-            <Badge variant="gold">{stats.total}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Double contrôle BJ obligatoire • Hash + Horodatage
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">RACI:</span>
-          <Badge variant="success">BJ = R</Badge>
-          <Badge variant="warning">BMO = A</Badge>
-        </div>
-      </div>
-
-      {/* Alerte contrats urgents */}
-      {stats.urgent > 0 && (
-        <div className={cn(
-          'rounded-xl p-3 flex items-center gap-3 border animate-pulse',
-          darkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
-        )}>
-          <span className="text-2xl">⏰</span>
-          <div className="flex-1">
-            <p className="font-bold text-sm text-red-400">
-              {stats.urgent} contrat(s) proche(s) d'échéance (&lt; 7 jours)
-            </p>
-            <p className="text-xs text-slate-400">
-              Signature requise rapidement pour éviter les pénalités
-            </p>
-          </div>
-          <Button size="sm" variant="destructive" onClick={() => setViewMode('urgent')}>
-            Voir urgents
-          </Button>
-        </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullScreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation */}
+      <ContratsSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={stats ? {
+          enAttente: stats.enAttente,
+          urgents: stats.urgents,
+          valides: stats.valides,
+          rejetes: stats.rejetes,
+          negociation: stats.negociation,
+        } : undefined}
+        onCategoryChange={(category, subCategory) => {
+          setActiveCategory(category as ContratsMainCategory);
+          // Si une sous-catégorie est fournie, l'utiliser, sinon prendre la première
+          if (subCategory) {
+            setActiveSubCategory(subCategory);
+          } else {
+            const subCats = getSubCategories(category as ContratsMainCategory);
+            setActiveSubCategory(subCats.length > 0 ? subCats[0].id : undefined);
+          }
+          setActiveSubSubCategory(undefined);
+        }}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-5 gap-3">
-        <Card className={cn('cursor-pointer', viewMode === 'all' && 'ring-2 ring-orange-500')} onClick={() => setViewMode('all')}>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card className={cn('border-red-500/30 cursor-pointer', viewMode === 'urgent' && 'ring-2 ring-red-500')} onClick={() => setViewMode('urgent')}>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.urgent}</p>
-            <p className="text-[10px] text-slate-400">Urgents</p>
-          </CardContent>
-        </Card>
-        <Card className={cn('cursor-pointer', viewMode === 'type' && 'ring-2 ring-purple-500')} onClick={() => setViewMode('type')}>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{stats.marche}</p>
-            <p className="text-[10px] text-slate-400">Marchés</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.avenant}</p>
-            <p className="text-[10px] text-slate-400">Avenants</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.soustraitance}</p>
-            <p className="text-[10px] text-slate-400">Sous-traitance</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
 
-      {/* Vue par type */}
-      {viewMode === 'type' && (
-        <div className="space-y-4">
-          {Object.entries(contractsByType).map(([type, contracts]) => contracts.length > 0 && (
-            <Card key={type}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  {type === 'marche' ? '📋 Marchés' : type === 'avenant' ? '📝 Avenants' : '🤝 Sous-traitance'}
-                  <Badge variant="info">{contracts.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {contracts.map((contract) => (
-                  <ContractCard
-                    key={contract.id}
-                    contract={contract}
-                    darkMode={darkMode}
-                    onSign={() => handleSign(contract)}
-                    onSendToBJ={() => handleSendToBJ(contract)}
-                    onArbitrage={() => handleRequestArbitrage(contract)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Vue liste (all ou urgent) */}
-      {(viewMode === 'all' || viewMode === 'urgent') && (
-        <div className="space-y-3">
-          {displayContracts.map((contract) => (
-            <ContractCard
-              key={contract.id}
-              contract={contract}
-              darkMode={darkMode}
-              onSign={() => handleSign(contract)}
-              onSendToBJ={() => handleSendToBJ(contract)}
-              onArbitrage={() => handleRequestArbitrage(contract)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Modal double validation */}
-      {showSignModal && selectedContract && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                🔐 Double contrôle requis
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <p className="font-bold text-sm">{selectedContract.subject}</p>
-                <p className="text-xs text-slate-400">{selectedContract.partner}</p>
-                <p className="font-mono text-amber-400 mt-2">{selectedContract.amount}</p>
-              </div>
-
-              {/* Étape 1: Validation BJ */}
-              <div className={cn(
-                'p-3 rounded-lg border-l-4',
-                bjValidation ? 'border-l-emerald-500 bg-emerald-500/10' : 'border-l-amber-500 bg-amber-500/10'
-              )}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{bjValidation ? '✓' : '1️⃣'}</span>
-                    <div>
-                      <p className="font-bold text-sm">Validation Bureau Juridique</p>
-                      <p className="text-[10px] text-slate-400">
-                        {bjJurist?.name || 'N. FAYE'} - {bjJurist?.role || 'Juriste Senior'}
-                      </p>
-                    </div>
-                  </div>
-                  {!bjValidation && (
-                    <Button size="sm" variant="warning" onClick={handleBJValidation}>
-                      Simuler validation BJ
-                    </Button>
-                  )}
-                  {bjValidation && <Badge variant="success">✓ Validé</Badge>}
-                </div>
-              </div>
-
-              {/* Étape 2: Signature DG */}
-              <div className={cn(
-                'p-3 rounded-lg border-l-4',
-                bjValidation ? 'border-l-emerald-500' : 'border-l-slate-500 opacity-50',
-                bjValidation ? 'bg-emerald-500/10' : 'bg-slate-500/10'
-              )}>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">2️⃣</span>
-                  <div>
-                    <p className="font-bold text-sm">Signature Directeur Général</p>
-                    <p className="text-[10px] text-slate-400">{currentUser.name} - {currentUser.role}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button
-                  className="flex-1"
-                  disabled={!bjValidation}
-                  onClick={() => handleSign(selectedContract)}
-                >
-                  ✍️ Signer le contrat
-                </Button>
-                <Button variant="secondary" onClick={() => {
-                  setShowSignModal(false);
-                  setBjValidation(false);
-                }}>
-                  Annuler
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Info juridique */}
-      <Card className="border-purple-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚖️</span>
-            <div>
-              <h3 className="font-bold text-sm text-purple-400">
-                Procédure de signature - Double contrôle
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Conformément à la matrice RACI, tous les contrats nécessitent une double validation :
-              </p>
-              <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-blue-400 font-bold">1. Bureau Juridique (R)</span>
-                  <p className="text-[10px] text-slate-400">Validation conformité légale</p>
-                </div>
-                <div className={cn('p-2 rounded', darkMode ? 'bg-slate-700/50' : 'bg-gray-100')}>
-                  <span className="text-amber-400 font-bold">2. BMO / DG (A)</span>
-                  <p className="text-[10px] text-slate-400">Signature finale + Hash SHA3-256</p>
-                </div>
-              </div>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-purple-400" />
+              <h1 className="text-base font-semibold text-slate-200">Validation Contrats</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Filters Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFiltersPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 px-3 relative',
+                filtersPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+            >
+              <Filter className="h-4 w-4 mr-1" />
+              <span className="text-xs hidden sm:inline">Filtres</span>
+              {(activeFilters.status.length > 0 || activeFilters.urgency.length > 0) && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-purple-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {activeFilters.status.length + activeFilters.urgency.length}
+                </span>
+              )}
+            </Button>
+
+            {/* New Contract Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="text-xs hidden sm:inline">Nouveau</span>
+            </Button>
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen((prev) => !prev)}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                5
+              </span>
+            </Button>
+
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleRefresh}>
+                  <RefreshCw className={cn('h-4 w-4 mr-2', isRefreshing && 'animate-spin')} />
+                  Rafraîchir
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setExportModalOpen(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setStatsModalOpen(true)}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Statistiques
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHelpModalOpen(true)}>
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Aide (F1)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Sub Navigation */}
+        <ContratsSubNavigation
+          mainCategory={activeCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={activeSubSubCategory}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            enAttente: stats.enAttente,
+            urgents: stats.urgents,
+            valides: stats.valides,
+            rejetes: stats.rejetes,
+            negociation: stats.negociation,
+          } : undefined}
+        />
+
+        {/* KPI Bar */}
+        <ValidationContratsKPIBar
+          visible={true}
+          collapsed={kpiBarCollapsed}
+          onToggleCollapse={() => setKpiBarCollapsed((prev) => !prev)}
+          onRefresh={handleRefresh}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto p-4">
+            <ContratsContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={activeSubSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              73 contrats • 12 en attente • 87% validés
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <ContratsCommandPalette
+          open={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          onOpenStats={() => setStatsModalOpen(true)}
+          onOpenExport={() => setExportModalOpen(true)}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel
+          onClose={() => setNotificationsPanelOpen(false)}
+          notifications={allNotifications}
+          unreadCount={unreadCount}
+          isLoading={notificationsLoading}
+          onMarkAsRead={markAsRead}
+          onMarkAllAsRead={markAllAsRead}
+          onDeleteNotification={deleteNotification}
+          onDeleteAllRead={deleteAllRead}
+          onRefresh={refreshNotifications}
+        />
+      )}
+
+      {/* Filters Panel */}
+      {filtersPanelOpen && (
+        <ValidationContratsFiltersPanel
+          isOpen={filtersPanelOpen}
+          onClose={() => setFiltersPanelOpen(false)}
+          onApplyFilters={handleApplyFilters}
+          currentFilters={activeFilters}
+        />
+      )}
+
+      {/* Help Modal */}
+      <ContratHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
   );
 }
 
-// Composant carte contrat
-function ContractCard({
-  contract,
-  darkMode,
-  onSign,
-  onSendToBJ,
-  onArbitrage,
-}: {
-  contract: Contract & { daysToExpiry?: number | null };
-  darkMode: boolean;
-  onSign: () => void;
-  onSendToBJ: () => void;
-  onArbitrage: () => void;
-}) {
-  const isUrgent = contract.daysToExpiry !== null && contract.daysToExpiry <= 7;
-  const isExpired = contract.daysToExpiry !== null && contract.daysToExpiry < 0;
+// ================================
+// Notifications Panel
+// ================================
+interface NotificationsPanelProps {
+  onClose: () => void;
+  notifications: any[];
+  unreadCount: number;
+  isLoading: boolean;
+  onMarkAsRead: (id: string) => void;
+  onMarkAllAsRead: () => void;
+  onDeleteNotification: (id: string) => void;
+  onDeleteAllRead: () => void;
+  onRefresh: () => void;
+}
 
+function NotificationsPanel({
+  onClose,
+  notifications,
+  unreadCount,
+  isLoading,
+  onMarkAsRead,
+  onMarkAllAsRead,
+  onDeleteNotification,
+  onDeleteAllRead,
+  onRefresh,
+}: NotificationsPanelProps) {
   return (
-    <Card className={cn(
-      'hover:border-orange-500/50 transition-all',
-      isExpired && 'border-l-4 border-l-red-500 bg-red-500/5',
-      isUrgent && !isExpired && 'border-l-4 border-l-amber-500'
-    )}>
-      <CardContent className="p-4">
-        <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-bold text-xs">
-                {contract.id}
-              </span>
-              <Badge variant="gold">{contract.type}</Badge>
-              <BureauTag bureau={contract.bureau} />
-              {isExpired && <Badge variant="urgent" pulse>EXPIRÉ</Badge>}
-              {isUrgent && !isExpired && (
-                <Badge variant="warning">J-{contract.daysToExpiry}</Badge>
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-purple-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            {unreadCount > 0 && (
+              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+                {unreadCount} nouvelle{unreadCount > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              disabled={isLoading}
+              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+              title="Actualiser"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+            >
+              ×
+            </Button>
+          </div>
+        </div>
+
+        {isLoading && notifications.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-slate-400">Chargement...</p>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Bell className="h-12 w-12 text-slate-600 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">Aucune notification</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+              {notifications.map((notif) => (
+                <div
+                  key={notif.id}
+                  className={cn(
+                    'px-4 py-3 hover:bg-slate-800/30 transition-colors group relative',
+                    !notif.read && 'bg-slate-800/20'
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={cn(
+                        'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                        notif.type === 'critical'
+                          ? 'bg-red-500'
+                          : notif.type === 'warning'
+                          ? 'bg-amber-500'
+                          : notif.type === 'success'
+                          ? 'bg-emerald-500'
+                          : 'bg-blue-500'
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          'text-sm',
+                          !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                        )}
+                      >
+                        {notif.title}
+                      </p>
+                      {notif.message && (
+                        <p className="text-xs text-slate-500 mt-0.5">{notif.message}</p>
+                      )}
+                      <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                    </div>
+                    
+                    {/* Actions on hover */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      {!notif.read && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onMarkAsRead(notif.id)}
+                          className="h-6 w-6 p-0 text-slate-500 hover:text-slate-300"
+                          title="Marquer comme lu"
+                        >
+                          ✓
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onDeleteNotification(notif.id)}
+                        className="h-6 w-6 p-0 text-slate-500 hover:text-red-400"
+                        title="Supprimer"
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 border-t border-slate-800/50 space-y-2">
+              {unreadCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-slate-700 text-slate-400"
+                  onClick={onMarkAllAsRead}
+                >
+                  Tout marquer comme lu
+                </Button>
+              )}
+              {notifications.some((n) => n.read) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-slate-700 text-slate-400"
+                  onClick={onDeleteAllRead}
+                >
+                  Supprimer notifications lues
+                </Button>
               )}
             </div>
-            <h3 className="font-bold text-sm mt-1">{contract.subject}</h3>
-          </div>
-          <span className="font-mono font-bold text-lg text-amber-400">
-            {contract.amount}
-          </span>
-        </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
 
-        <div className="grid sm:grid-cols-2 gap-2 text-xs">
-          <div>
-            <span className="text-slate-400">Partenaire: </span>
-            <span className="font-semibold">{contract.partner}</span>
-          </div>
-          <div>
-            <span className="text-slate-400">Préparé par: </span>
-            <span>{contract.preparedBy}</span>
-          </div>
-          <div>
-            <span className="text-slate-400">Expiration: </span>
-            <span className={isUrgent ? 'text-red-400 font-bold' : ''}>
-              {contract.expiry}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400">Date: </span>
-            <span>{contract.date}</span>
-          </div>
-        </div>
-
-        <div className="flex gap-2 mt-4">
-          <Button
-            className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500"
-            onClick={onSign}
-          >
-            ✍️ Signer
-          </Button>
-          <Button variant="info" onClick={onSendToBJ}>
-            📤 Renvoyer BJ
-          </Button>
-          <Button variant="warning" onClick={onArbitrage}>
-            ⚖️ Arbitrage
-          </Button>
-          <Button variant="destructive">
-            ✕
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+export default function ValidationContratsPage() {
+  return (
+    <ToastProvider>
+      <ValidationContratsPageContent />
+    </ToastProvider>
   );
 }

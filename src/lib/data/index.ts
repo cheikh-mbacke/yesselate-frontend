@@ -24,7 +24,6 @@ export {
   avenantsToValidate,
   blockedDossiers,
   demandesRH,
-  echangesBureaux,
   arbitrages,
   messagesExternes,
   recouvrements,
@@ -64,6 +63,8 @@ export {
   missions,
   evaluations,
   criticalSkills,
+  // Factures avec décision BMO
+  facturesRecues,
 } from './bmo-mock-3';
 
 // Partie 4 - Projets & Clients - Écosystème vivant
@@ -85,6 +86,11 @@ export {
   clientDemandStats,
 } from './bmo-mock-4';
 
+// Bâtiments
+export {
+  buildings,
+} from './buildings';
+
 // Partie 5 - Gouvernance & Système
 export {
   bureauxGovernance,
@@ -103,7 +109,58 @@ export {
 // Partie 6 - Coordination Stratégique
 export {
   conferencesDecisionnelles,
+} from './bmo-mock-6';
+
+// Partie 7 - Nomenclature
+export {
+  NOMENCLATURE,
+} from './nomenclature';
+
+export {
   echangesStructures,
   arbitragesVivants,
   coordinationStats,
 } from './bmo-mock-6';
+
+// Avenants avec décision BMO
+export {
+  type Avenant,
+  type AvenantStatut,
+  avenants,
+} from './avenants';
+
+// Alertes & Risques (données enrichies)
+export {
+  type Alert,
+  type AlertSeverity,
+  type AlertType,
+  type AlertStatus,
+  type AlertAction,
+  type AlertTimelineEvent,
+  type AlertStats,
+  alerts,
+  filterAlertsByQueue,
+  calculateAlertStats,
+  getAlertById,
+  searchAlerts,
+} from './alerts';
+
+// Dossiers Bloqués - Mock Data Complet
+export {
+  type MockBlockedDossier,
+  type MockAuditEntry,
+  type MockResolutionTemplate,
+  type MockAnalyticsData,
+  mockBlockedDossiers,
+  mockBlockedStats,
+  mockAuditLog,
+  mockResolutionTemplates,
+  mockAnalyticsData,
+  mockBureaux,
+  mockBlockageTypes,
+  getBlockedById,
+  getBlockedByImpact,
+  getBlockedByBureau,
+  getOverdueSLA,
+  searchBlocked,
+} from './blocked-mock-data';

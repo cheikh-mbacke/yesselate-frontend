@@ -8,75 +8,29 @@ import { useAppStore } from "@/lib/stores";
 import { Badge } from "@/components/ui/badge";
 import { navSections } from "@/lib/data";
 import type { BadgeType } from "@/lib/types/bmo.types";
-
-// Mapping des IDs vers les routes
-const routeMapping: Record<string, string> = {
-  // PILOTAGE
-  dashboard: "/maitre-ouvrage",
-  alerts: "/maitre-ouvrage/alerts",
-  calendrier: "/maitre-ouvrage/calendrier",
-  analytics: "/maitre-ouvrage/analytics",
-  
-  // EXÉCUTION
-  demandes: "/maitre-ouvrage/demandes",
-  "validation-bc": "/maitre-ouvrage/validation-bc",
-  "validation-contrats": "/maitre-ouvrage/validation-contrats",
-  "validation-paiements": "/maitre-ouvrage/validation-paiements",
-  blocked: "/maitre-ouvrage/blocked",
-  substitution: "/maitre-ouvrage/substitution",
-  
-  // PROJETS & CLIENTS
-  "projets-en-cours": "/maitre-ouvrage/projets-en-cours",
-  clients: "/maitre-ouvrage/clients",
-  "tickets-clients": "/maitre-ouvrage/tickets-clients",
-  
-  // FINANCE & CONTENTIEUX
-  finances: "/maitre-ouvrage/finances",
-  recouvrements: "/maitre-ouvrage/recouvrements",
-  litiges: "/maitre-ouvrage/litiges",
-  
-  // RH & RESSOURCES
-  employes: "/maitre-ouvrage/employes",
-  missions: "/maitre-ouvrage/missions",
-  evaluations: "/maitre-ouvrage/evaluations",
-  "demandes-rh": "/maitre-ouvrage/demandes-rh",
-  depenses: "/maitre-ouvrage/depenses",
-  deplacements: "/maitre-ouvrage/deplacements",
-  "paie-avances": "/maitre-ouvrage/paie-avances",
-  delegations: "/maitre-ouvrage/delegations",
-  organigramme: "/maitre-ouvrage/organigramme",
-  
-  // COMMUNICATION
-  "echanges-bureaux": "/maitre-ouvrage/echanges-bureaux",
-  "echanges-structures": "/maitre-ouvrage/echanges-structures",
-  "arbitrages-vivants": "/maitre-ouvrage/arbitrages-vivants",
-  conferences: "/maitre-ouvrage/conferences",
-  "messages-externes": "/maitre-ouvrage/messages-externes",
-  
-  // GOUVERNANCE
-  decisions: "/maitre-ouvrage/decisions",
-  raci: "/maitre-ouvrage/raci",
-  audit: "/maitre-ouvrage/audit",
-  logs: "/maitre-ouvrage/logs",
-  "system-logs": "/maitre-ouvrage/system-logs",
-  ia: "/maitre-ouvrage/ia",
-  api: "/maitre-ouvrage/api",
-  parametres: "/maitre-ouvrage/parametres",
-};
+import { useNavigationStore } from "@/lib/stores";
+import { routeMapping, getActivePageId, updateNavBadges } from "@/lib/services/navigation.service";
+import { useMemo, useEffect } from "react";
 
 export function BMOSidebar() {
   const pathname = usePathname();
   const { darkMode, sidebarOpen, toggleSidebar } = useAppStore();
+  const { pageCounts, addToHistory } = useNavigationStore();
 
-  // Déterminer l'item actif basé sur le pathname
-  const getActiveId = () => {
-    for (const [id, route] of Object.entries(routeMapping)) {
-      if (pathname === route) return id;
+  // Déterminer l'item actif automatiquement
+  const activeId = useMemo(() => getActivePageId(pathname), [pathname]);
+
+  // Mettre à jour l'historique de navigation
+  useEffect(() => {
+    if (pathname) {
+      addToHistory(pathname);
     }
-    return "dashboard";
-  };
+  }, [pathname, addToHistory]);
 
-  const activeId = getActiveId();
+  // Mettre à jour automatiquement les badges basés sur les comptages réels
+  const updatedNavSections = useMemo(() => {
+    return updateNavBadges(navSections, pageCounts);
+  }, [pageCounts]);
 
   return (
     <aside
@@ -139,7 +93,7 @@ export function BMOSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-1.5 py-1 scrollbar-thin">
-        {navSections.map((section, si) => (
+        {updatedNavSections.map((section, si) => (
           <div key={si} className="mb-1">
             {sidebarOpen && (
               <p className="text-[9px] uppercase text-amber-500/70 font-bold px-2 py-1">

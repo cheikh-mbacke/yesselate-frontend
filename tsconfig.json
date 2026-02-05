@@ -18,10 +18,12 @@
         "name": "next"
       }
     ],
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "paths": {
-      "@/*": ["./*"],
+      "@/*": ["./src/*"],
       "@/components/*": ["./src/components/*"],
       "@/lib/*": ["./src/lib/*"],
+      "@/domain/*": ["./src/domain/*"],
       "@/hooks/*": ["./src/hooks/*"],
       "@/types/*": ["./src/lib/types/*"],
       "@/app/*": ["./app/*"]
@@ -33,7 +35,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "src/types/**/*.d.ts"
   ],
   "exclude": ["node_modules"]
 }

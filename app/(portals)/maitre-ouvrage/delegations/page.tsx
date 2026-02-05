@@ -1,275 +1,570 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Délégations - Version 2.0
+ * Plateforme de pilotage et gestion des délégations
+ * Architecture cohérente avec la page Analytics
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { delegationsEnriched } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  Key,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useDelegationsCommandCenterStore,
+  type DelegationsMainCategory as StoreDelegationsMainCategory,
+} from '@/lib/stores/delegationsCommandCenterStore';
+import {
+  DelegationsKPIBar,
+  DelegationsModals,
+  DelegationsDetailPanel,
+  DelegationsBatchActionsBar,
+  ActionsMenu,
+  delegationsCategories,
+} from '@/components/features/delegations/command-center';
+// New 3-level navigation module
+import {
+  DelegationsSidebar,
+  DelegationsSubNavigation,
+  DelegationsContentRouter,
+  type DelegationsMainCategory,
+} from '@/modules/delegations';
+import { DelegationCommandPalette } from '@/components/features/delegations/workspace/DelegationCommandPalette';
+import { DelegationToastProvider, useDelegationToast } from '@/components/features/delegations/workspace/DelegationToast';
+import { DelegationNotifications } from '@/components/features/delegations/workspace/DelegationNotifications';
+import { useDelegationsStats } from '@/components/features/delegations/hooks/useDelegationsStats';
 
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  active: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'by_bureau', label: 'Par bureau' },
+  ],
+  expired: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'old', label: 'Anciennes' },
+  ],
+  revoked: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'recent', label: 'Récentes' },
+    { id: 'by_reason', label: 'Par raison' },
+  ],
+  suspended: [
+    { id: 'all', label: 'Toutes' },
+    { id: 'temporary', label: 'Temporaires' },
+    { id: 'permanent', label: 'Permanentes' },
+  ],
+  expiring_soon: [
+    { id: 'all', label: 'Toutes', badge: 0 },
+    { id: 'critical', label: 'Critiques', badge: 0, badgeType: 'critical' },
+    { id: 'warning', label: 'Attention', badge: 0, badgeType: 'warning' },
+  ],
+  history: [
+    { id: 'all', label: 'Tout' },
+    { id: 'recent', label: 'Récent' },
+    { id: 'by_date', label: 'Par date' },
+  ],
+  analytics: [
+    { id: 'overview', label: 'Vue d\'ensemble' },
+    { id: 'performance', label: 'Performance' },
+    { id: 'usage', label: 'Usage' },
+  ],
+  settings: [
+    { id: 'general', label: 'Général' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'permissions', label: 'Permissions' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function DelegationsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [filter, setFilter] = useState<'all' | 'active' | 'expired' | 'suspended'>('all');
-  const [selectedDelegation, setSelectedDelegation] = useState<string | null>(null);
-
-  const filteredDelegations = delegationsEnriched.filter(d => filter === 'all' || d.status === filter);
-
-  const stats = useMemo(() => {
-    const active = delegationsEnriched.filter(d => d.status === 'active').length;
-    const expired = delegationsEnriched.filter(d => d.status === 'expired').length;
-    const suspended = delegationsEnriched.filter(d => d.status === 'suspended').length;
-    const totalUsage = delegationsEnriched.reduce((acc, d) => acc + d.usageCount, 0);
-    return { total: delegationsEnriched.length, active, expired, suspended, totalUsage };
-  }, []);
-
-  const selectedD = selectedDelegation ? delegationsEnriched.find(d => d.id === selectedDelegation) : null;
-
-  const handleExtend = (delegation: typeof selectedD) => {
-    if (!delegation) return;
-    addActionLog({
-      module: 'delegations',
-      action: 'extend',
-      targetId: delegation.id,
-      targetType: 'Delegation',
-      details: `Prolongation délégation ${delegation.type} - ${delegation.agent}`,
-      status: 'success',
-      hash: `SHA3-256:del_ext_${Date.now().toString(16)}`,
-    });
-    addToast('Délégation prolongée - Décision hashée', 'success');
-  };
-
-  const handleSuspend = (delegation: typeof selectedD) => {
-    if (!delegation) return;
-    addActionLog({
-      module: 'delegations',
-      action: 'suspend',
-      targetId: delegation.id,
-      targetType: 'Delegation',
-      details: `Suspension délégation ${delegation.type} - ${delegation.agent}`,
-      status: 'warning',
-      hash: `SHA3-256:del_sus_${Date.now().toString(16)}`,
-    });
-    addToast('Délégation suspendue - Décision hashée', 'warning');
-  };
-
-  const handleCreate = () => {
-    addActionLog({
-      module: 'delegations',
-      action: 'create',
-      targetId: 'NEW',
-      targetType: 'Delegation',
-      details: 'Création nouvelle délégation',
-      status: 'info',
-    });
-    addToast('Formulaire nouvelle délégation ouvert', 'info');
-  };
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🔑 Délégations de Pouvoirs
-            <Badge variant="success">{stats.active} actives</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">Gestion des délégations avec traçabilité complète</p>
-        </div>
-        <Button onClick={handleCreate}>+ Nouvelle délégation</Button>
-      </div>
+    <DelegationToastProvider>
+      <DelegationsPageContent />
+    </DelegationToastProvider>
+  );
+}
 
-      <Card className="bg-purple-500/10 border-purple-500/30">
-        <CardContent className="p-4">
+function DelegationsPageContent() {
+  const toast = useDelegationToast();
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    navigate,
+    setKPIConfig,
+  } = useDelegationsCommandCenterStore();
+
+  // Charger les stats pour les KPIs et badges
+  const { stats, loading: statsLoading, refresh: refreshStats, lastUpdate: statsLastUpdate } = useDelegationsStats(true, 30000);
+
+  // État local pour refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return delegationsCategories.find((c) => c.id === activeCategory)?.label || 'Délégations';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    refreshStats();
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+      toast.success('Actualisation', 'Données mises à jour');
+    }, 1500);
+  }, [toast, refreshStats]);
+
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    navigate(category as StoreDelegationsMainCategory, subCategory || 'all', null);
+  }, [navigate]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    navigate(activeCategory, activeSubCategory, subSubCategory);
+  }, [activeCategory, activeSubCategory, navigate]);
+
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
+
+  // ================================
+  // Render
+  // ================================
+  return (
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <DelegationsSidebar
+        activeCategory={activeCategory as DelegationsMainCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={{
+          active: stats?.active || 0,
+          expired: stats?.expired || 0,
+        }}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">⚖️</span>
-            <div className="flex-1">
-              <h3 className="font-bold text-purple-400">Acte sensible</h3>
-              <p className="text-sm text-slate-400">Chaque délégation génère une décision hashée pour anti-contestation</p>
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-purple-500" />
+              <h1 className="text-base font-semibold text-slate-200">Délégations</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.active}</p>
-            <p className="text-[10px] text-slate-400">Actives</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-500/10 border-slate-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-slate-400">{stats.expired}</p>
-            <p className="text-[10px] text-slate-400">Expirées</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.suspended}</p>
-            <p className="text-[10px] text-slate-400">Suspendues</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.totalUsage}</p>
-            <p className="text-[10px] text-slate-400">Utilisations</p>
-          </CardContent>
-        </Card>
-      </div>
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
 
-      <div className="flex gap-2 flex-wrap">
-        {[
-          { id: 'all', label: 'Toutes' },
-          { id: 'active', label: '✅ Actives' },
-          { id: 'expired', label: '⏰ Expirées' },
-          { id: 'suspended', label: '⛔ Suspendues' },
-        ].map((f) => (
-          <Button key={f.id} size="sm" variant={filter === f.id ? 'default' : 'secondary'} onClick={() => setFilter(f.id as typeof filter)}>{f.label}</Button>
-        ))}
-      </div>
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          {filteredDelegations.map((delegation) => {
-            const isSelected = selectedDelegation === delegation.id;
-            const isExpiringSoon = delegation.status === 'active' && new Date(delegation.end.split('/').reverse().join('-')) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-            
-            return (
-              <Card
-                key={delegation.id}
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                0
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        <DelegationsSubNavigation
+          mainCategory={activeCategory as DelegationsMainCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={navigation.filter ?? undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={{
+            active: stats?.active || 0,
+            expired: stats?.expired || 0,
+          }}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <DelegationsKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+            stats={stats}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <DelegationsContentRouter
+              mainCategory={activeCategory as DelegationsMainCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={navigation.filter ?? undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              {stats ? `${stats.total} délégations` : 'Chargement...'} • {stats?.expiringSoon || 0} alertes
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
                 className={cn(
-                  'cursor-pointer transition-all',
-                  isSelected ? 'ring-2 ring-purple-500' : 'hover:border-purple-500/50',
-                  delegation.status === 'active' && 'border-l-4 border-l-emerald-500',
-                  delegation.status === 'expired' && 'border-l-4 border-l-slate-500 opacity-70',
-                  delegation.status === 'suspended' && 'border-l-4 border-l-red-500',
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
                 )}
-                onClick={() => setSelectedDelegation(delegation.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs text-purple-400">{delegation.id}</span>
-                        <Badge variant={delegation.status === 'active' ? 'success' : delegation.status === 'expired' ? 'default' : 'urgent'}>{delegation.status}</Badge>
-                        {isExpiringSoon && <Badge variant="warning" pulse>Expire bientôt</Badge>}
-                      </div>
-                      <h3 className="font-bold mt-1">{delegation.type}</h3>
-                      <p className="text-sm text-slate-400">{delegation.agent}</p>
-                    </div>
-                    <div className="text-right">
-                      <BureauTag bureau={delegation.bureau} />
-                      <p className="text-xs text-slate-400 mt-1">{delegation.usageCount} utilisations</p>
-                    </div>
-                  </div>
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
+      </div>
 
-                  <div className={cn("p-2 rounded mb-3", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                    <p className="text-sm"><span className="text-slate-400">Périmètre:</span> {delegation.scope}</p>
-                  </div>
+      {/* Command Palette */}
+      {commandPaletteOpen && <DelegationCommandPalette />}
 
-                  <div className="flex justify-between text-xs text-slate-400 mb-3">
-                    <span>Du {delegation.start}</span>
-                    <span>Au {delegation.end}</span>
-                  </div>
+      {/* Modals */}
+      <DelegationsModals />
 
-                  {delegation.lastUsed && (
-                    <p className="text-xs text-emerald-400 mb-2">✓ Dernière utilisation: {delegation.lastUsed}</p>
-                  )}
+      {/* Detail Panel */}
+      <DelegationsDetailPanel />
 
-                  <div className="p-2 rounded bg-slate-700/30">
-                    <p className="text-[10px] text-slate-400">🔐 Hash traçabilité</p>
-                    <p className="font-mono text-[10px] truncate">{delegation.hash}</p>
-                  </div>
+      {/* Batch Actions Bar */}
+      <DelegationsBatchActionsBar />
 
-                  {delegation.status === 'active' && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
-                      <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); handleExtend(delegation); }}>📅 Prolonger</Button>
-                      <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleSuspend(delegation); }}>⛔ Suspendre</Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
+    </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const { stats } = useDelegationsStats(false);
+  
+  // Générer les notifications depuis les stats
+  const notifications = useMemo(() => {
+    const notifs: Array<{
+      id: string;
+      type: 'critical' | 'warning' | 'info';
+      title: string;
+      time: string;
+      read: boolean;
+    }> = [];
+
+    if (!stats) return notifs;
+
+    // Délégations expirant bientôt
+    if (stats.expiringSoon > 0) {
+      notifs.push({
+        id: 'expiring-soon',
+        type: stats.expiringSoon > 5 ? 'critical' : 'warning',
+        title: `${stats.expiringSoon} délégation(s) expirant bientôt`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    // Beaucoup de révoquées
+    if (stats.revoked > 10) {
+      notifs.push({
+        id: 'high-revoked',
+        type: 'warning',
+        title: `${stats.revoked} délégations révoquées - vérifier les anomalies`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    // Usage élevé
+    if (stats.totalUsage > 1000) {
+      notifs.push({
+        id: 'high-usage',
+        type: 'info',
+        title: `Usage total élevé : ${stats.totalUsage} utilisations`,
+        time: "à l'instant",
+        read: false,
+      });
+    }
+
+    return notifs;
+  }, [stats]);
+  
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-purple-500" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            {unreadCount > 0 && (
+              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                {unreadCount} nouvelle{unreadCount > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
         </div>
 
-        <div className="lg:col-span-1">
-          {selectedD ? (
-            <Card className="sticky top-4">
-              <CardContent className="p-4">
-                <div className="mb-4 pb-4 border-b border-slate-700/50">
-                  <span className="font-mono text-xs text-purple-400">{selectedD.id}</span>
-                  <h3 className="font-bold text-lg">{selectedD.type}</h3>
-                  <p className="text-slate-400">{selectedD.agent}</p>
-                  <Badge variant={selectedD.status === 'active' ? 'success' : selectedD.status === 'expired' ? 'default' : 'urgent'} className="mt-2">{selectedD.status}</Badge>
-                </div>
-
-                <div className="space-y-3 text-sm">
-                  <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                    <p className="text-xs text-slate-400 mb-1">Périmètre</p>
-                    <p className="font-medium">{selectedD.scope}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className="text-xs text-slate-400">Début</p>
-                      <p className="font-mono text-xs">{selectedD.start}</p>
-                    </div>
-                    <div className={cn("p-2 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                      <p className="text-xs text-slate-400">Fin</p>
-                      <p className="font-mono text-xs">{selectedD.end}</p>
-                    </div>
-                  </div>
-
-                  <div className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                    <p className="text-xs text-slate-400 mb-1">Créée par</p>
-                    <p>{selectedD.createdBy}</p>
-                    <p className="text-xs text-slate-400">{selectedD.createdAt}</p>
-                  </div>
-
-                  <div>
-                    <h4 className="font-bold text-xs mb-2">📜 Historique ({selectedD.history.length})</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {selectedD.history.map((entry) => (
-                        <div key={entry.id} className={cn("p-2 rounded text-xs", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant={entry.action === 'created' ? 'info' : entry.action === 'used' ? 'success' : entry.action === 'suspended' ? 'urgent' : 'default'}>{entry.action}</Badge>
-                            <span className="text-slate-400">{entry.date}</span>
-                          </div>
-                          <p>{entry.description}</p>
-                          {entry.targetDocument && <p className="text-slate-400 mt-1">📄 {entry.targetDocument}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded bg-purple-500/10 border border-purple-500/30">
-                    <p className="text-xs text-purple-400">🔗 Décision liée</p>
-                    <p className="font-mono text-xs">{selectedD.decisionId}</p>
-                  </div>
-                </div>
-
-                {selectedD.status === 'active' && (
-                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                    <Button size="sm" variant="info" onClick={() => handleExtend(selectedD)}>📅 Prolonger</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleSuspend(selectedD)}>⛔ Suspendre</Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-slate-500">Aucune notification</p>
+            </div>
           ) : (
-            <Card className="sticky top-4"><CardContent className="p-8 text-center"><span className="text-4xl mb-4 block">🔑</span><p className="text-slate-400">Sélectionnez une délégation</p></CardContent></Card>
+            notifications.map((notif) => (
+              <div
+                key={notif.id}
+                className={cn(
+                  'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                  !notif.read && 'bg-slate-800/20'
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                      notif.type === 'critical'
+                        ? 'bg-red-500'
+                        : notif.type === 'warning'
+                        ? 'bg-amber-500'
+                        : 'bg-blue-500'
+                    )}
+                  />
+                  <div className="min-w-0">
+                    <p
+                      className={cn(
+                        'text-sm',
+                        !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                      )}
+                    >
+                      {notif.title}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

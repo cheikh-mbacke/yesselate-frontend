@@ -1,0 +1,341 @@
+/**
+ * Configuration de navigation à 3 niveaux pour le module Dashboard
+ */
+
+import type { DashboardMainCategory, DashboardNavItem } from '../types/dashboardNavigationTypes';
+import {
+  LayoutDashboard,
+  TrendingUp,
+  Zap,
+  AlertTriangle,
+  Scale,
+  Activity,
+} from 'lucide-react';
+
+export interface NavNode {
+  id: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical' | 'success';
+  children?: NavNode[];
+}
+
+export const dashboardNavigationConfig: Record<DashboardMainCategory, NavNode> = {
+  overview: {
+    id: 'overview',
+    label: 'Vue d\'ensemble',
+    icon: LayoutDashboard,
+    children: [
+      {
+        id: 'summary',
+        label: 'Synthèse',
+        children: [
+          { id: 'dashboard', label: 'Dashboard principal' },
+          { id: 'highlights', label: 'Points clés', badge: 0, badgeType: 'warning' },
+        ],
+      },
+      {
+        id: 'kpis',
+        label: 'KPIs',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'projets', label: 'Projets' },
+          { id: 'demandes', label: 'Demandes' },
+          { id: 'budget', label: 'Budget' },
+        ],
+      },
+      {
+        id: 'bureaux',
+        label: 'Bureaux',
+        children: [
+          { id: 'all', label: 'Tous' },
+          { id: 'bmo', label: 'BMO' },
+          { id: 'bf', label: 'BF' },
+          { id: 'bj', label: 'BJ' },
+        ],
+      },
+      {
+        id: 'trends',
+        label: 'Tendances',
+        children: [
+          { id: 'mensuelles', label: 'Mensuelles' },
+          { id: 'trimestrielles', label: 'Trimestrielles' },
+        ],
+      },
+    ],
+  },
+  performance: {
+    id: 'performance',
+    label: 'Performance & KPIs',
+    icon: TrendingUp,
+    children: [
+      {
+        id: 'validation',
+        label: 'Validations',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'en-attente', label: 'En attente' },
+          { id: 'validees', label: 'Validées' },
+          { id: 'rejetees', label: 'Rejetées' },
+        ],
+      },
+      {
+        id: 'budget',
+        label: 'Budget',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'consommation', label: 'Consommation' },
+          { id: 'restant', label: 'Restant' },
+        ],
+      },
+      {
+        id: 'delays',
+        label: 'Retards',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'critiques', label: 'Critiques' },
+          { id: 'moyens', label: 'Moyens' },
+        ],
+      },
+      {
+        id: 'comparison',
+        label: 'Comparaisons',
+        children: [
+          { id: 'bureaux', label: 'Par bureaux' },
+          { id: 'projets', label: 'Par projets' },
+        ],
+      },
+    ],
+  },
+  actions: {
+    id: 'actions',
+    label: 'Actions prioritaires',
+    icon: Zap,
+    badge: 0,
+    badgeType: 'warning',
+    children: [
+      {
+        id: 'all',
+        label: 'Toutes',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'urgentes', label: 'Urgentes' },
+          { id: 'normales', label: 'Normales' },
+        ],
+      },
+      {
+        id: 'urgent',
+        label: 'Urgentes',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'critiques', label: 'Critiques' },
+          { id: 'importantes', label: 'Importantes' },
+        ],
+      },
+      {
+        id: 'blocked',
+        label: 'Bloquées',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'blocages', label: 'Blocages' },
+          { id: 'escalades', label: 'Escalades' },
+        ],
+      },
+      {
+        id: 'pending',
+        label: 'En attente',
+        badge: 0,
+        badgeType: 'warning',
+      },
+      {
+        id: 'completed',
+        label: 'Terminées',
+        children: [
+          { id: 'recentes', label: 'Récentes' },
+          { id: 'anciennes', label: 'Anciennes' },
+        ],
+      },
+    ],
+  },
+  risks: {
+    id: 'risks',
+    label: 'Risques & Santé',
+    icon: AlertTriangle,
+    badge: 0,
+    badgeType: 'critical',
+    children: [
+      {
+        id: 'critical',
+        label: 'Critiques',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'risques', label: 'Risques' },
+          { id: 'alertes', label: 'Alertes' },
+        ],
+      },
+      {
+        id: 'warnings',
+        label: 'Avertissements',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'moyens', label: 'Moyens' },
+          { id: 'faibles', label: 'Faibles' },
+        ],
+      },
+      {
+        id: 'blocages',
+        label: 'Blocages',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'actifs', label: 'Actifs' },
+          { id: 'resolus', label: 'Résolus' },
+        ],
+      },
+      {
+        id: 'payments',
+        label: 'Paiements',
+        badge: 0,
+        badgeType: 'warning',
+      },
+      {
+        id: 'contracts',
+        label: 'Contrats',
+        badge: 0,
+        badgeType: 'warning',
+      },
+    ],
+  },
+  decisions: {
+    id: 'decisions',
+    label: 'Décisions & Timeline',
+    icon: Scale,
+    badge: 0,
+    badgeType: 'warning',
+    children: [
+      {
+        id: 'pending',
+        label: 'En attente',
+        badge: 0,
+        badgeType: 'critical',
+        children: [
+          { id: 'urgentes', label: 'Urgentes' },
+          { id: 'normales', label: 'Normales' },
+        ],
+      },
+      {
+        id: 'executed',
+        label: 'Exécutées',
+        children: [
+          { id: 'recentes', label: 'Récentes' },
+          { id: 'anciennes', label: 'Anciennes' },
+        ],
+      },
+      {
+        id: 'timeline',
+        label: 'Timeline',
+        children: [
+          { id: 'chronologique', label: 'Chronologique' },
+          { id: 'par-type', label: 'Par type' },
+        ],
+      },
+      {
+        id: 'audit',
+        label: 'Audit',
+        children: [
+          { id: 'traces', label: 'Traces' },
+          { id: 'rapports', label: 'Rapports' },
+        ],
+      },
+    ],
+  },
+  realtime: {
+    id: 'realtime',
+    label: 'Temps réel',
+    icon: Activity,
+    children: [
+      {
+        id: 'live',
+        label: 'Live',
+        children: [
+          { id: 'monitoring', label: 'Monitoring' },
+          { id: 'metriques', label: 'Métriques' },
+        ],
+      },
+      {
+        id: 'alerts',
+        label: 'Alertes',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'actives', label: 'Actives' },
+          { id: 'resolues', label: 'Résolues' },
+        ],
+      },
+      {
+        id: 'notifications',
+        label: 'Notifications',
+        badge: 0,
+        badgeType: 'warning',
+        children: [
+          { id: 'non-lues', label: 'Non lues' },
+          { id: 'toutes', label: 'Toutes' },
+        ],
+      },
+      {
+        id: 'sync',
+        label: 'Synchronisation',
+        children: [
+          { id: 'etat', label: 'État' },
+          { id: 'historique', label: 'Historique' },
+        ],
+      },
+    ],
+  },
+};
+
+// Helper functions
+export function findNavNodeById(
+  mainCategory: DashboardMainCategory,
+  subCategory?: string,
+  subSubCategory?: string
+): NavNode | undefined {
+  const mainNode = dashboardNavigationConfig[mainCategory];
+  if (!mainNode) return undefined;
+
+  if (!subCategory) return mainNode;
+
+  const subNode = mainNode.children?.find((child) => child.id === subCategory);
+  if (!subNode) return undefined;
+
+  if (!subSubCategory) return subNode;
+
+  return subNode.children?.find((child) => child.id === subSubCategory);
+}
+
+export function getSubCategories(
+  mainCategory: DashboardMainCategory
+): NavNode[] {
+  const mainNode = dashboardNavigationConfig[mainCategory];
+  return mainNode?.children || [];
+}
+
+export function getSubSubCategories(
+  mainCategory: DashboardMainCategory,
+  subCategory: string
+): NavNode[] {
+  const mainNode = dashboardNavigationConfig[mainCategory];
+  const subNode = mainNode?.children?.find((child) => child.id === subCategory);
+  return subNode?.children || [];
+}
+

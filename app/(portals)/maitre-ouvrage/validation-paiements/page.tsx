@@ -1,541 +1,703 @@
+/**
+ * ====================================================================
+ * PAGE: Validation des Paiements - BMO
+ * Architecture moderne inspirée d'Analytics et Gouvernance
+ * ====================================================================
+ */
+
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { usePaiementsWorkspaceStore } from '@/lib/stores/paiementsWorkspaceStore';
+import { paiementsApiService, type PaiementsStats } from '@/lib/services/paiementsApiService';
+import {
+  PaiementsWorkspaceTabs,
+  PaiementsWorkspaceContent,
+  PaiementsCommandPalette,
+  PaiementsKPIBar,
+  PaiementsStatusBar,
+  PaiementsToast,
+  PaiementsFiltersPanel,
+  countActiveFiltersUtil,
+  type PaiementsActiveFilters,
+  PaiementsModals,
+  type PaiementModalType,
+  PaiementsNotificationPanel,
+} from '@/components/features/bmo/workspace/paiements';
+// New 3-level navigation module
+import {
+  PaiementsSidebar,
+  PaiementsSubNavigation,
+  PaiementsContentRouter,
+  type PaiementsMainCategory,
+} from '@/modules/validation-paiements';
+import { SavedFiltersManager } from '@/components/shared/SavedFiltersManager';
+import { 
+  DollarSign, 
+  Search, 
+  MoreVertical, 
+  RefreshCw, 
+  BarChart3, 
+  Download, 
+  Bell,
+  Settings,
+  ChevronLeft,
+  Filter,
+  HelpCircle,
+} from 'lucide-react';
+import { PaiementsHelpModal } from '@/components/features/bmo/workspace/paiements/modals/PaiementsHelpModal';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BureauTag } from '@/components/features/bmo/BureauTag';
-import { paymentsN1, employees, projects } from '@/lib/data';
-import type { Payment } from '@/lib/types/bmo.types';
+import { Badge } from '@/components/ui/badge';
 
-// Utilitaire pour générer un hash SHA3-256 simulé
-const generateSHA3Hash = (data: string): string => {
-  let hash = 0;
-  const timestamp = Date.now();
-  const combined = `${data}-${timestamp}`;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  const hexHash = Math.abs(hash).toString(16).padStart(16, '0');
-  return `SHA3-256:${hexHash}${Math.random().toString(16).slice(2, 10)}`;
+// Fonction pour calculer dynamiquement les sous-catégories avec badges
+const getSubCategoriesMap = (stats: PaiementsStats | null): Record<string, Array<{ id: string; label: string; badge?: number; badgeType?: 'default' | 'warning' | 'critical' }>> => {
+  const totalPending = stats?.pending || 0;
+  const urgentCritical = stats?.byUrgency?.critical || 0;
+  const urgentHigh = stats?.byUrgency?.high || 0;
+  const scheduled = stats?.scheduled || 0;
+  
+  // Estimation: 60% BF, 40% DG (en production, vient de l'API)
+  const bfPending = Math.floor(totalPending * 0.6);
+  const dgPending = totalPending - bfPending;
+  
+  // Estimation: 40% critiques, 60% haute priorité
+  const criticalCount = Math.floor((urgentCritical + urgentHigh) * 0.4);
+  const highCount = (urgentCritical + urgentHigh) - criticalCount;
+  
+  // Estimation scheduled: 60% à venir, 40% en cours
+  const upcomingCount = Math.floor(scheduled * 0.6);
+  const inProgressCount = scheduled - upcomingCount;
+
+  return {
+    overview: [
+      { id: 'dashboard', label: 'Tableau de bord' },
+      { id: 'kpis', label: 'Indicateurs clés' },
+      { id: 'alerts', label: 'Alertes', badge: (urgentCritical + urgentHigh) || undefined, badgeType: 'warning' },
+    ],
+    pending: [
+      { id: 'all', label: 'Tous', badge: totalPending || undefined },
+      { id: 'bf-pending', label: 'Bureau Finance', badge: bfPending || undefined },
+      { id: 'dg-pending', label: 'Direction Générale', badge: dgPending || undefined, badgeType: dgPending > 0 ? 'critical' : 'default' },
+    ],
+    urgent: [
+      { id: 'critical', label: 'Critiques', badge: criticalCount || undefined, badgeType: 'critical' },
+      { id: 'high', label: 'Haute priorité', badge: highCount || undefined, badgeType: 'warning' },
+    ],
+    validated: [
+      { id: 'today', label: 'Aujourd\'hui' },
+      { id: 'week', label: 'Cette semaine' },
+      { id: 'month', label: 'Ce mois' },
+    ],
+    rejected: [
+      { id: 'recent', label: 'Récents' },
+      { id: 'archived', label: 'Archivés' },
+    ],
+    scheduled: [
+      { id: 'upcoming', label: 'À venir', badge: upcomingCount || undefined },
+      { id: 'in-progress', label: 'En cours', badge: inProgressCount || undefined },
+    ],
+    tresorerie: [
+      { id: 'overview', label: 'Vue d\'ensemble' },
+      { id: 'forecast', label: 'Prévisions' },
+      { id: 'history', label: 'Historique' },
+    ],
+    fournisseurs: [
+      { id: 'all', label: 'Tous' },
+      { id: 'active', label: 'Actifs' },
+      { id: 'watchlist', label: 'Surveillance' },
+    ],
+    audit: [
+      { id: 'trail', label: 'Piste d\'audit' },
+      { id: 'reports', label: 'Rapports' },
+      { id: 'compliance', label: 'Conformité' },
+    ],
+  };
 };
 
-// Calculer les jours avant échéance
-const getDaysToDue = (dueDateStr: string): number => {
-  const [day, month, year] = dueDateStr.split('/').map(Number);
-  const dueDate = new Date(year, month - 1, day);
-  const today = new Date();
-  const diffTime = dueDate.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+const CATEGORY_LABELS: Record<string, string> = {
+  overview: 'Vue d\'ensemble',
+  pending: 'À valider',
+  urgent: 'Urgents',
+  validated: 'Validés',
+  rejected: 'Rejetés',
+  scheduled: 'Planifiés',
+  tresorerie: 'Trésorerie',
+  fournisseurs: 'Fournisseurs',
+  audit: 'Audit',
 };
-
-// Parser le montant string en number
-const parseAmount = (amountStr: string): number => {
-  return parseFloat(amountStr.replace(/[,\s]/g, '')) || 0;
-};
-
-// Seuil critique pour double validation
-const DOUBLE_VALIDATION_THRESHOLD = 5000000; // 5M FCFA
-
-type ViewMode = 'all' | '7days' | 'late' | 'critical';
 
 export default function ValidationPaiementsPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('7days');
-  const [selectedPayment, setSelectedPayment] = useState<(Payment & { daysToDue: number; amountNum: number; requiresDoubleValidation: boolean }) | null>(null);
-  const [showValidationModal, setShowValidationModal] = useState(false);
-  const [bfValidation, setBfValidation] = useState(false);
-  const [blockReason, setBlockReason] = useState('');
+  const { commandPaletteOpen, setCommandPaletteOpen } = usePaiementsWorkspaceStore();
+  
+  // State management
+  const [stats, setStats] = useState<PaiementsStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [isConnected, setIsConnected] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  
+  // Toast state
+  const [toast, setToast] = useState<{
+    open: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message?: string;
+  } | null>(null);
+  
+  // Filters state
+  const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<PaiementsActiveFilters>({
+    urgency: [],
+    bureaux: [],
+    types: [],
+    status: [],
+    amountRange: {},
+  });
+  
+  // Navigation state - 3-level navigation
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState<string | null>('dashboard');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
+  
+  // Modal state
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: PaiementModalType | null;
+    data?: any;
+  }>({
+    isOpen: false,
+    type: null,
+  });
+  
+  // Notification panel state
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [navigationHistory, setNavigationHistory] = useState<Array<{ category: string; subCategory: string | null }>>([]);
+  
+  // UI State
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [kpiBarCollapsed, setKpiBarCollapsed] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
 
-  // Utilisateur actuel (simulé)
-  const currentUser = {
-    id: 'USR-001',
-    name: 'A. DIALLO',
-    role: 'Directeur Général',
-    bureau: 'BMO',
-  };
-
-  // Responsable BF
-  const bfResponsible = employees.find((e) => e.bureau === 'BF' && e.role.includes('Chef'));
-
-  // Enrichir les paiements
-  const enrichedPayments = useMemo(() => {
-    return paymentsN1.map((p) => ({
-      ...p,
-      daysToDue: getDaysToDue(p.dueDate),
-      amountNum: parseAmount(p.amount),
-      requiresDoubleValidation: parseAmount(p.amount) >= DOUBLE_VALIDATION_THRESHOLD,
-    }));
+  // Load stats
+  const loadStats = useCallback(async (mode: 'auto' | 'manual' = 'auto') => {
+    if (mode === 'manual') setStatsLoading(true);
+    try {
+      const data = await paiementsApiService.getStats();
+      setStats(data);
+      setLastUpdate(new Date());
+      setIsConnected(true);
+      
+      // Show success toast on manual refresh
+      if (mode === 'manual') {
+        setToast({
+          open: true,
+          type: 'success',
+          title: 'Données actualisées',
+          message: 'Les statistiques ont été mises à jour avec succès.',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+      setIsConnected(false);
+      setToast({
+        open: true,
+        type: 'error',
+        title: 'Erreur de chargement',
+        message: 'Impossible de charger les statistiques. Vérifiez votre connexion.',
+      });
+    } finally {
+      setStatsLoading(false);
+    }
   }, []);
 
-  // Filtrer selon le mode
-  const filteredPayments = useMemo(() => {
-    switch (viewMode) {
-      case '7days':
-        return enrichedPayments.filter((p) => p.daysToDue >= 0 && p.daysToDue <= 7);
-      case 'late':
-        return enrichedPayments.filter((p) => p.daysToDue < 0);
-      case 'critical':
-        return enrichedPayments.filter((p) => p.requiresDoubleValidation);
-      default:
-        return enrichedPayments;
+  // Initial load & auto-refresh
+  useEffect(() => { loadStats('manual'); }, [loadStats]);
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => loadStats('auto'), 60000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, loadStats]);
+
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = (category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setNavigationHistory(prev => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
+      setActiveCategory(category);
+      const subCats = getSubCategoriesMap(stats)[category] || [];
+      setActiveSubCategory(subCategory || subCats[0]?.id || null);
+      setActiveSubSubCategory(undefined); // Reset level 3
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+      setActiveSubSubCategory(undefined); // Reset level 3
     }
-  }, [enrichedPayments, viewMode]);
+  };
 
-  // Stats
-  const stats = useMemo(() => ({
-    total: paymentsN1.length,
-    in7Days: enrichedPayments.filter((p) => p.daysToDue >= 0 && p.daysToDue <= 7).length,
-    late: enrichedPayments.filter((p) => p.daysToDue < 0).length,
-    critical: enrichedPayments.filter((p) => p.requiresDoubleValidation).length,
-    totalAmount: enrichedPayments.reduce((acc, p) => acc + p.amountNum, 0),
-  }), [enrichedPayments]);
+  const handleSubCategoryChange = (subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined); // Reset level 3 when changing level 2
+  };
 
-  // Autoriser un paiement
-  const handleAuthorize = (payment: typeof enrichedPayments[0]) => {
-    // Double validation pour montants >= 5M
-    if (payment.requiresDoubleValidation && !bfValidation) {
-      setSelectedPayment(payment);
-      setShowValidationModal(true);
-      addToast(`⚠️ Double validation requise (>${(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA)`, 'warning');
-      return;
+  const handleSubSubCategoryChange = (subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
+  };
+
+  const handleGoBack = () => {
+    if (navigationHistory.length === 0) return;
+    const prev = navigationHistory[navigationHistory.length - 1];
+    setNavigationHistory(navigationHistory.slice(0, -1));
+    setActiveCategory(prev.category);
+    setActiveSubCategory(prev.subCategory);
+  };
+
+  const handleApplyFilters = useCallback(async (filters: PaiementsActiveFilters) => {
+    setActiveFilters(filters);
+    
+    // Appliquer les filtres aux données
+    try {
+      const hasActiveFilters = countActiveFiltersUtil(filters) > 0;
+      
+      if (hasActiveFilters) {
+        // Utiliser la nouvelle méthode avec filtres avancés
+        const result = await paiementsApiService.getAllWithAdvancedFilters(filters);
+        console.log(`Filtres appliqués: ${result.total} résultats trouvés`);
+      }
+      
+      setToast({
+        open: true,
+        type: 'success',
+        title: 'Filtres appliqués',
+        message: `${countActiveFiltersUtil(filters)} filtre(s) actif(s)`,
+      });
+      
+      // Recharger les statistiques avec les filtres
+      await loadStats('auto');
+    } catch (error) {
+      console.error('Erreur lors de l\'application des filtres:', error);
+      setToast({
+        open: true,
+        type: 'error',
+        title: 'Erreur',
+        message: 'Impossible d\'appliquer les filtres',
+      });
     }
+  }, [loadStats]);
 
-    const hash = generateSHA3Hash(`${payment.id}-${currentUser.id}-authorize-${Date.now()}`);
-    const timestamp = new Date().toISOString();
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K - Command Palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+      // ⌘B / Ctrl+B - Toggle Sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+      }
+      // ⌘I / Ctrl+I - Stats Modal
+      if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+        e.preventDefault();
+        setModal({ isOpen: true, type: 'stats' });
+      }
+      // ⌘E / Ctrl+E - Export Modal
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault();
+        setModal({ isOpen: true, type: 'export' });
+      }
+      // ⌘F / Ctrl+F - Filters Panel
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setFiltersPanelOpen(prev => !prev);
+      }
+      // Alt+← - Go Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+      }
+      // F11 - Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullScreen(prev => !prev);
+      }
+      // F1 - Help Modal
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setHelpModalOpen(true);
+      }
+      // Esc - Close modals/panels
+      if (e.key === 'Escape') {
+        if (modal.isOpen) {
+          setModal({ isOpen: false, type: null });
+        } else if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+        } else if (filtersPanelOpen) {
+          setFiltersPanelOpen(false);
+        } else if (notificationPanelOpen) {
+          setNotificationPanelOpen(false);
+        } else if (helpModalOpen) {
+          setHelpModalOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setCommandPaletteOpen, navigationHistory, modal.isOpen, commandPaletteOpen, filtersPanelOpen, notificationPanelOpen, helpModalOpen]);
 
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'validation',
-      module: 'validation-paiements',
-      targetId: payment.id,
-      targetType: 'Paiement',
-      targetLabel: `${payment.type} - ${payment.beneficiary}`,
-      details: `Paiement autorisé - Montant: ${payment.amount} FCFA - Ref: ${payment.ref} - Hash: ${hash} - Timestamp: ${timestamp}${payment.requiresDoubleValidation ? ' - DOUBLE VALIDATION' : ''}`,
-      bureau: payment.bureau,
-    });
-
-    addToast(`✓ ${payment.id} autorisé - ${payment.amount} FCFA`, 'success');
-    setShowValidationModal(false);
-    setBfValidation(false);
-  };
-
-  // Bloquer un paiement
-  const handleBlock = (payment: typeof enrichedPayments[0], reason: string) => {
-    const hash = generateSHA3Hash(`${payment.id}-${currentUser.id}-block-${Date.now()}`);
-
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'blocage',
-      module: 'validation-paiements',
-      targetId: payment.id,
-      targetType: 'Paiement',
-      targetLabel: `${payment.type} - ${payment.beneficiary}`,
-      details: `Paiement bloqué - Motif: ${reason} - Hash: ${hash}`,
-      bureau: payment.bureau,
-    });
-
-    addToast(`🛑 ${payment.id} bloqué - ${reason}`, 'warning');
-  };
-
-  // Demander justificatif
-  const handleRequestJustificatif = (payment: typeof enrichedPayments[0]) => {
-    addActionLog({
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      action: 'complement',
-      module: 'validation-paiements',
-      targetId: payment.id,
-      targetType: 'Paiement',
-      targetLabel: `${payment.type} - ${payment.beneficiary}`,
-      details: 'Demande de justificatif envoyée',
-      bureau: payment.bureau,
-    });
-
-    addToast(`📎 Justificatif demandé pour ${payment.id}`, 'info');
-  };
-
-  // Validation BF simulée
-  const handleBFValidation = () => {
-    setBfValidation(true);
-    addToast('✓ Validation BF confirmée', 'success');
-  };
+  // Generate KPIs from stats
+  const kpis = stats ? [
+    {
+      id: 'total',
+      label: 'Total',
+      value: stats.total,
+      trend: 'stable' as const,
+      status: 'neutral' as const,
+    },
+    {
+      id: 'pending',
+      label: 'En attente',
+      value: stats.pending,
+      trend: 'stable' as const,
+      status: 'warning' as const,
+      sparkline: [8, 10, 9, 11, 12, 11, 12],
+      onClick: () => handleCategoryChange('pending'),
+    },
+    {
+      id: 'urgent',
+      label: 'Urgents',
+      value: stats.byUrgency.critical || 0,
+      trend: 'down' as const,
+      trendValue: '-1',
+      status: 'critical' as const,
+      onClick: () => handleCategoryChange('urgent'),
+    },
+    {
+      id: 'validated',
+      label: 'Validés',
+      value: stats.validated,
+      trend: 'up' as const,
+      trendValue: '+3',
+      status: 'success' as const,
+      sparkline: [15, 18, 20, 22, 25, 28, 30],
+    },
+    {
+      id: 'rejected',
+      label: 'Rejetés',
+      value: stats.rejected,
+      trend: 'stable' as const,
+      status: 'neutral' as const,
+    },
+    {
+      id: 'scheduled',
+      label: 'Planifiés',
+      value: stats.scheduled,
+      trend: 'stable' as const,
+      status: 'neutral' as const,
+    },
+    {
+      id: 'tresorerie',
+      label: 'Trésorerie',
+      value: `${(stats.tresorerieDisponible / 1_000_000_000).toFixed(1)}Md`,
+      trend: 'up' as const,
+      trendValue: '+120M',
+      status: 'success' as const,
+      sparkline: [720, 730, 750, 780, 820, 840, 850],
+    },
+    {
+      id: 'avg-montant',
+      label: 'Montant moyen',
+      value: `${(stats.avgMontant / 1_000_000).toFixed(1)}M`,
+      trend: 'stable' as const,
+      status: 'neutral' as const,
+    },
+  ] : [];
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            💳 Validation Paiements N+1
-            <Badge variant="warning">{stats.total}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Double validation si &gt;{(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA • Traçabilité complète
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-slate-400">Montant total en attente</p>
-          <p className="font-mono font-bold text-lg text-amber-400">
-            {(stats.totalAmount / 1000000).toFixed(1)}M FCFA
-          </p>
-        </div>
-      </div>
-
-      {/* Alerte paiements en retard */}
-      {stats.late > 0 && (
-        <div className={cn(
-          'rounded-xl p-3 flex items-center gap-3 border',
-          darkMode ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'
-        )}>
-          <span className="text-2xl animate-pulse">🚨</span>
-          <div className="flex-1">
-            <p className="font-bold text-sm text-red-400">
-              {stats.late} paiement(s) en retard
-            </p>
-            <p className="text-xs text-slate-400">
-              Échéance dépassée - Risque de pénalités
-            </p>
-          </div>
-          <Button size="sm" variant="destructive" onClick={() => setViewMode('late')}>
-            Voir retards
-          </Button>
-        </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        isFullScreen && 'fixed inset-0 z-50'
       )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <PaiementsSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory || undefined}
+        collapsed={sidebarCollapsed}
+        stats={stats ? {
+          pending: stats.pending,
+          urgent: (stats.byUrgency?.critical || 0) + (stats.byUrgency?.high || 0),
+          validated: stats.validated,
+          rejected: stats.rejected,
+        } : undefined}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-5 gap-3">
-        <Card
-          className={cn('cursor-pointer transition-all', viewMode === 'all' && 'ring-2 ring-orange-500')}
-          onClick={() => setViewMode('all')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-[10px] text-slate-400">Total</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-amber-500/30', viewMode === '7days' && 'ring-2 ring-amber-500')}
-          onClick={() => setViewMode('7days')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.in7Days}</p>
-            <p className="text-[10px] text-slate-400">À 7 jours</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-red-500/30', viewMode === 'late' && 'ring-2 ring-red-500')}
-          onClick={() => setViewMode('late')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.late}</p>
-            <p className="text-[10px] text-slate-400">En retard</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn('cursor-pointer transition-all border-purple-500/30', viewMode === 'critical' && 'ring-2 ring-purple-500')}
-          onClick={() => setViewMode('critical')}
-        >
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{stats.critical}</p>
-            <p className="text-[10px] text-slate-400">&gt;5M (critique)</p>
-          </CardContent>
-        </Card>
-        <Card className="border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-emerald-400">
-              {(stats.totalAmount / 1000000).toFixed(1)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Montant total</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
 
-      {/* Table des paiements */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            {viewMode === '7days' && '⏰ Paiements à 7 jours'}
-            {viewMode === 'late' && '🚨 Paiements en retard'}
-            {viewMode === 'critical' && '💰 Paiements critiques (>5M)'}
-            {viewMode === 'all' && '📋 Tous les paiements'}
-            <Badge variant="info">{filteredPayments.length}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className={darkMode ? 'bg-slate-700/50' : 'bg-gray-50'}>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">ID</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Type</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Référence</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Bénéficiaire</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Montant</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Échéance</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Statut</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPayments.map((payment) => {
-                  const isLate = payment.daysToDue < 0;
-                  const isUrgent = payment.daysToDue >= 0 && payment.daysToDue <= 3;
-
-                  return (
-                    <tr
-                      key={payment.id}
-                      className={cn(
-                        'border-t transition-all',
-                        darkMode ? 'border-slate-700/50' : 'border-gray-100',
-                        isLate && 'bg-red-500/5',
-                        isUrgent && !isLate && 'bg-amber-500/5',
-                        'hover:bg-orange-500/5'
-                      )}
-                    >
-                      <td className="px-3 py-2.5">
-                        <span className="font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">
-                          {payment.id}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant={payment.type === 'Situation' ? 'gold' : payment.type === 'Facture' ? 'info' : 'default'}>
-                          {payment.type}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5 font-mono text-[10px]">{payment.ref}</td>
-                      <td className="px-3 py-2.5">
-                        <div>
-                          <p className="font-semibold">{payment.beneficiary}</p>
-                          <p className="text-[10px] text-orange-400">{payment.project}</p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1">
-                          <span className={cn(
-                            'font-mono font-bold',
-                            payment.requiresDoubleValidation ? 'text-purple-400' : 'text-amber-400'
-                          )}>
-                            {payment.amount}
-                          </span>
-                          {payment.requiresDoubleValidation && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400">
-                              2x
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1">
-                          <span className={cn(
-                            isLate ? 'text-red-400 font-bold' : isUrgent ? 'text-amber-400' : ''
-                          )}>
-                            {payment.dueDate}
-                          </span>
-                          {isLate && (
-                            <Badge variant="urgent" pulse>J{payment.daysToDue}</Badge>
-                          )}
-                          {isUrgent && !isLate && (
-                            <Badge variant="warning">J-{payment.daysToDue}</Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant={payment.status === 'pending' ? 'warning' : 'success'}>
-                          {payment.status === 'pending' ? 'En attente' : 'Validé'}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex gap-1">
-                          <Button size="xs" variant="success" onClick={() => handleAuthorize(payment)}>✓</Button>
-                          <Button size="xs" variant="info" onClick={() => { setSelectedPayment(payment); setShowValidationModal(true); }}>👁</Button>
-                          <Button size="xs" variant="warning" onClick={() => handleRequestJustificatif(payment)}>📎</Button>
-                          <Button size="xs" variant="destructive" onClick={() => handleBlock(payment, 'Justificatif insuffisant')}>🛑</Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-emerald-400" />
+              <h1 className="text-base font-semibold text-slate-200">Validation Paiements</h1>
+              <Badge
+                variant="default"
+                className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
+              >
+                {stats?.pending || 0} en attente
+              </Badge>
+            </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {filteredPayments.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-slate-400">Aucun paiement dans cette catégorie</p>
-          </CardContent>
-        </Card>
-      )}
+          {/* Right Actions */}
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 gap-2 text-slate-400 hover:text-slate-200"
+            >
+              <Search className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">Rechercher</span>
+              <kbd className="hidden sm:inline px-1.5 py-0.5 text-xs rounded bg-slate-800 border border-slate-700">⌘K</kbd>
+            </Button>
 
-      {/* Modal double validation */}
-      {showValidationModal && selectedPayment && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                {selectedPayment.requiresDoubleValidation ? '🔐 Double validation requise' : '💳 Détails paiement'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Détails paiement */}
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/50' : 'bg-gray-50')}>
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <span className="font-mono text-xs text-blue-400">{selectedPayment.id}</span>
-                    <Badge variant="info" className="ml-2">{selectedPayment.type}</Badge>
-                  </div>
-                  <span className={cn(
-                    'font-mono font-bold text-lg',
-                    selectedPayment.requiresDoubleValidation ? 'text-purple-400' : 'text-amber-400'
-                  )}>
-                    {selectedPayment.amount} FCFA
-                  </span>
-                </div>
-                <p className="font-bold text-sm">{selectedPayment.beneficiary}</p>
-                <p className="text-xs text-slate-400">Ref: {selectedPayment.ref}</p>
-                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                  <div><span className="text-slate-400">Projet:</span> <span className="text-orange-400">{selectedPayment.project}</span></div>
-                  <div><span className="text-slate-400">Échéance:</span> {selectedPayment.dueDate}</div>
-                  <div><span className="text-slate-400">Validé par:</span> {selectedPayment.validatedBy}</div>
-                  <div><span className="text-slate-400">Bureau:</span> <BureauTag bureau={selectedPayment.bureau} /></div>
-                </div>
-              </div>
+            {/* Filters */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFiltersPanelOpen(true)}
+              className={cn(
+                'h-8 gap-1.5 text-slate-400 hover:text-slate-200',
+                countActiveFiltersUtil(activeFilters) > 0 && 'text-emerald-400'
+              )}
+              title="Filtres avancés"
+            >
+              <Filter className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">Filtres</span>
+              {countActiveFiltersUtil(activeFilters) > 0 && (
+                <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                  {countActiveFiltersUtil(activeFilters)}
+                </span>
+              )}
+            </Button>
 
-              {/* Double validation pour montants >= 5M */}
-              {selectedPayment.requiresDoubleValidation && (
+            {/* Saved Filters */}
+            <SavedFiltersManager
+              module="paiements"
+              currentFilters={activeFilters}
+              onApplyFilter={handleApplyFilters}
+              countActiveFilters={countActiveFiltersUtil}
+            />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotificationsPanelOpen(true)}
+              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200 relative"
+            >
+              <Bell className="h-4 w-4" />
+              {stats && (stats.byUrgency.critical || 0) > 0 && (
+                <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </Button>
+
+            {/* Stats */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setModal({ isOpen: true, type: 'stats' })}
+              className="h-8 gap-2 text-slate-400 hover:text-slate-200"
+              title="Statistiques (⌘I)"
+            >
+              <BarChart3 className="h-4 w-4 text-emerald-400" />
+              <span className="hidden sm:inline text-sm">Stats</span>
+            </Button>
+
+            {/* Menu */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+              {menuOpen && (
                 <>
-                  <div className="p-3 rounded-lg border-l-4 border-l-purple-500 bg-purple-500/10">
-                    <p className="text-xs text-purple-400 font-bold mb-2">
-                      ⚠️ Montant &gt;{(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA - Double validation obligatoire
-                    </p>
-                  </div>
-
-                  {/* Étape 1: Validation BF */}
-                  <div className={cn(
-                    'p-3 rounded-lg border-l-4',
-                    bfValidation ? 'border-l-emerald-500 bg-emerald-500/10' : 'border-l-amber-500 bg-amber-500/10'
-                  )}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{bfValidation ? '✓' : '1️⃣'}</span>
-                        <div>
-                          <p className="font-bold text-sm">Validation Bureau Finance</p>
-                          <p className="text-[10px] text-slate-400">
-                            {bfResponsible?.name || 'F. DIOP'} - Chef Bureau Finance
-                          </p>
-                        </div>
-                      </div>
-                      {!bfValidation && (
-                        <Button size="sm" variant="warning" onClick={handleBFValidation}>
-                          Simuler validation BF
-                        </Button>
-                      )}
-                      {bfValidation && <Badge variant="success">✓ Validé</Badge>}
-                    </div>
-                  </div>
-
-                  {/* Étape 2: Autorisation DG */}
-                  <div className={cn(
-                    'p-3 rounded-lg border-l-4',
-                    bfValidation ? 'border-l-emerald-500' : 'border-l-slate-500 opacity-50',
-                    bfValidation ? 'bg-emerald-500/10' : 'bg-slate-500/10'
-                  )}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">2️⃣</span>
-                      <div>
-                        <p className="font-bold text-sm">Autorisation Directeur Général</p>
-                        <p className="text-[10px] text-slate-400">{currentUser.name} - {currentUser.role}</p>
-                      </div>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-slate-700 bg-slate-900 shadow-lg z-50 overflow-hidden">
+                    <div className="py-1">
+                      <button
+                        onClick={() => { loadStats('manual'); setMenuOpen(false); }}
+                        disabled={statsLoading}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-4 h-4 text-slate-400", statsLoading && "animate-spin")} />
+                        Rafraîchir
+                      </button>
+                      <button
+                        onClick={() => { setAutoRefresh(!autoRefresh); setMenuOpen(false); }}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                      >
+                        <span className="flex items-center gap-3">
+                          <Settings className="w-4 h-4 text-slate-400" />
+                          Auto-refresh
+                        </span>
+                        <span className={cn("text-xs px-1.5 py-0.5 rounded", autoRefresh ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-700 text-slate-400")}>
+                          {autoRefresh ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+                      <div className="h-px bg-slate-700 my-1" />
+                      <button
+                        onClick={() => { setModal({ isOpen: true, type: 'export' }); setMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                      >
+                        <Download className="w-4 h-4 text-emerald-400" />
+                        Exporter
+                      </button>
+                      <div className="h-px bg-slate-700 my-1" />
+                      <button
+                        onClick={() => { setHelpModalOpen(true); setMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                      >
+                        <HelpCircle className="w-4 h-4 text-slate-400" />
+                        Aide
+                      </button>
+                      <button
+                        onClick={() => { setModal({ isOpen: true, type: 'settings' }); setMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                      >
+                        <Settings className="w-4 h-4 text-slate-400" />
+                        Paramètres
+                      </button>
                     </div>
                   </div>
                 </>
               )}
-
-              {/* Zone blocage */}
-              <div className={cn('p-3 rounded-lg', darkMode ? 'bg-slate-700/30' : 'bg-gray-100')}>
-                <p className="text-xs font-bold mb-2">Motif de blocage (optionnel)</p>
-                <input
-                  type="text"
-                  placeholder="Ex: Justificatif manquant, montant incorrect..."
-                  value={blockReason}
-                  onChange={(e) => setBlockReason(e.target.value)}
-                  className={cn(
-                    'w-full px-3 py-2 rounded text-xs',
-                    darkMode ? 'bg-slate-800 border border-slate-600' : 'bg-white border border-gray-300'
-                  )}
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-4 border-t border-slate-700/50">
-                <Button
-                  className="flex-1"
-                  disabled={selectedPayment.requiresDoubleValidation && !bfValidation}
-                  onClick={() => handleAuthorize(selectedPayment)}
-                >
-                  ✓ Autoriser le paiement
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    handleBlock(selectedPayment, blockReason || 'Non spécifié');
-                    setShowValidationModal(false);
-                  }}
-                >
-                  🛑 Bloquer
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setShowValidationModal(false);
-                    setBfValidation(false);
-                    setBlockReason('');
-                  }}
-                >
-                  Annuler
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Info traçabilité */}
-      <Card className="border-blue-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">📊</span>
-            <div>
-              <h3 className="font-bold text-sm text-blue-400">Traçabilité des paiements</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Chaque autorisation ou blocage génère une entrée dans le registre des décisions avec :
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2 text-[10px]">
-                <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400">Hash SHA3-256</span>
-                <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400">Horodatage ISO</span>
-                <span className="px-2 py-1 rounded bg-amber-500/20 text-amber-400">Auteur identifié</span>
-                <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-400">Montant vérifié</span>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2">
-                💡 Seuil critique : Tout paiement ≥ {(DOUBLE_VALIDATION_THRESHOLD / 1000000).toFixed(0)}M FCFA nécessite une double validation (BF + DG)
-              </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </header>
+
+        {/* Sub Navigation - 3-level */}
+        <PaiementsSubNavigation
+          mainCategory={activeCategory as PaiementsMainCategory}
+          subCategory={activeSubCategory || undefined}
+          subSubCategory={activeSubSubCategory}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats ? {
+            pending: stats.pending,
+            urgent: (stats.byUrgency?.critical || 0) + (stats.byUrgency?.high || 0),
+            validated: stats.validated,
+            rejected: stats.rejected,
+          } : undefined}
+        />
+
+        {/* KPI Bar */}
+        {stats && (
+          <PaiementsKPIBar
+            kpis={kpis}
+            visible={true}
+            collapsed={kpiBarCollapsed}
+            onToggleCollapse={() => setKpiBarCollapsed(prev => !prev)}
+            onRefresh={() => loadStats('manual')}
+            isRefreshing={statsLoading}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden bg-slate-950/50">
+          <div className="h-full overflow-auto">
+            <div className="p-4">
+              {/* Content Router basé sur la navigation 3-level */}
+              <PaiementsContentRouter
+                mainCategory={activeCategory as PaiementsMainCategory}
+                subCategory={activeSubCategory || undefined}
+                subSubCategory={activeSubSubCategory}
+              />
+            </div>
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <PaiementsStatusBar
+          lastUpdate={lastUpdate}
+          isConnected={isConnected}
+          autoRefresh={autoRefresh}
+          stats={stats}
+        />
+      </div>
+
+      {/* Command Palette */}
+      <PaiementsCommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenStats={() => setModal({ isOpen: true, type: 'stats' })}
+        onOpenExport={() => setModal({ isOpen: true, type: 'export' })}
+        onRefresh={() => loadStats('manual')}
+      />
+
+      {/* Modals */}
+      <PaiementsModals
+        modal={modal}
+        onClose={() => setModal({ isOpen: false, type: null })}
+      />
+
+      {/* Notifications Panel */}
+      <PaiementsNotificationPanel
+        isOpen={notificationPanelOpen}
+        onClose={() => setNotificationPanelOpen(false)}
+      />
+      
+      {/* Toast Notifications */}
+      {toast && (
+        <PaiementsToast
+          open={toast.open}
+          type={toast.type}
+          title={toast.title}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Filters Panel */}
+      <PaiementsFiltersPanel
+        isOpen={filtersPanelOpen}
+        onClose={() => setFiltersPanelOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        currentFilters={activeFilters}
+      />
+
+      {/* Help Modal */}
+      <PaiementsHelpModal
+        open={helpModalOpen}
+        onClose={() => setHelpModalOpen(false)}
+      />
     </div>
   );
 }

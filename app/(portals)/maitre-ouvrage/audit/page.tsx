@@ -1,269 +1,557 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+/**
+ * Centre de Commandement Audit - Version 3.0
+ * Plateforme de surveillance et conformité système
+ * Architecture cohérente avec la page Analytics et Gouvernance
+ */
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { auditEnriched } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import {
+  Shield,
+  Search,
+  Bell,
+  ChevronLeft,
+} from 'lucide-react';
+import {
+  useAuditCommandCenterStore,
+} from '@/lib/stores/auditCommandCenterStore';
+import {
+  AuditKPIBar,
+  ActionsMenu,
+  AuditModals,
+  AuditDetailPanel,
+  AuditFiltersPanel,
+  auditCategories,
+} from '@/components/features/bmo/audit/command-center';
+// New 3-level navigation module
+import {
+  AuditSidebar,
+  AuditSubNavigation,
+  AuditContentRouter,
+  type AuditMainCategory,
+} from '@/modules/audit';
+import { AuditCommandPalette } from '@/components/features/bmo/workspace/audit/AuditCommandPalette';
 
+// ================================
+// Types
+// ================================
+interface SubCategory {
+  id: string;
+  label: string;
+  badge?: number | string;
+  badgeType?: 'default' | 'warning' | 'critical';
+}
+
+// Sous-catégories par catégorie principale
+const subCategoriesMap: Record<string, SubCategory[]> = {
+  overview: [
+    { id: 'all', label: 'Tout' },
+    { id: 'summary', label: 'Résumé' },
+    { id: 'highlights', label: 'Points clés', badge: 5 },
+  ],
+  events: [
+    { id: 'all', label: 'Tous les événements', badge: 156 },
+    { id: 'critical', label: 'Critiques', badge: 8, badgeType: 'critical' },
+    { id: 'warning', label: 'Avertissements', badge: 24, badgeType: 'warning' },
+    { id: 'info', label: 'Informatifs' },
+    { id: 'resolved', label: 'Résolus' },
+  ],
+  security: [
+    { id: 'all', label: 'Toutes', badge: 12 },
+    { id: 'critical', label: 'Critiques', badge: 3, badgeType: 'critical' },
+    { id: 'threats', label: 'Menaces', badge: 5, badgeType: 'warning' },
+    { id: 'vulnerabilities', label: 'Vulnérabilités', badge: 4 },
+  ],
+  compliance: [
+    { id: 'all', label: 'Tout', badge: 8 },
+    { id: 'violations', label: 'Violations', badge: 2, badgeType: 'warning' },
+    { id: 'checks', label: 'Vérifications' },
+    { id: 'reports', label: 'Rapports' },
+  ],
+  performance: [
+    { id: 'all', label: 'Tous' },
+    { id: 'metrics', label: 'Métriques' },
+    { id: 'alerts', label: 'Alertes', badge: 6, badgeType: 'warning' },
+    { id: 'optimization', label: 'Optimisations' },
+  ],
+  'system-logs': [
+    { id: 'all', label: 'Tous', badge: 234 },
+    { id: 'errors', label: 'Erreurs', badge: 12, badgeType: 'warning' },
+    { id: 'warnings', label: 'Avertissements', badge: 34 },
+    { id: 'info', label: 'Info' },
+  ],
+  traceability: [
+    { id: 'all', label: 'Tout' },
+    { id: 'actions', label: 'Actions utilisateur' },
+    { id: 'changes', label: 'Modifications', badge: 45 },
+    { id: 'access', label: 'Accès' },
+  ],
+  reports: [
+    { id: 'all', label: 'Tous', badge: 24 },
+    { id: 'recent', label: 'Récents' },
+    { id: 'scheduled', label: 'Planifiés' },
+    { id: 'custom', label: 'Personnalisés' },
+  ],
+  settings: [
+    { id: 'general', label: 'Général' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'retention', label: 'Rétention' },
+    { id: 'exports', label: 'Exports' },
+  ],
+};
+
+// ================================
+// Main Component
+// ================================
 export default function AuditPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [selectedAudit, setSelectedAudit] = useState<string | null>(null);
-  const [viewTab, setViewTab] = useState<'findings' | 'actions' | 'docs'>('findings');
+  return <AuditPageContent />;
+}
 
-  const stats = useMemo(() => {
-    const conforme = auditEnriched.filter(a => a.status === 'conforme').length;
-    const attention = auditEnriched.filter(a => a.status === 'attention').length;
-    const avgScore = Math.round(auditEnriched.reduce((acc, a) => acc + a.score, 0) / auditEnriched.length);
-    const totalFindings = auditEnriched.reduce((acc, a) => acc + a.findings.length, 0);
-    const openFindings = auditEnriched.reduce((acc, a) => acc + a.findings.filter(f => f.status === 'open').length, 0);
-    const overdueActions = auditEnriched.reduce((acc, a) => acc + a.actionPlan.filter(ap => ap.status === 'overdue').length, 0);
-    return { total: auditEnriched.length, conforme, attention, avgScore, totalFindings, openFindings, overdueActions };
+function AuditPageContent() {
+  const {
+    navigation,
+    fullscreen,
+    sidebarCollapsed,
+    commandPaletteOpen,
+    notificationsPanelOpen,
+    kpiConfig,
+    navigationHistory,
+    modal,
+    toggleFullscreen,
+    toggleCommandPalette,
+    toggleNotificationsPanel,
+    toggleSidebar,
+    goBack,
+    openModal,
+    closeModal,
+    navigate,
+    setKPIConfig,
+    filters,
+    setFilter,
+    resetFilters,
+  } = useAuditCommandCenterStore();
+
+  // État local pour refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Navigation state (depuis le store)
+  const activeCategory = navigation.mainCategory;
+  const activeSubCategory = navigation.subCategory || 'all';
+
+  // ================================
+  // Computed values
+  // ================================
+  const currentCategoryLabel = useMemo(() => {
+    return auditCategories.find((c) => c.id === activeCategory)?.label || 'Audit';
+  }, [activeCategory]);
+
+  const currentSubCategories = useMemo(() => {
+    return subCategoriesMap[activeCategory] || [];
+  }, [activeCategory]);
+
+  const formatLastUpdate = useCallback(() => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    return `il y a ${Math.floor(diff / 3600)}h`;
+  }, [lastUpdate]);
+
+  // ================================
+  // Callbacks
+  // ================================
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastUpdate(new Date());
+    }, 1500);
   }, []);
 
-  const selectedA = selectedAudit ? auditEnriched.find(a => a.id === selectedAudit) : null;
+  const handleCategoryChange = useCallback((category: string) => {
+    navigate(category as AuditMainCategory, 'all', null);
+  }, [navigate]);
 
-  const handleCreateAction = (auditId: string) => {
-    addActionLog({
-      module: 'audit',
-      action: 'create_action',
-      targetId: auditId,
-      targetType: 'AuditItem',
-      details: 'Création action corrective',
-      status: 'info',
-    });
-    addToast('Action corrective créée', 'success');
-  };
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    navigate(activeCategory, subCategory, null);
+  }, [activeCategory, navigate]);
 
-  const handleMarkResolved = (findingId: string) => {
-    addActionLog({
-      module: 'audit',
-      action: 'resolve_finding',
-      targetId: findingId,
-      targetType: 'AuditFinding',
-      details: `Constat ${findingId} résolu`,
-      status: 'success',
-    });
-    addToast('Constat marqué comme résolu', 'success');
-  };
+  // ================================
+  // Keyboard shortcuts
+  // ================================
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = { conforme: 'emerald', attention: 'amber', 'non-conforme': 'red' };
-    return colors[status] || 'slate';
-  };
+      const isMod = e.metaKey || e.ctrlKey;
 
-  const getSeverityBadge = (severity: string) => {
-    const variants: Record<string, 'urgent' | 'warning' | 'info' | 'default'> = { critical: 'urgent', major: 'warning', minor: 'info', observation: 'default' };
-    return variants[severity] || 'default';
-  };
+      // Ctrl+K : Command Palette
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
 
+      // Ctrl+F : Filters
+      if (isMod && e.key === 'f') {
+        e.preventDefault();
+        openModal('filters');
+        return;
+      }
+
+      // Ctrl+E : Export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        openModal('export');
+        return;
+      }
+
+      // F11 : Fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Alt+Left : Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      // Ctrl+B : Toggle sidebar
+      if (isMod && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Ctrl+I : Stats
+      if (isMod && e.key === 'i') {
+        e.preventDefault();
+        openModal('stats');
+        return;
+      }
+
+      // ? : Shortcuts
+      if (e.key === '?' && !isMod && !e.altKey) {
+        e.preventDefault();
+        openModal('shortcuts');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette, toggleFullscreen, toggleSidebar, goBack, openModal]);
+
+  // ================================
+  // Render
+  // ================================
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            🔍 Audit & Conformité
-            <Badge variant="info">{stats.total} audits</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">Scores, constats, plans d'actions et conformité OHADA</p>
-        </div>
+    <div
+      className={cn(
+        'flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden',
+        fullscreen && 'fixed inset-0 z-50'
+      )}
+    >
+      {/* Sidebar Navigation - 3-level */}
+      <AuditSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={{}}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={toggleSidebar}
+        onOpenCommandPalette={toggleCommandPalette}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-cyan-400" />
+              <h1 className="text-base font-semibold text-slate-200">Audit & Traçabilité</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v3.0
+              </Badge>
+            </div>
+          </div>
+
+          {/* Actions - Consolidated */}
+          <div className="flex items-center gap-1">
+            {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCommandPalette}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleNotificationsPanel}
+              className={cn(
+                'h-8 w-8 p-0 relative',
+                notificationsPanelOpen
+                  ? 'text-slate-200 bg-slate-800/50'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                8
+              </span>
+            </Button>
+
+            {/* Actions Menu (consolidated) */}
+            <ActionsMenu onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        <AuditSubNavigation
+          mainCategory={activeCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={navigation.filter || undefined}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={(subSubCategory) => navigate(activeCategory, activeSubCategory, subSubCategory)}
+          stats={{}}
+        />
+
+        {/* KPI Bar */}
+        {kpiConfig.visible && (
+          <AuditKPIBar
+            visible={true}
+            collapsed={kpiConfig.collapsed}
+            onToggleCollapse={() => setKPIConfig({ collapsed: !kpiConfig.collapsed })}
+            onRefresh={handleRefresh}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <AuditContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={navigation.filter || undefined}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">MàJ: {formatLastUpdate()}</span>
+            <span className="text-slate-700">•</span>
+            <span className="text-slate-600">
+              156 événements • 12 alertes sécurité • 24 rapports
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  isRefreshing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                )}
+              />
+              <span className="text-slate-500">
+                {isRefreshing ? 'Synchronisation...' : 'Connecté'}
+              </span>
+            </div>
+          </div>
+        </footer>
       </div>
 
-      {/* Alertes */}
-      {(stats.openFindings > 0 || stats.overdueActions > 0) && (
-        <Card className="border-amber-500/50 bg-amber-500/10">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-amber-400">Actions requises</h3>
-                <p className="text-sm text-slate-400">
-                  {stats.openFindings} constat(s) ouvert(s) • {stats.overdueActions} action(s) en retard
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <AuditCommandPalette
+          open={commandPaletteOpen}
+          onClose={toggleCommandPalette}
+          onOpenStats={() => openModal('stats')}
+          onRefresh={handleRefresh}
+        />
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <Card className="bg-blue-500/10 border-blue-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-blue-400">{stats.avgScore}%</p>
-            <p className="text-[10px] text-slate-400">Score moyen</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-500/10 border-emerald-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{stats.conforme}</p>
-            <p className="text-[10px] text-slate-400">Conformes</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-500/10 border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.attention}</p>
-            <p className="text-[10px] text-slate-400">Attention</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-500/10 border-purple-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{stats.totalFindings}</p>
-            <p className="text-[10px] text-slate-400">Constats</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-500/10 border-orange-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-orange-400">{stats.openFindings}</p>
-            <p className="text-[10px] text-slate-400">Ouverts</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-500/10 border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-red-400">{stats.overdueActions}</p>
-            <p className="text-[10px] text-slate-400">En retard</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Notifications Panel */}
+      {notificationsPanelOpen && (
+        <NotificationsPanel onClose={toggleNotificationsPanel} />
+      )}
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Liste audits */}
-        <div className="lg:col-span-2 space-y-3">
-          {auditEnriched.map((audit) => {
-            const isSelected = selectedAudit === audit.id;
-            const statusColor = getStatusColor(audit.status);
-            const openCount = audit.findings.filter(f => f.status === 'open').length;
-            
-            return (
-              <Card
-                key={audit.id}
-                className={cn(
-                  'cursor-pointer transition-all',
-                  isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50',
-                  `border-l-4 border-l-${statusColor}-500`,
-                )}
-                onClick={() => setSelectedAudit(audit.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs text-blue-400">{audit.id}</span>
-                        <Badge variant={audit.status === 'conforme' ? 'success' : 'warning'}>{audit.status}</Badge>
-                        <Badge variant="default">{audit.category}</Badge>
-                      </div>
-                      <h3 className="font-bold mt-1">{audit.type}</h3>
-                      <p className="text-sm text-slate-400">{audit.description}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className={cn("text-3xl font-bold", `text-${statusColor}-400`)}>{audit.score}%</p>
-                    </div>
-                  </div>
+      {/* Modals */}
+      <AuditModals />
 
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-400 mb-3">
-                    <span>Responsable: {audit.responsible}</span>
-                    <span>Dernier contrôle: {audit.lastCheck}</span>
-                    <span>Prochain: {audit.nextCheck}</span>
-                  </div>
+      {/* Detail Panel */}
+      <AuditDetailPanel />
 
-                  {/* Barre score */}
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
-                    <div className={cn("h-full transition-all", `bg-${statusColor}-500`)} style={{ width: `${audit.score}%` }} />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {audit.findings.length > 0 && (
-                      <Badge variant={openCount > 0 ? 'warning' : 'success'}>
-                        {audit.findings.length} constat(s) • {openCount} ouvert(s)
-                      </Badge>
-                    )}
-                    {audit.actionPlan.length > 0 && (
-                      <Badge variant="info">{audit.actionPlan.length} action(s)</Badge>
-                    )}
-                    {audit.documents.length > 0 && (
-                      <Badge variant="default">📎 {audit.documents.length} doc(s)</Badge>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Panel détail */}
-        <div className="lg:col-span-1">
-          {selectedA ? (
-            <Card className="sticky top-4">
-              <CardContent className="p-4">
-                <div className="mb-4 pb-4 border-b border-slate-700/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant={selectedA.status === 'conforme' ? 'success' : 'warning'}>{selectedA.status}</Badge>
-                    <p className={cn("text-2xl font-bold", `text-${getStatusColor(selectedA.status)}-400`)}>{selectedA.score}%</p>
-                  </div>
-                  <span className="font-mono text-xs text-blue-400">{selectedA.id}</span>
-                  <h3 className="font-bold">{selectedA.type}</h3>
-                </div>
-
-                {/* Onglets */}
-                <div className="flex gap-2 mb-4">
-                  <Button size="sm" variant={viewTab === 'findings' ? 'default' : 'secondary'} onClick={() => setViewTab('findings')}>Constats ({selectedA.findings.length})</Button>
-                  <Button size="sm" variant={viewTab === 'actions' ? 'default' : 'secondary'} onClick={() => setViewTab('actions')}>Actions ({selectedA.actionPlan.length})</Button>
-                  <Button size="sm" variant={viewTab === 'docs' ? 'default' : 'secondary'} onClick={() => setViewTab('docs')}>Docs ({selectedA.documents.length})</Button>
-                </div>
-
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {viewTab === 'findings' && (
-                    selectedA.findings.length > 0 ? selectedA.findings.map((finding) => (
-                      <div key={finding.id} className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <div className="flex items-center justify-between mb-1">
-                          <Badge variant={getSeverityBadge(finding.severity)}>{finding.severity}</Badge>
-                          <Badge variant={finding.status === 'resolved' ? 'success' : finding.status === 'in_progress' ? 'info' : 'warning'}>{finding.status}</Badge>
-                        </div>
-                        <p className="text-sm">{finding.description}</p>
-                        <p className="text-xs text-slate-400 mt-1">{finding.date}</p>
-                        {finding.status === 'open' && (
-                          <Button size="sm" variant="success" className="mt-2" onClick={() => handleMarkResolved(finding.id)}>✓ Résolu</Button>
-                        )}
-                      </div>
-                    )) : <p className="text-slate-400 text-center py-4">Aucun constat</p>
-                  )}
-
-                  {viewTab === 'actions' && (
-                    selectedA.actionPlan.length > 0 ? selectedA.actionPlan.map((action) => (
-                      <div key={action.id} className={cn("p-3 rounded", darkMode ? "bg-slate-700/30" : "bg-gray-100", action.status === 'overdue' && "border border-red-500/50")}>
-                        <div className="flex items-center justify-between mb-1">
-                          <Badge variant={action.status === 'completed' ? 'success' : action.status === 'overdue' ? 'urgent' : action.status === 'in_progress' ? 'info' : 'default'}>{action.status}</Badge>
-                        </div>
-                        <p className="text-sm font-medium">{action.title}</p>
-                        <p className="text-xs text-slate-400">{action.responsible} • Échéance: {action.deadline}</p>
-                      </div>
-                    )) : <p className="text-slate-400 text-center py-4">Aucune action</p>
-                  )}
-
-                  {viewTab === 'docs' && (
-                    selectedA.documents.length > 0 ? selectedA.documents.map((doc, idx) => (
-                      <div key={idx} className={cn("p-3 rounded flex items-center gap-2", darkMode ? "bg-slate-700/30" : "bg-gray-100")}>
-                        <span>📄</span>
-                        <span className="text-sm">{doc}</span>
-                      </div>
-                    )) : <p className="text-slate-400 text-center py-4">Aucun document</p>
-                  )}
-                </div>
-
-                <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                  <Button size="sm" variant="default" className="flex-1" onClick={() => handleCreateAction(selectedA.id)}>+ Action</Button>
-                  <Button size="sm" variant="info" className="flex-1" onClick={() => addToast('Rapport généré', 'success')}>📄 Rapport</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="sticky top-4"><CardContent className="p-8 text-center"><span className="text-4xl mb-4 block">🔍</span><p className="text-slate-400">Sélectionnez un audit</p></CardContent></Card>
-          )}
-        </div>
-      </div>
+      {/* Filters Panel */}
+      {modal.type === 'filters' && modal.isOpen && (
+        <AuditFiltersPanel
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onApplyFilters={(newFilters) => {
+            // Convertir les filtres au format du store
+            Object.entries(newFilters).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                setFilter(key as keyof typeof filters, value);
+              }
+            });
+            closeModal();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ================================
+// Notifications Panel
+// ================================
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const notifications = [
+    {
+      id: '1',
+      type: 'critical',
+      title: 'Événement critique détecté',
+      time: 'il y a 5 min',
+      read: false,
+    },
+    {
+      id: '2',
+      type: 'warning',
+      title: 'Alerte sécurité',
+      time: 'il y a 15 min',
+      read: false,
+    },
+    {
+      id: '3',
+      type: 'info',
+      title: 'Rapport d\'audit disponible',
+      time: 'il y a 1h',
+      read: true,
+    },
+    {
+      id: '4',
+      type: 'warning',
+      title: 'Violation de conformité',
+      time: 'il y a 2h',
+      read: true,
+    },
+    {
+      id: '5',
+      type: 'info',
+      title: 'Nouveau log système',
+      time: 'hier',
+      read: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-700/50 z-50 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-medium text-slate-200">Notifications</h3>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+              2 nouvelles
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                'px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors',
+                !notif.read && 'bg-slate-800/20'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    notif.type === 'critical'
+                      ? 'bg-red-500'
+                      : notif.type === 'warning'
+                      ? 'bg-amber-500'
+                      : 'bg-cyan-500'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'text-sm',
+                      !notif.read ? 'text-slate-200 font-medium' : 'text-slate-400'
+                    )}
+                  >
+                    {notif.title}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{notif.time}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-4 border-t border-slate-800/50">
+          <Button variant="outline" size="sm" className="w-full border-slate-700 text-slate-400">
+            Voir toutes les notifications
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }

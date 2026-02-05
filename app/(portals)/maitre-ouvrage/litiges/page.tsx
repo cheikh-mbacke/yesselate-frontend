@@ -1,582 +1,320 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { useAppStore, useBMOStore } from '@/lib/stores';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { litiges } from '@/lib/data';
+import { Badge } from '@/components/ui/badge';
+import { useLitigesWorkspaceStore } from '@/lib/stores/litigesWorkspaceStore';
+import { litigesApiService } from '@/lib/services/litigesApiService';
+import { useBMOStore } from '@/lib/stores';
+import { LitigesWorkspaceTabs, LitigesLiveCounters, LitigesCommandPalette, LitigesWorkspaceContent } from '@/components/features/bmo/workspace/litiges';
+import { Scale, Search, RefreshCw, BarChart3, MoreHorizontal, Download, Keyboard, Command, ChevronLeft, Bell } from 'lucide-react';
+// New 3-level navigation module
+import {
+  LitigesSidebar,
+  LitigesSubNavigation,
+  LitigesContentRouter,
+  type LitigesMainCategory,
+} from '@/modules/litiges';
 
 export default function LitigesPage() {
-  const { darkMode } = useAppStore();
-  const { addToast, addActionLog } = useBMOStore();
-  const [selectedLitige, setSelectedLitige] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'journal' | 'deadlines' | 'documents'>('journal');
+  const { openTab, commandPaletteOpen, setCommandPaletteOpen, statsModalOpen, setStatsModalOpen } = useLitigesWorkspaceStore();
+  const { addToast, addActionLog, currentUser } = useBMOStore();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  
+  // Navigation state - 3-level navigation
+  const [activeCategory, setActiveCategory] = useState<LitigesMainCategory>('overview');
+  const [activeSubCategory, setActiveSubCategory] = useState<string | undefined>('all');
+  const [activeSubSubCategory, setActiveSubSubCategory] = useState<string | undefined>(undefined);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [navigationHistory, setNavigationHistory] = useState<Array<{ category: string; subCategory?: string }>>([]);
+  
+  // Stats state
+  const [stats, setStats] = useState<{
+    active?: number;
+    pending?: number;
+    resolved?: number;
+    closed?: number;
+  }>({});
 
-  // Calculs
-  const stats = useMemo(() => {
-    const totalMontant = litiges.reduce(
-      (a, l) => a + parseFloat(l.montant.replace(/,/g, '')),
-      0
-    );
-    const totalExposition = litiges.reduce(
-      (a, l) => a + parseFloat(l.exposure.replace(/,/g, '')),
-      0
-    );
-    const byType = litiges.reduce((acc, l) => {
-      acc[l.type] = (acc[l.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const prochainRdv = litiges
-      .filter((l) => l.prochainRdv)
-      .sort((a, b) => {
-        const dateA = new Date(a.prochainRdv!.split('/').reverse().join('-'));
-        const dateB = new Date(b.prochainRdv!.split('/').reverse().join('-'));
-        return dateA.getTime() - dateB.getTime();
-      })[0];
-
-    const upcomingDeadlines = litiges
-      .flatMap((l) => l.deadlines.map((d) => ({ ...d, litigeId: l.id, adversaire: l.adversaire })))
-      .filter((d) => d.status === 'upcoming' || d.status === 'urgent')
-      .sort((a, b) => {
-        const dateA = new Date(a.date.split('/').reverse().join('-'));
-        const dateB = new Date(b.date.split('/').reverse().join('-'));
-        return dateA.getTime() - dateB.getTime();
-      })
-      .slice(0, 5);
-
-    return { totalMontant, totalExposition, byType, prochainRdv, upcomingDeadlines };
-  }, []);
-
-  const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
-    en_cours: { label: 'En cours', color: 'info', icon: '⏳' },
-    audience_prevue: { label: 'Audience prévue', color: 'warning', icon: '📅' },
-    mediation: { label: 'Médiation', color: 'default', icon: '🤝' },
-    expertise: { label: 'Expertise', color: 'info', icon: '🔍' },
-    appel: { label: 'Appel', color: 'warning', icon: '📜' },
-    clos_gagne: { label: 'Clos - Gagné', color: 'success', icon: '✅' },
-    clos_perdu: { label: 'Clos - Perdu', color: 'urgent', icon: '❌' },
-    transaction: { label: 'Transaction', color: 'default', icon: '🤝' },
-  };
-
-  const typeConfig: Record<string, { icon: string; color: string }> = {
-    Commercial: { icon: '💼', color: 'text-blue-400' },
-    Travail: { icon: '👷', color: 'text-amber-400' },
-    Assurance: { icon: '🛡️', color: 'text-emerald-400' },
-    Construction: { icon: '🏗️', color: 'text-orange-400' },
-    Autre: { icon: '📋', color: 'text-slate-400' },
-  };
-
-  const journalTypeConfig: Record<string, { icon: string; color: string }> = {
-    acte: { icon: '📄', color: 'text-blue-400' },
-    audience: { icon: '⚖️', color: 'text-amber-400' },
-    decision: { icon: '📜', color: 'text-emerald-400' },
-    signification: { icon: '📮', color: 'text-orange-400' },
-    expertise: { icon: '🔍', color: 'text-purple-400' },
-    mediation: { icon: '🤝', color: 'text-cyan-400' },
-    appel: { icon: '📢', color: 'text-red-400' },
-    autre: { icon: '📋', color: 'text-slate-400' },
-  };
-
-  const handleOpenDossier = (litige: typeof litiges[0]) => {
+  const handleRefresh = useCallback(() => {
+    setRefreshKey(k => k + 1);
+    addToast('Données rafraîchies', 'success');
     addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'creation',
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'audit',
       module: 'litiges',
-      targetId: litige.id,
-      targetType: 'Litige',
-      targetLabel: `Consultation dossier ${litige.adversaire}`,
-      details: `Ouverture du dossier litige ${litige.id}`,
+      targetId: 'REFRESH',
+      targetType: 'system',
+      targetLabel: 'Rafraîchissement',
+      details: 'Rafraîchissement manuel des données litiges',
       bureau: 'BJ',
     });
-    setSelectedLitige(litige.id);
-  };
+  }, [addToast, addActionLog, currentUser]);
 
-  const handleDemanderArbitrage = (litige: typeof litiges[0]) => {
-    addActionLog({
-      userId: 'USR-001',
-      userName: 'A. DIALLO',
-      userRole: 'Directeur Général',
-      action: 'creation',
-      module: 'arbitrages',
-      targetId: litige.id,
-      targetType: 'Litige',
-      targetLabel: `Demande arbitrage ${litige.adversaire}`,
-      details: `Demande d'arbitrage pour litige ${litige.id} - Exposition: ${litige.exposure} FCFA`,
-      bureau: 'BMO',
-    });
-    addToast(`Demande d'arbitrage créée pour ${litige.id}`, 'success');
-  };
+  const handleOpenQueue = useCallback((queue: string, title: string, icon: string) => {
+    const tabId = queue === 'all' ? 'inbox:all' : `inbox:${queue}`;
+    openTab({ type: 'inbox', id: tabId, title, icon, data: { queue } });
+  }, [openTab]);
 
-  const selectedLitigeData = selectedLitige
-    ? litiges.find((l) => l.id === selectedLitige)
-    : null;
+  const handleExport = useCallback(async () => {
+    addToast('Export des litiges en cours...', 'info');
+    setTimeout(() => addToast('Export généré avec succès', 'success'), 1500);
+  }, [addToast]);
+
+  // Navigation handlers - 3-level navigation
+  const handleCategoryChange = useCallback((category: string, subCategory?: string) => {
+    if (category !== activeCategory) {
+      setNavigationHistory(prev => [...prev, { category: activeCategory, subCategory: activeSubCategory }]);
+      setActiveCategory(category as LitigesMainCategory);
+      setActiveSubCategory(subCategory || 'all');
+      setActiveSubSubCategory(undefined);
+    } else if (subCategory) {
+      setActiveSubCategory(subCategory);
+      setActiveSubSubCategory(undefined);
+    }
+  }, [activeCategory, activeSubCategory]);
+
+  const handleSubCategoryChange = useCallback((subCategory: string) => {
+    setActiveSubCategory(subCategory);
+    setActiveSubSubCategory(undefined);
+  }, []);
+
+  const handleSubSubCategoryChange = useCallback((subSubCategory: string) => {
+    setActiveSubSubCategory(subSubCategory);
+  }, []);
+
+  const handleGoBack = useCallback(() => {
+    if (navigationHistory.length === 0) return;
+    const prev = navigationHistory[navigationHistory.length - 1];
+    setNavigationHistory(navigationHistory.slice(0, -1));
+    setActiveCategory(prev.category as LitigesMainCategory);
+    setActiveSubCategory(prev.subCategory || 'all');
+    setActiveSubSubCategory(undefined);
+  }, [navigationHistory]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setCommandPaletteOpen(true); }
+      if (e.key === 'Escape' && commandPaletteOpen) { setCommandPaletteOpen(false); }
+      if (e.key === 'r' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleRefresh(); }
+      // ⌘B / Ctrl+B - Toggle Sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+      }
+      // Alt+← - Go Back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleGoBack();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [commandPaletteOpen, setCommandPaletteOpen, handleRefresh, handleGoBack]);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            ⚖️ Litiges
-            <Badge variant="urgent">{litiges.length}</Badge>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Contentieux en cours et suivi procédural
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => addToast('Export en cours...', 'info')}
-          >
-            📊 Exporter
-          </Button>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => addToast('Nouveau litige', 'info')}
-          >
-            ➕ Nouveau
-          </Button>
-        </div>
-      </div>
+    <div className={cn('flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden')}>
+      {/* Sidebar Navigation - 3-level */}
+      <LitigesSidebar
+        activeCategory={activeCategory}
+        activeSubCategory={activeSubCategory}
+        collapsed={sidebarCollapsed}
+        stats={stats}
+        onCategoryChange={handleCategoryChange}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
 
-      {/* Stats globales */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-red-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-red-400">
-              {(stats.totalMontant / 1000000).toFixed(1)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Montant en litige</p>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-lg font-bold text-orange-400">
-              {(stats.totalExposition / 1000000).toFixed(1)}M
-            </p>
-            <p className="text-[10px] text-slate-400">Exposition estimée</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-purple-400">{litiges.length}</p>
-            <p className="text-[10px] text-slate-400">Dossiers actifs</p>
-          </CardContent>
-        </Card>
-        <Card className="border-amber-500/30">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-amber-400">{stats.upcomingDeadlines.length}</p>
-            <p className="text-[10px] text-slate-400">Échéances proches</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Répartition par type */}
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(stats.byType).map(([type, count]) => {
-          const config = typeConfig[type] || typeConfig.Autre;
-          return (
-            <Badge key={type} variant="default" className="text-xs">
-              <span className={config.color}>{config.icon}</span>
-              <span className="ml-1">{type}: {count}</span>
-            </Badge>
-          );
-        })}
-      </div>
-
-      {/* Prochaine échéance importante */}
-      {stats.prochainRdv && (
-        <Card className="border-l-4 border-l-red-500">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">⚠️</span>
-                <div>
-                  <p className="text-xs font-bold">Prochain RDV juridique</p>
-                  <p className="text-sm text-red-400">
-                    {stats.prochainRdv.prochainRdvType} - {stats.prochainRdv.adversaire}
-                  </p>
-                </div>
-              </div>
-              <Badge variant="urgent">{stats.prochainRdv.prochainRdv}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Échéances à venir */}
-      {stats.upcomingDeadlines.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              📅 Échéances à surveiller
-              <Badge variant="warning">{stats.upcomingDeadlines.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {stats.upcomingDeadlines.map((deadline) => (
-              <div
-                key={deadline.id}
-                className={cn(
-                  'p-2 rounded-lg flex items-center justify-between',
-                  deadline.status === 'urgent'
-                    ? 'bg-red-500/10 border border-red-500/30'
-                    : 'bg-slate-700/30'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className={deadline.status === 'urgent' ? 'text-red-400' : 'text-amber-400'}>
-                    {deadline.status === 'urgent' ? '🚨' : '📅'}
-                  </span>
-                  <div>
-                    <p className="text-xs font-semibold">{deadline.title}</p>
-                    <p className="text-[10px] text-slate-400">{deadline.adversaire}</p>
-                  </div>
-                </div>
-                <Badge variant={deadline.status === 'urgent' ? 'urgent' : 'warning'}>
-                  {deadline.date}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Liste des litiges */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            ⚖️ Litiges en cours
-            <Badge variant="urgent">{litiges.length}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {litiges.map((litige) => {
-            const status = statusConfig[litige.status] || statusConfig.en_cours;
-            const type = typeConfig[litige.type] || typeConfig.Autre;
-            return (
-              <div
-                key={litige.id}
-                className={cn(
-                  'p-3 rounded-lg border-l-4 cursor-pointer transition-all',
-                  selectedLitige === litige.id
-                    ? 'border-l-orange-500 bg-orange-500/10'
-                    : 'border-l-red-500 hover:bg-slate-700/30',
-                  darkMode ? 'bg-slate-700/20' : 'bg-gray-100'
-                )}
-                onClick={() => handleOpenDossier(litige)}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-[10px] text-orange-400">{litige.id}</span>
-                      <Badge variant="default" className="text-[9px]">
-                        <span className={type.color}>{type.icon}</span>
-                        <span className="ml-1">{litige.type}</span>
-                      </Badge>
-                      <Badge
-                        variant={status.color as 'info' | 'warning' | 'default' | 'success' | 'urgent'}
-                        className="text-[9px]"
-                      >
-                        {status.icon} {status.label}
-                      </Badge>
-                    </div>
-                    <h4 className="font-bold text-sm mt-1">{litige.objet}</h4>
-                    <p className="text-xs text-slate-400">vs {litige.adversaire}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono font-bold text-red-400">{litige.montant} FCFA</p>
-                    <p className="text-[10px] text-orange-400">
-                      Exposition: {litige.exposure} FCFA
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-400">Juridiction: </span>
-                    <span>{litige.juridiction}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Avocat: </span>
-                    <span className="text-blue-400">{litige.avocat}</span>
-                  </div>
-                  {litige.numeroAffaire && (
-                    <div>
-                      <span className="text-slate-400">N° Affaire: </span>
-                      <span className="font-mono">{litige.numeroAffaire}</span>
-                    </div>
-                  )}
-                  {litige.prochainRdv && (
-                    <div>
-                      <span className="text-slate-400">Prochain RDV: </span>
-                      <span className="text-red-400 font-semibold">{litige.prochainRdv}</span>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    size="xs"
-                    variant="info"
-                    onClick={() => handleOpenDossier(litige)}
-                  >
-                    📋 Dossier
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="warning"
-                    onClick={() => handleDemanderArbitrage(litige)}
-                  >
-                    ⚖️ Arbitrage
-                  </Button>
-                  {litige.projetName && (
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      onClick={() => addToast(`Voir projet ${litige.projet}`, 'info')}
-                    >
-                      🔗 {litige.projetName}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Détail du litige sélectionné */}
-      {selectedLitigeData && (
-        <Card className="border-orange-500/30">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                📋 Dossier {selectedLitigeData.id}
-                <Badge variant="info">{selectedLitigeData.statusLabel}</Badge>
-              </span>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            {/* Back Button */}
+            {navigationHistory.length > 0 && (
               <Button
-                size="xs"
                 variant="ghost"
-                onClick={() => setSelectedLitige(null)}
+                size="sm"
+                onClick={handleGoBack}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+                title="Retour (Alt+←)"
               >
-                ✕
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Résumé */}
-            {selectedLitigeData.resume && (
-              <div className="p-3 rounded-lg bg-slate-700/30 text-sm">
-                <p className="text-slate-400 text-[10px] mb-1">Résumé de l'affaire</p>
-                <p>{selectedLitigeData.resume}</p>
-              </div>
             )}
 
-            {/* Informations parties */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2 text-xs">
-                <h5 className="font-bold text-amber-400">🏢 Partie adverse</h5>
-                <div className="p-2 rounded bg-slate-700/20">
-                  <p><span className="text-slate-400">Nom:</span> {selectedLitigeData.adversaire}</p>
-                  {selectedLitigeData.adversaireContact && (
-                    <p><span className="text-slate-400">Contact:</span> {selectedLitigeData.adversaireContact}</p>
-                  )}
-                  {selectedLitigeData.adversaireAvocat && (
-                    <p><span className="text-slate-400">Avocat:</span> {selectedLitigeData.adversaireAvocat}</p>
-                  )}
+            {/* Title */}
+            <div className="flex items-center gap-2">
+              <Scale className="h-5 w-5 text-rose-400" />
+              <h1 className="text-base font-semibold text-slate-200">Contentieux & Litiges</h1>
+              <Badge
+                variant="default"
+                className="text-xs bg-slate-800/50 text-slate-300 border-slate-700/50"
+              >
+                v2.0
+              </Badge>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-3">
+              {/* Search */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="h-8 px-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              <span className="text-xs hidden sm:inline">Rechercher</span>
+              <kbd className="ml-2 text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded hidden sm:inline">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <div className="w-px h-4 bg-slate-700/50 mx-1" />
+
+            {/* Notifications */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStatsModalOpen(true)}
+              className="h-8 w-8 p-0 relative text-slate-500 hover:text-slate-300"
+              title="Statistiques"
+            >
+              <Bell className="h-4 w-4" />
+              {(stats.active || 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {stats.active}
+                </span>
+              )}
+            </Button>
+
+            {/* Refresh */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              title="Rafraîchir"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+
+            {/* More Menu */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                className="h-8 w-8 p-0 text-slate-500 hover:text-slate-300"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              {moreMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-700/50 bg-slate-900 shadow-xl z-20 py-2">
+                    <button onClick={() => { handleExport(); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3">
+                      <Download className="w-4 h-4 text-slate-400" />Exporter les litiges
+                    </button>
+                    <button onClick={() => { setCommandPaletteOpen(true); setMoreMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-3">
+                      <Command className="w-4 h-4 text-slate-400" />Palette de commande
+                    </button>
+                    <div className="border-t border-slate-700/50 my-2" />
+                    <div className="px-4 py-2 text-xs text-slate-500"><Keyboard className="w-3 h-3 inline mr-1" /> ⌘K recherche • ⌘R rafraîchir</div>
+                  </div>
+                </>
+              )}
+            </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Sub Navigation - Level 2 & 3 */}
+        <LitigesSubNavigation
+          mainCategory={activeCategory}
+          subCategory={activeSubCategory}
+          subSubCategory={activeSubSubCategory}
+          onSubCategoryChange={handleSubCategoryChange}
+          onSubSubCategoryChange={handleSubSubCategoryChange}
+          stats={stats}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <LitigesContentRouter
+              mainCategory={activeCategory}
+              subCategory={activeSubCategory}
+              subSubCategory={activeSubSubCategory}
+            />
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <footer className="flex items-center justify-between px-4 py-1.5 border-t border-slate-800/50 bg-slate-900/60 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-600">Litiges</span>
+            {stats.active !== undefined && (
+              <>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-600">
+                  {stats.active || 0} actifs • {stats.pending || 0} en attente • {stats.resolved || 0} résolus
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-slate-500">Connecté</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Command Palette */}
+      <LitigesCommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenStats={() => setStatsModalOpen(true)} onRefresh={handleRefresh} />
+
+      {/* Stats Modal */}
+      {statsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setStatsModalOpen(false)}>
+          <div className="w-full max-w-3xl mx-4 rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-700/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-rose-500/10"><BarChart3 className="w-5 h-5 text-rose-400" /></div>
+                <h2 className="text-lg font-bold text-slate-200">Statistiques Litiges</h2>
+              </div>
+              <button onClick={() => setStatsModalOpen(false)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-800">✕</button>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-center">
+                  <p className="text-3xl font-bold text-rose-400">12</p>
+                  <p className="text-sm text-slate-500 mt-1">Litiges actifs</p>
+                </div>
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                  <p className="text-3xl font-bold text-amber-400">4</p>
+                  <p className="text-sm text-slate-500 mt-1">Audiences prévues</p>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <p className="text-3xl font-bold text-emerald-400">8</p>
+                  <p className="text-sm text-slate-500 mt-1">Litiges clos</p>
                 </div>
               </div>
-              <div className="space-y-2 text-xs">
-                <h5 className="font-bold text-blue-400">⚖️ Notre défense</h5>
-                <div className="p-2 rounded bg-slate-700/20">
-                  <p><span className="text-slate-400">Avocat:</span> {selectedLitigeData.avocat}</p>
-                  {selectedLitigeData.avocatContact && (
-                    <p><span className="text-slate-400">Contact:</span> {selectedLitigeData.avocatContact}</p>
-                  )}
-                </div>
+              <div className="mt-6 p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                <h4 className="font-semibold text-slate-200 mb-2">Exposition totale</h4>
+                <p className="text-2xl font-mono font-bold text-rose-400">1.25 Md FCFA</p>
               </div>
             </div>
-
-            {/* Onglets */}
-            <div className="flex gap-1 p-1 rounded-lg bg-slate-800/50">
-              {[
-                { id: 'journal' as const, label: 'Journal procédural', icon: '📜', count: selectedLitigeData.journal.length },
-                { id: 'deadlines' as const, label: 'Échéances', icon: '📅', count: selectedLitigeData.deadlines.length },
-                { id: 'documents' as const, label: 'Documents', icon: '📁', count: selectedLitigeData.documents.length },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium transition-all',
-                    activeTab === tab.id
-                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-                      : 'text-slate-400 hover:bg-slate-700/50'
-                  )}
-                >
-                  <span>{tab.icon}</span>
-                  <span className="hidden sm:inline">{tab.label}</span>
-                  <Badge variant="default" className="text-[8px] px-1">{tab.count}</Badge>
-                </button>
-              ))}
-            </div>
-
-            {/* Contenu onglets */}
-            {activeTab === 'journal' && (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {selectedLitigeData.journal.length > 0 ? (
-                  selectedLitigeData.journal.map((entry, index) => {
-                    const config = journalTypeConfig[entry.type] || journalTypeConfig.autre;
-                    return (
-                      <div
-                        key={entry.id}
-                        className={cn(
-                          'p-2 rounded-lg border-l-2',
-                          index === 0 ? 'border-l-orange-500 bg-orange-500/10' : 'border-l-slate-600 bg-slate-700/20'
-                        )}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-2">
-                            <span className={config.color}>{config.icon}</span>
-                            <div>
-                              <p className="text-[11px] font-semibold">{entry.title}</p>
-                              <p className="text-[10px] text-slate-400">{entry.description}</p>
-                              <p className="text-[9px] text-slate-500 mt-1">
-                                {entry.date} {entry.agent && `• ${entry.agent}`}
-                              </p>
-                            </div>
-                          </div>
-                          {entry.document && (
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              className="text-[9px] text-blue-400"
-                              onClick={() => addToast(`Voir document ${entry.document}`, 'info')}
-                            >
-                              📎
-                            </Button>
-                          )}
-                        </div>
-                        {entry.outcome && (
-                          <p className="text-[9px] text-emerald-400 mt-1 pl-6">→ {entry.outcome}</p>
-                        )}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-slate-500 text-center py-4">Aucune entrée</p>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'deadlines' && (
-              <div className="space-y-2">
-                {selectedLitigeData.deadlines.length > 0 ? (
-                  selectedLitigeData.deadlines.map((deadline) => (
-                    <div
-                      key={deadline.id}
-                      className={cn(
-                        'p-2 rounded-lg flex items-center justify-between',
-                        deadline.status === 'urgent'
-                          ? 'bg-red-500/10 border border-red-500/30'
-                          : deadline.status === 'completed'
-                          ? 'bg-emerald-500/10 border border-emerald-500/30'
-                          : 'bg-slate-700/30'
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>
-                          {deadline.status === 'urgent' && '🚨'}
-                          {deadline.status === 'upcoming' && '📅'}
-                          {deadline.status === 'completed' && '✅'}
-                          {deadline.status === 'passed' && '⏰'}
-                        </span>
-                        <div>
-                          <p className="text-xs font-semibold">{deadline.title}</p>
-                          {deadline.description && (
-                            <p className="text-[10px] text-slate-400">{deadline.description}</p>
-                          )}
-                        </div>
-                      </div>
-                      <Badge
-                        variant={
-                          deadline.status === 'urgent'
-                            ? 'urgent'
-                            : deadline.status === 'completed'
-                            ? 'success'
-                            : 'warning'
-                        }
-                      >
-                        {deadline.date}
-                      </Badge>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-slate-500 text-center py-4">Aucune échéance</p>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'documents' && (
-              <div className="grid grid-cols-2 gap-2">
-                {selectedLitigeData.documents.length > 0 ? (
-                  selectedLitigeData.documents.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className={cn(
-                        'p-2 rounded-lg border cursor-pointer hover:border-orange-500/50 transition-colors',
-                        darkMode ? 'bg-slate-700/30 border-slate-600' : 'bg-gray-50 border-gray-200'
-                      )}
-                      onClick={() => addToast(`Ouvrir ${doc.name}`, 'info')}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">
-                          {doc.type === 'assignation' && '📄'}
-                          {doc.type === 'conclusions' && '📝'}
-                          {doc.type === 'jugement' && '⚖️'}
-                          {doc.type === 'expertise' && '🔍'}
-                          {doc.type === 'correspondance' && '📮'}
-                          {doc.type === 'piece' && '📎'}
-                          {doc.type === 'autre' && '📋'}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-medium truncate">{doc.name}</p>
-                          <p className="text-[9px] text-slate-500">{doc.date}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-slate-500 text-center py-4 col-span-2">Aucun document</p>
-                )}
-              </div>
-            )}
-
-            {/* Lien recouvrement source */}
-            {selectedLitigeData.linkedRecovery && (
-              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                <p className="text-[10px] text-slate-400">Recouvrement source</p>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="text-amber-400 p-0 h-auto"
-                  onClick={() => addToast(`Voir recouvrement ${selectedLitigeData.linkedRecovery}`, 'info')}
-                >
-                  🔗 {selectedLitigeData.linkedRecovery}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );
